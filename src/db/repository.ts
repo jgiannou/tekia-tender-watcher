@@ -131,6 +131,12 @@ export const createRepository = (db: Database.Database) => {
       AND notified_at IS NULL
   `);
 
+  const clearNotified = db.prepare(`
+    UPDATE tenders
+    SET notified_at = NULL
+    WHERE reference_number = @reference_number
+  `);
+
   const listAll = db.prepare("SELECT * FROM tenders ORDER BY score DESC");
 
   return {
@@ -217,6 +223,13 @@ export const createRepository = (db: Database.Database) => {
       const result = markNotified.run({
         reference_number: adam,
         notified_at: notifiedAt,
+      });
+      return result.changes > 0;
+    },
+
+    clearNotified: (adam: string): boolean => {
+      const result = clearNotified.run({
+        reference_number: adam,
       });
       return result.changes > 0;
     },

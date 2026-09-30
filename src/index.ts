@@ -61,6 +61,8 @@ app.route("/", createAdminRoutes({
   adminToken: config.ADMIN_TOKEN,
   pollJob,
   slack,
+  config,
+  repo,
 }));
 
 const server = serve(

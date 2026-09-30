@@ -38,7 +38,10 @@ node-cron → poll job → KIMDIS Open Data API
 Hono HTTP:
   GET  /health
   POST /admin/run
-  POST /admin/test-slack   (X-Admin-Token required)
+  POST /admin/test-slack
+  POST /admin/reevaluate
+  POST /admin/resend
+  (X-Admin-Token required on /admin/*)
 ```
 
 Stack: Node.js 22, TypeScript, pnpm, Hono, better-sqlite3, node-cron, Zod, pdf-parse, Vitest.
@@ -155,6 +158,43 @@ curl -X POST http://localhost:3000/admin/run \
   -H "X-Admin-Token: YOUR_ADMIN_TOKEN"
 ```
 
+## Re-evaluate stored tenders (no Slack)
+
+Re-scores every row in SQLite with the current filters. Does **not** send Slack.
+
+```bash
+curl -X POST http://localhost:3000/admin/reevaluate \
+  -H "X-Admin-Token: YOUR_ADMIN_TOKEN"
+```
+
+## Resend Slack for current matches
+
+Re-evaluates first, then alerts for rows that still pass the web gate + score threshold.
+
+```bash
+# Dry run — see candidates, send nothing
+curl -X POST http://localhost:3000/admin/resend \
+  -H "X-Admin-Token: YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"dryRun":true,"force":true,"limit":50}'
+
+# Actually send (force=true also re-alerts already notified ADAMs)
+curl -X POST http://localhost:3000/admin/resend \
+  -H "X-Admin-Token: YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"force":true,"limit":50}'
+```
+
+Body options:
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `force` | `false` | If true, also re-send for ADAMs that already have `notified_at` |
+| `dryRun` | `false` | If true, only return candidates — no Slack |
+| `limit` | `50` | Max alerts to send (cap `200`) |
+
+Without `force`, only matching rows that were never notified are sent.
+
 ## Docker
 
 ```bash
@@ -212,6 +252,12 @@ curl -X POST https://YOUR_HOST/admin/test-slack \
 
 curl -X POST https://YOUR_HOST/admin/run \
   -H "X-Admin-Token: long-random-secret"
+
+# Optional: dry-run then force-resend matches after filter changes
+curl -X POST https://YOUR_HOST/admin/resend \
+  -H "X-Admin-Token: long-random-secret" \
+  -H "Content-Type: application/json" \
+  -d '{"dryRun":true,"force":true,"limit":50}'
 ```
 
 A public domain is **optional**. Admin endpoints remain protected by `ADMIN_TOKEN` either way.
