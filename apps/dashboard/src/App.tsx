@@ -5,6 +5,7 @@ import { TenderDetailPage } from "./pages/TenderDetailPage";
 import { SubmittedPage } from "./pages/SubmittedPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { isConfigured, isDesktop } from "./api";
+import { UI } from "./lib/ui-labels";
 
 export const App = () => {
   const navigate = useNavigate();
@@ -45,27 +46,27 @@ export const App = () => {
         <div className="brand">
           <strong>TEKIA</strong>
           <span>
-            Tender Ops · {isDesktop() ? "desktop" : "local web"}
+            {isDesktop() ? UI.brandSubtitleDesktop : UI.brandSubtitleWeb}
           </span>
         </div>
-        <nav className="nav-links" aria-label="Main">
+        <nav className="nav-links" aria-label="Κύρια πλοήγηση">
           <NavLink
             to="/opportunities"
             className={({ isActive }) => (isActive ? "active" : undefined)}
           >
-            Opportunities
+            {UI.navOpportunities}
           </NavLink>
           <NavLink
             to="/submitted"
             className={({ isActive }) => (isActive ? "active" : undefined)}
           >
-            Submitted
+            {UI.navSubmitted}
           </NavLink>
           <NavLink
             to="/settings"
             className={({ isActive }) => (isActive ? "active" : undefined)}
           >
-            Settings / Vault
+            {UI.navSettings}
           </NavLink>
         </nav>
       </header>
@@ -78,7 +79,7 @@ export const App = () => {
           <code>pnpm dashboard:dev:web</code>.
         </div>
       ) : !desktopReady ? (
-        <p className="muted">Starting desktop shell…</p>
+        <p className="muted">Εκκίνηση desktop εφαρμογής…</p>
       ) : (
         <div className="page-scroll">
           <Routes>

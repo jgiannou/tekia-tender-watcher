@@ -94,7 +94,7 @@ describe("drive vault discovery", () => {
 });
 
 describe("document validity + templates", () => {
-  it("expired document appears EXPIRED; unknown expiry is not treated as valid", () => {
+  it("expired document appears EXPIRED; file without expiry is AVAILABLE", () => {
     expect(
       resolveDocumentValidity({
         hasFile: true,
@@ -106,7 +106,7 @@ describe("document validity + templates", () => {
         hasFile: true,
         validUntil: null,
       }),
-    ).toBe("UNKNOWN");
+    ).toBe("AVAILABLE");
     expect(
       resolveDocumentValidity({
         hasFile: true,

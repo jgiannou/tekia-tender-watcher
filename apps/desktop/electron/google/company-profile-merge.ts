@@ -79,9 +79,9 @@ export const buildTradingNameStatus = (
   const name = nonEmpty(tradingName);
   if (!name) return null;
   if (distinctiveTitleConfirmed) {
-    return `${name} (confirmed registered distinctive title)`;
+    return `${name} (επιβεβαιωμένος καταχωρισμένος διακριτικός τίτλος)`;
   }
-  return `${name} (trading / brand name — not a confirmed registered distinctive title)`;
+  return `${name} (εμπορική επωνυμία / brand — όχι επιβεβαιωμένος διακριτικός τίτλος)`;
 };
 
 /**

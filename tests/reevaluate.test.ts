@@ -87,7 +87,11 @@ describe("reevaluate + resend", () => {
       relevanceStatus: "IRRELEVANT",
       ignoreReason: null,
       reviewReason: null,
-      rawJson: {},
+      rawJson: {
+        objectDetails: [
+          { shortDescription: "Συντήρηση ιστοσελίδας και φιλοξενία CMS" },
+        ],
+      },
       nowIso: now,
     });
 
@@ -103,7 +107,11 @@ describe("reevaluate + resend", () => {
 
     const peta = repo.findByAdam("26REQ_PETA");
     expect(peta?.web_relevant).toBe(1);
-    expect((peta?.score ?? 0) >= 70).toBe(true);
+    // Title-only would be 75; description keyword adds +15 → 90
+    expect(peta?.score).toBe(90);
+    expect(JSON.parse(peta?.score_reasons ?? "[]")).toContain(
+      "Strong web keyword in description",
+    );
 
     const sent: string[] = [];
     const dry = await resendMatchingAlerts(

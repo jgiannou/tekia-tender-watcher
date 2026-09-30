@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { api, isDesktop, type OperatorSettings, type SafeConfig } from "../api";
 import { DesktopConnectionPanel } from "../components/DesktopConnectionPanel";
 import { DriveVaultPanel } from "../components/DriveVaultPanel";
+import { UI } from "../lib/ui-labels";
 
 const emptyCompany = (): OperatorSettings["company"] => ({
   legal_name: "",
@@ -175,26 +176,22 @@ export const SettingsPage = () => {
           {error ? <div className="error">{error}</div> : null}
 
           <section className="card form-grid">
-            <h2>Company</h2>
+            <h2>Εταιρεία</h2>
             <p className="muted" style={{ marginTop: 0 }}>
-              Το Legal name χρησιμοποιείται σε επίσημες προσφορές και δηλώσεις. Το
-              Brand χρησιμοποιείται για εμπορική παρουσίαση.
+              {UI.legalBrandHelper}
               {settingsSource === "local" ? (
-                <>
-                  {" "}
-                  Stored locally in Electron userData — survives app rebuilds.
-                </>
+                <> Αποθηκεύεται τοπικά στο Electron userData — επιβιώνει rebuilds.</>
               ) : null}
             </p>
 
-            <h3>LEGAL IDENTITY</h3>
+            <h3>{UI.legalIdentity}</h3>
             <div className="grid-2">
               <label>
-                Legal name
+                {UI.legalName}
                 <input name="legal_name" defaultValue={settings.company.legal_name} />
               </label>
               <label>
-                Legal form
+                {UI.legalForm}
                 <input
                   name="legal_form"
                   defaultValue={settings.company.legal_form ?? ""}
@@ -202,35 +199,35 @@ export const SettingsPage = () => {
                 />
               </label>
               <label>
-                VAT number
+                {UI.vatNumber}
                 <input name="vat_number" defaultValue={settings.company.vat_number} />
               </label>
               <label>
-                Tax office
+                {UI.taxOffice}
                 <input name="tax_office" defaultValue={settings.company.tax_office} />
               </label>
               <label>
-                GEMI number
+                {UI.gemiNumber}
                 <input name="gemi_number" defaultValue={settings.company.gemi_number} />
               </label>
               <label>
-                Address
+                Διεύθυνση
                 <input name="address" defaultValue={settings.company.address} />
               </label>
             </div>
 
-            <h3>BRAND</h3>
+            <h3>{UI.brandIdentity}</h3>
             <p className="muted" style={{ marginTop: 0 }}>
-              Do not treat TEKIA as registered distinctive title unless confirmed
-              below.
+              Μην εμφανίζεις το TEKIA ως επίσημο διακριτικό τίτλο αν δεν είναι
+              επιβεβαιωμένο παρακάτω.
             </p>
             <div className="grid-2">
               <label>
-                Brand name
+                {UI.brandName}
                 <input name="brand_name" defaultValue={settings.company.brand_name} />
               </label>
               <label>
-                Trading / distinctive title
+                {UI.tradingName}
                 <input name="trading_name" defaultValue={settings.company.trading_name} />
               </label>
             </div>
@@ -240,18 +237,18 @@ export const SettingsPage = () => {
                 name="distinctive_title_confirmed"
                 defaultChecked={settings.company.distinctive_title_confirmed}
               />
-              Confirmed registered distinctive title
+              {UI.distinctiveConfirmed}
             </label>
 
-            <h3>Operator contact (sender)</h3>
+            <h3>Στοιχεία αποστολέα (χειριστή)</h3>
             <p className="muted" style={{ marginTop: 0 }}>
-              Used as {`{{CONTACT_NAME}}`} / {`{{CONTACT_EMAIL}}`} /{" "}
-              {`{{CONTACT_PHONE}}`} / {`{{LEGAL_REPRESENTATIVE}}`} in generated docs —
-              not the tender authority contact.
+              Χρησιμοποιούνται ως {`{{CONTACT_NAME}}`} / {`{{CONTACT_EMAIL}}`} /{" "}
+              {`{{CONTACT_PHONE}}`} / {`{{LEGAL_REPRESENTATIVE}}`} στα έγγραφα —
+              όχι τα στοιχεία του φορέα του διαγωνισμού.
             </p>
             <div className="grid-2">
               <label>
-                Contact name
+                Όνομα επικοινωνίας
                 <input name="contact_name" defaultValue={settings.company.contact_name} />
               </label>
               <label>
@@ -259,11 +256,11 @@ export const SettingsPage = () => {
                 <input name="email" defaultValue={settings.company.email} />
               </label>
               <label>
-                Phone
+                Τηλέφωνο
                 <input name="phone" defaultValue={settings.company.phone} />
               </label>
               <label>
-                Website
+                Ιστοσελίδα
                 <input
                   name="website"
                   defaultValue={settings.company.website ?? ""}
@@ -271,10 +268,11 @@ export const SettingsPage = () => {
                 />
               </label>
             </div>
-            <h3>Company Profile narrative (optional)</h3>
+            <h3>Αφήγημα Εταιρικού Προφίλ (προαιρετικό)</h3>
             <p className="muted" style={{ marginTop: 0 }}>
-              Fills {`{{PORTFOLIO_REFERENCES}}`}, {`{{TECH_STACK}}`},{" "}
-              {`{{PUBLIC_SECTOR_NOTES}}`} on Sync. Leave blank to keep placeholders.
+              Συμπληρώνει {`{{PORTFOLIO_REFERENCES}}`}, {`{{TECH_STACK}}`},{" "}
+              {`{{PUBLIC_SECTOR_NOTES}}`} στο Sync. Άφησε κενό για να μείνουν τα
+              placeholders.
             </p>
             <label>
               {`{{PORTFOLIO_REFERENCES}}`}

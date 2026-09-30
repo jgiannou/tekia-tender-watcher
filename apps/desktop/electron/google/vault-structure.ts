@@ -330,14 +330,18 @@ export type DocValidityStatus =
   | "TO_GENERATE"
   | "UNKNOWN";
 
+/**
+ * File present + no / invalid expiry → AVAILABLE (not UNKNOWN).
+ * UNKNOWN is reserved for cases where status cannot be confirmed at all.
+ */
 export const resolveDocumentValidity = (input: {
   hasFile: boolean;
   validUntil?: string | null;
 }): DocValidityStatus => {
   if (!input.hasFile) return "MISSING";
-  if (!input.validUntil) return "UNKNOWN";
+  if (!input.validUntil?.trim()) return "AVAILABLE";
   const until = new Date(input.validUntil);
-  if (Number.isNaN(until.getTime())) return "UNKNOWN";
+  if (Number.isNaN(until.getTime())) return "AVAILABLE";
   if (until.getTime() < Date.now()) return "EXPIRED";
   return "AVAILABLE";
 };

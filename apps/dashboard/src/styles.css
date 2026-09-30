@@ -488,6 +488,16 @@ th {
   color: var(--muted);
 }
 
+details.card > summary {
+  cursor: pointer;
+  list-style: disclosure-closed;
+  font-size: 0.95rem;
+}
+
+details.card[open] > summary {
+  margin-bottom: 8px;
+}
+
 @media (max-width: 900px) {
   .counters,
   .grid-2,

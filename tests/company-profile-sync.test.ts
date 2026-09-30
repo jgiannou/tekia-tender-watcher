@@ -66,14 +66,14 @@ describe("company profile real-template mapping", () => {
     expect(
       buildTradingNameStatus("TEKIA", false),
     ).toBe(
-      "TEKIA (trading / brand name — not a confirmed registered distinctive title)",
+      "TEKIA (εμπορική επωνυμία / brand — όχι επιβεβαιωμένος διακριτικός τίτλος)",
     );
     expect(buildTradingNameStatus("TEKIA", true)).toBe(
-      "TEKIA (confirmed registered distinctive title)",
+      "TEKIA (επιβεβαιωμένος καταχωρισμένος διακριτικός τίτλος)",
     );
     const plan = buildCompanyProfileReplacements(baseCompany);
-    expect(plan.replacements.TRADING_NAME_STATUS).toContain("not a confirmed");
-    expect(plan.replacements.TRADING_NAME_STATUS.startsWith("TEKIA (confirmed")).toBe(
+    expect(plan.replacements.TRADING_NAME_STATUS).toContain("όχι επιβεβαιωμένος");
+    expect(plan.replacements.TRADING_NAME_STATUS.startsWith("TEKIA (επιβεβαιωμένος")).toBe(
       false,
     );
   });

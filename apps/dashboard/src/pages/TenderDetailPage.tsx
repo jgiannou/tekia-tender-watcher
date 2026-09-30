@@ -11,21 +11,27 @@ import { TenderPhaseCard } from "../components/TenderPhaseCard";
 import { formatDateTime, formatEuro, formatTime, statusClass } from "../lib/format";
 import {
   EARLY_PHASE_DOC_KEYS,
+  FORMAL_DRIVE_DOC_TYPES,
+  OUTREACH_DRIVE_DOC_TYPES,
   extractionEmptyLabel,
   formatRecordTypeLabel,
-  formatWebCategoryLabel,
   getTenderPhase,
 } from "../lib/tender-phase";
+import {
+  UI,
+  getGreekCategoryLabel,
+  getGreekChecklistLabel,
+  getGreekDocumentStatusLabel,
+  getGreekDraftLabel,
+  getGreekDriveDocTypeLabel,
+  getGreekRelevanceLabel,
+  getGreekStatusLabel,
+  getGreekSubmissionMethodLabel,
+  getNoExpiryNote,
+} from "../lib/ui-labels";
 
 const draftKeys = ["outreach", "technical", "economic", "declarations"] as const;
 type DraftKey = (typeof draftKeys)[number];
-
-const draftLabels: Record<DraftKey, string> = {
-  outreach: "Outreach Email",
-  technical: "Technical Offer",
-  economic: "Economic Offer",
-  declarations: "Declarations",
-};
 
 type VaultChecklistItem = {
   key: string;
@@ -45,6 +51,16 @@ type PackageReadiness = {
   message?: string;
 };
 
+type DriveDoc = {
+  id: string;
+  type: string;
+  driveUrl: string;
+  status: string;
+  unresolvedPlaceholders: string[];
+  masterFileId: string;
+  driveFileId: string;
+};
+
 export const TenderDetailPage = () => {
   const { referenceNumber = "" } = useParams();
   const [tender, setTender] = useState<TenderDetail | null>(null);
@@ -53,6 +69,7 @@ export const TenderDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [showRecordForm, setShowRecordForm] = useState(false);
   const [editingDraft, setEditingDraft] = useState<DraftKey | null>(null);
+  const [editingScope, setEditingScope] = useState(false);
   const [vaultChecklist, setVaultChecklist] = useState<VaultChecklistItem[] | null>(
     null,
   );
@@ -84,26 +101,18 @@ export const TenderDetailPage = () => {
     COMPLIANCE_NOTES: "",
     NOTES: "",
   });
-  const [showLaterStage, setShowLaterStage] = useState(false);
-  const [showFormalSubmission, setShowFormalSubmission] = useState(false);
-  const [driveDocuments, setDriveDocuments] = useState<
-    Array<{
-      id: string;
-      type: string;
-      driveUrl: string;
-      status: string;
-      unresolvedPlaceholders: string[];
-      masterFileId: string;
-      driveFileId: string;
-    }>
-  >([]);
+  const [driveDocuments, setDriveDocuments] = useState<DriveDoc[]>([]);
 
   const load = async (markReviewed = false) => {
     setLoading(true);
     try {
       let detail = await api.tender(referenceNumber);
       if (markReviewed && detail.currentStatus === "NEW") {
-        const updated = await api.setStatus(referenceNumber, "REVIEW", "Opened in dashboard");
+        const updated = await api.setStatus(
+          referenceNumber,
+          "REVIEW",
+          "Opened in dashboard",
+        );
         detail = updated.tender;
       }
       setTender(detail);
@@ -135,7 +144,7 @@ export const TenderDetailPage = () => {
 
   const handlePreparePackage = async () => {
     if (!isDesktop() || !window.tekia?.drive) {
-      setMessage("Prepare Package (Drive) is available in the desktop app.");
+      setMessage("Η προετοιμασία φακέλου προσφοράς είναι διαθέσιμη στην desktop εφαρμογή.");
       return;
     }
     try {
@@ -143,13 +152,11 @@ export const TenderDetailPage = () => {
         referenceNumber,
       )) as PackageReadiness;
       if (result?.__tekiaError) {
-        setError(result.message ?? "Package readiness failed");
+        setError(result.message ?? "Αποτυχία ελέγχου ετοιμότητας");
         return;
       }
       setPackageReadiness(result);
-      setMessage(
-        `Package readiness: ${result.summary}. Nothing was sent.`,
-      );
+      setMessage(`Ετοιμότητα φακέλου: ${result.summary}. Δεν στάλθηκε τίποτα.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -162,10 +169,10 @@ export const TenderDetailPage = () => {
         referenceNumber,
       )) as { webViewLink?: string; __tekiaError?: boolean; message?: string };
       if (result?.__tekiaError) {
-        setError(result.message ?? "Workspace creation failed");
+        setError(result.message ?? "Αποτυχία δημιουργίας φακέλου");
         return;
       }
-      setMessage("Tender workspace created under Submissions/{ADAM}/.");
+      setMessage("Δημιουργήθηκε φάκελος διαγωνισμού στο Drive (Submissions/{ADAM}/).");
       if (result.webViewLink) void openExternalUrl(result.webViewLink);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -216,7 +223,7 @@ export const TenderDetailPage = () => {
       );
       if (missing.length > 0) {
         setError(
-          `Economic Offer requires explicit operator values before merge: ${missing
+          `Η Οικονομική Προσφορά απαιτεί τιμές από τον χρήστη πριν τη συγχώνευση: ${missing
             .map(([k]) => k)
             .join(", ")}`,
         );
@@ -227,7 +234,7 @@ export const TenderDetailPage = () => {
     if (templateKey === "declarations") {
       if (!declarationValues.DECLARATION_TEXT.trim()) {
         setError(
-          "Declaration requires explicit DECLARATION_TEXT from the tender / operator — never invented.",
+          "Η Δήλωση απαιτεί DECLARATION_TEXT από τον διαγωνισμό / χρήστη — χωρίς επινόηση.",
         );
         return;
       }
@@ -259,23 +266,28 @@ export const TenderDetailPage = () => {
         message?: string;
       };
       if (result?.__tekiaError) {
-        setError(result.message ?? "Template copy/merge failed");
+        setError(result.message ?? "Αποτυχία αντιγραφής / συγχώνευσης προτύπου");
         return;
       }
-      if (result.masterFileId && result.driveFileId && result.masterFileId === result.driveFileId) {
-        setError("Safety failure: master and copy IDs matched — merge aborted");
+      if (
+        result.masterFileId &&
+        result.driveFileId &&
+        result.masterFileId === result.driveFileId
+      ) {
+        setError("Σφάλμα ασφαλείας: το master και το αντίγραφο έχουν το ίδιο ID");
         return;
       }
       const unresolved = result.unresolvedPlaceholders ?? [];
       setMessage(
-        `Created tender copy “${result.name}” (master untouched). Replaced: ${(result.replacedKeys ?? []).join(", ") || "none"}. ${
+        `Δημιουργήθηκε αντίγραφο «${result.name}» (το master δεν άλλαξε). ${UI.safetyGenerate} ${
           unresolved.length
-            ? `Unresolved: ${unresolved.join(", ")} — stays DRAFT.`
-            : "No unresolved placeholders."
-        } Nothing sent.`,
+            ? `Εκκρεμή πεδία: ${unresolved.join(", ")} — παραμένει Πρόχειρο.`
+            : "Δεν υπάρχουν εκκρεμή πεδία."
+        }`,
       );
       if (result.driveUrl) void openExternalUrl(result.driveUrl);
       await refreshDriveDocuments();
+      if (templateKey === "earlyOutreach") setEditingDraft("outreach");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -290,10 +302,12 @@ export const TenderDetailPage = () => {
         status?: string;
       };
       if (result?.__tekiaError) {
-        setError(result.message ?? "Cannot mark READY");
+        setError(result.message ?? "Δεν μπορεί να σημανθεί ως Έτοιμο");
         return;
       }
-      setMessage(`Document marked ${result.status}. Still not sent.`);
+      setMessage(
+        `Το έγγραφο σημειώθηκε ως ${getGreekDocumentStatusLabel(result.status ?? "READY")}. ${UI.safetyReady}`,
+      );
       await refreshDriveDocuments();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -318,10 +332,11 @@ export const TenderDetailPage = () => {
         scope_summary: String(form.get("scope_summary") || "") || null,
       });
       setTender(result.tender);
+      setEditingScope(false);
       setMessage(
         result.approvalInvalidated
-          ? "Saved. Approval invalidated due to material changes."
-          : "Saved.",
+          ? "Αποθηκεύτηκε. Η έγκριση ακυρώθηκε λόγω ουσιαστικών αλλαγών."
+          : "Αποθηκεύτηκε.",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -355,7 +370,7 @@ export const TenderDetailPage = () => {
       next.subject = `Πρόταση συνεργασίας — ${tender.title ?? tender.referenceNumber}`;
       next.body =
         next.body ||
-        `Αξιότιμε/η,\n\nΘα θέλαμε να εκδηλώσουμε ενδιαφέρον για: ${tender.title ?? ""}.\n\nΜε εκτίμηση,\nTEKIA`;
+        `Αξιότιμε/η,\n\nΘα θέλαμε να εκδηλώσουμε ενδιαφέρον εκ μέρους της TEKIA για: ${tender.title ?? ""}.\n\nΜε εκτίμηση,\nΙωάννης Γιαννούσης\nTEKIA`;
     }
     try {
       const result = await api.patchTender(referenceNumber, {
@@ -365,21 +380,41 @@ export const TenderDetailPage = () => {
       setEditingDraft(key);
       setMessage(
         result.approvalInvalidated
-          ? "Draft updated. Approval invalidated."
-          : "Draft prepared (not sent).",
+          ? "Το πρόχειρο ενημερώθηκε. Η έγκριση ακυρώθηκε."
+          : "Το πρόχειρο προετοιμάστηκε (χωρίς αποστολή).",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const handleSaveDraft = async (event: FormEvent<HTMLFormElement>, key: DraftKey) => {
+  const handlePrepareOutreach = async () => {
+    if (!tender) return;
+    const existingDrive = driveDocuments.find((d) =>
+      OUTREACH_DRIVE_DOC_TYPES.has(d.type),
+    );
+    if (existingDrive) {
+      void openExternalUrl(existingDrive.driveUrl);
+      setEditingDraft("outreach");
+      return;
+    }
+    if (isDesktop() && window.tekia?.drive) {
+      await handleCopyTemplate("earlyOutreach");
+      return;
+    }
+    await handlePrepareDraft("outreach");
+  };
+
+  const handleSaveDraft = async (
+    event: FormEvent<HTMLFormElement>,
+    key: DraftKey,
+  ) => {
     event.preventDefault();
     if (!tender) return;
     const form = new FormData(event.currentTarget);
     const next: DraftPackage = {
       ...tender.drafts[key],
-      status: (String(form.get("status") || "DRAFT") as DraftPackage["status"]),
+      status: String(form.get("status") || "DRAFT") as DraftPackage["status"],
       subject: String(form.get("subject") || "") || null,
       body: String(form.get("body") || "") || null,
       notes: String(form.get("notes") || "") || null,
@@ -395,8 +430,32 @@ export const TenderDetailPage = () => {
       setTender(result.tender);
       setMessage(
         result.approvalInvalidated
-          ? "Draft saved. Approval invalidated due to material changes."
-          : "Draft saved.",
+          ? "Αποθηκεύτηκε. Η έγκριση ακυρώθηκε λόγω ουσιαστικών αλλαγών."
+          : "Το πρόχειρο αποθηκεύτηκε.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleMarkDraftReady = async (key: DraftKey) => {
+    if (!tender) return;
+    const draft = tender.drafts[key];
+    try {
+      const result = await api.patchTender(referenceNumber, {
+        drafts: {
+          [key]: {
+            ...draft,
+            status: "READY",
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      });
+      setTender(result.tender);
+      setMessage(
+        result.approvalInvalidated
+          ? `Σημάνθηκε ως Έτοιμο. Η έγκριση ακυρώθηκε. ${UI.safetyReady}`
+          : `${getGreekDraftLabel(key)}: Έτοιμο. ${UI.safetyReady}`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -405,9 +464,13 @@ export const TenderDetailPage = () => {
 
   const handleMarkReady = async () => {
     try {
-      const result = await api.setStatus(referenceNumber, "READY", "Package ready for review");
+      const result = await api.setStatus(
+        referenceNumber,
+        "READY",
+        "Package ready for review",
+      );
       setTender(result.tender);
-      setMessage("Marked READY. Approval is still required before any send.");
+      setMessage(`Σημάνθηκε ως Έτοιμο. ${UI.safetyReady}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -417,7 +480,9 @@ export const TenderDetailPage = () => {
     try {
       const result = await api.approve(referenceNumber);
       setTender(result.tender);
-      setMessage("Approved. Send remains unavailable until local sending is configured.");
+      setMessage(
+        `Εγκρίθηκε. ${UI.safetyApprove} Η αποστολή παραμένει μη διαθέσιμη έως ότου ρυθμιστεί τοπικά.`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -440,140 +505,69 @@ export const TenderDetailPage = () => {
       });
       setTender(result.tender);
       setShowRecordForm(false);
-      setMessage("Submission recorded. Status is now SUBMITTED.");
+      setMessage("Η υποβολή καταχωρίστηκε. Κατάσταση: Υποβλήθηκε.");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   };
 
-  if (loading) return <p className="muted">Loading tender…</p>;
+  if (loading) return <p className="muted">{UI.loading}</p>;
   if (error && !tender) return <div className="error">{error}</div>;
-  if (!tender) return <div className="error">Tender not found</div>;
+  if (!tender) return <div className="error">{UI.notFound}</div>;
 
   const phase = getTenderPhase(tender);
-  const category = formatWebCategoryLabel(tender.webCategory);
   const displayOrMissing = (value: string | null | undefined) =>
     value?.trim() ? value : extractionEmptyLabel;
-  const showFormalSubmissionFields =
-    phase.isFormalStage || showFormalSubmission || Boolean(tender.submission);
 
-  const earlyDraftKeys: DraftKey[] = ["outreach"];
-  const laterDraftKeys: DraftKey[] = ["technical", "economic", "declarations"];
-  const visibleDraftKeys: DraftKey[] = phase.isEarlyStage
-    ? earlyDraftKeys
-    : phase.isTerminal || tender.currentStatus === "SUBMITTED"
-      ? draftKeys.slice()
-      : draftKeys.slice();
+  const outreachDrive = driveDocuments.find((d) =>
+    OUTREACH_DRIVE_DOC_TYPES.has(d.type),
+  );
+  const formalDriveDocs = driveDocuments.filter((d) =>
+    FORMAL_DRIVE_DOC_TYPES.has(d.type),
+  );
+  const outreachDraft = tender.drafts.outreach;
 
-  const renderDraftRow = (key: DraftKey) => {
-    const draft = tender.drafts[key];
-    return (
-      <div key={key} className="draft-row">
-        <div>
-          <strong>{draftLabels[key]}</strong>
-          <div className="muted">{draft.status}</div>
-        </div>
-        <div className="actions" style={{ marginTop: 0 }}>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => void handlePrepareDraft(key)}
-          >
-            {draft.status === "NOT_STARTED" ? "Prepare" : "Open Draft"}
-          </button>
-          {draft.status !== "READY" ? (
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                void (async () => {
-                  try {
-                    const result = await api.patchTender(referenceNumber, {
-                      drafts: {
-                        [key]: {
-                          ...draft,
-                          status: "READY",
-                          updatedAt: new Date().toISOString(),
-                        },
-                      },
-                    });
-                    setTender(result.tender);
-                    setMessage(
-                      result.approvalInvalidated
-                        ? "Draft marked ready. Approval invalidated. Nothing was sent."
-                        : `${draftLabels[key]} marked READY (not sent).`,
-                    );
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : String(err));
-                  }
-                })();
-              }}
-            >
-              Mark Ready
-            </button>
-          ) : null}
-        </div>
-        {editingDraft === key ? (
-          <form
-            className="form-grid"
-            style={{ width: "100%", marginTop: 10 }}
-            onSubmit={(e) => void handleSaveDraft(e, key)}
-          >
-            <label>
-              Status
-              <select name="status" defaultValue={draft.status}>
-                <option value="DRAFT">DRAFT</option>
-                <option value="READY">READY</option>
-                <option value="NOT_STARTED">NOT_STARTED</option>
-              </select>
-            </label>
-            <label>
-              Subject
-              <input name="subject" defaultValue={draft.subject ?? ""} />
-            </label>
-            <label>
-              Body / content
-              <textarea name="body" defaultValue={draft.body ?? ""} />
-            </label>
-            <label>
-              Notes
-              <textarea name="notes" defaultValue={draft.notes ?? ""} />
-            </label>
-            {key === "economic" ? (
-              <label>
-                Amount without VAT
-                <input
-                  name="amountWithoutVat"
-                  type="number"
-                  defaultValue={draft.amountWithoutVat ?? ""}
-                />
-              </label>
-            ) : null}
-            <div className="actions">
-              <button type="submit" className="btn primary">
-                Save draft
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setEditingDraft(null)}
-              >
-                Close
-              </button>
-            </div>
-          </form>
-        ) : null}
-      </div>
-    );
-  };
+  const outreachStatusLabel = (() => {
+    if (outreachDrive) return getGreekDocumentStatusLabel(outreachDrive.status);
+    if (outreachDraft.status === "NOT_STARTED") return UI.notCreated;
+    return getGreekDocumentStatusLabel(outreachDraft.status);
+  })();
+
+  const isOutreachReady =
+    outreachDrive?.status === "READY" || outreachDraft.status === "READY";
+
+  const earlyVaultItems =
+    vaultChecklist?.filter(
+      (item) =>
+        EARLY_PHASE_DOC_KEYS.has(item.key) ||
+        item.key.toLowerCase().includes("outreach") ||
+        item.key.toLowerCase().includes("profile"),
+    ) ?? [];
+  const laterVaultItems =
+    vaultChecklist?.filter(
+      (item) =>
+        !EARLY_PHASE_DOC_KEYS.has(item.key) &&
+        !item.key.toLowerCase().includes("outreach") &&
+        !item.key.toLowerCase().includes("profile"),
+    ) ?? [];
+
+  const earlyChecklistItems = tender.documentChecklist.filter(
+    (item) =>
+      item.key.includes("outreach") ||
+      item.key.includes("company_profile") ||
+      item.key.includes("profile"),
+  );
+  const laterChecklistItems = tender.documentChecklist.filter(
+    (item) =>
+      !item.key.includes("outreach") &&
+      !item.key.includes("company_profile") &&
+      !item.key.includes("profile"),
+  );
 
   const renderFormalOfferControls = () => (
     <>
-      <h4>Technical Offer</h4>
-      <p className="muted">
-        Creates a Drive copy from the master template and fills known fields.
-        Leave narrative fields blank to keep placeholders for review.
-      </p>
+      <h4>Τεχνική Προσφορά</h4>
+      <p className="muted">{UI.safetyGenerate}</p>
       <div className="form-grid">
         {Object.keys(technicalValues).map((key) => (
           <label key={key}>
@@ -596,14 +590,14 @@ export const TenderDetailPage = () => {
           className="btn"
           onClick={() => void handleCopyTemplate("technicalOffer")}
         >
-          Generate Technical Offer
+          Δημιουργία Τεχνικής Προσφοράς
         </button>
       </div>
 
-      <h4>Economic Offer</h4>
+      <h4>Οικονομική Προσφορά</h4>
       <p className="muted">
-        Never invent pricing. Explicit operator values required before generate.
-        Creates a Drive copy and fills known fields.
+        Μην επινοείτε τιμές. Απαιτούνται ρητές τιμές πριν τη δημιουργία.{" "}
+        {UI.safetyGenerate}
       </p>
       <div className="grid-2">
         {Object.keys(economicValues).map((key) => (
@@ -624,11 +618,11 @@ export const TenderDetailPage = () => {
           className="btn"
           onClick={() => void handleCopyTemplate("economicOffer")}
         >
-          Generate Economic Offer
+          Δημιουργία Οικονομικής Προσφοράς
         </button>
       </div>
 
-      <h4>Declaration</h4>
+      <h4>Δήλωση</h4>
       <div className="form-grid">
         <label>
           {`{{CAPACITY}}`}
@@ -643,7 +637,7 @@ export const TenderDetailPage = () => {
           />
         </label>
         <label>
-          {`{{PROTOCOL_NUMBER}}`} (optional)
+          {`{{PROTOCOL_NUMBER}}`} (προαιρετικό)
           <input
             value={declarationValues.PROTOCOL_NUMBER}
             onChange={(e) =>
@@ -655,7 +649,7 @@ export const TenderDetailPage = () => {
           />
         </label>
         <label>
-          {`{{DECLARATION_TEXT}}`} (required — from tender / operator)
+          {`{{DECLARATION_TEXT}}`} (υποχρεωτικό)
           <textarea
             value={declarationValues.DECLARATION_TEXT}
             onChange={(e) =>
@@ -673,9 +667,133 @@ export const TenderDetailPage = () => {
           className="btn"
           onClick={() => void handleCopyTemplate("declarations")}
         >
-          Generate Declaration
+          Δημιουργία Δήλωσης
         </button>
       </div>
+    </>
+  );
+
+  const renderDraftEditor = (key: DraftKey) => {
+    if (editingDraft !== key) return null;
+    const draft = tender.drafts[key];
+    return (
+      <form
+        className="form-grid"
+        style={{ width: "100%", marginTop: 10 }}
+        onSubmit={(e) => void handleSaveDraft(e, key)}
+      >
+        <label>
+          Κατάσταση
+          <select name="status" defaultValue={draft.status}>
+            <option value="DRAFT">Πρόχειρο</option>
+            <option value="READY">Έτοιμο</option>
+            <option value="NOT_STARTED">Δεν έχει ξεκινήσει</option>
+          </select>
+        </label>
+        <label>
+          Θέμα
+          <input name="subject" defaultValue={draft.subject ?? ""} />
+        </label>
+        <label>
+          Περιεχόμενο
+          <textarea name="body" defaultValue={draft.body ?? ""} />
+        </label>
+        <label>
+          Σημειώσεις
+          <textarea name="notes" defaultValue={draft.notes ?? ""} />
+        </label>
+        {key === "economic" ? (
+          <label>
+            Ποσό χωρίς ΦΠΑ
+            <input
+              name="amountWithoutVat"
+              type="number"
+              defaultValue={draft.amountWithoutVat ?? ""}
+            />
+          </label>
+        ) : null}
+        <div className="actions">
+          <button type="submit" className="btn primary">
+            {UI.save}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setEditingDraft(null)}
+          >
+            {UI.close}
+          </button>
+        </div>
+      </form>
+    );
+  };
+
+  const phaseActions = (
+    <>
+      {phase.isEarlyStage ? (
+        <>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => void handlePrepareOutreach()}
+          >
+            {UI.prepareOutreach}
+          </button>
+          {isDesktop() ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void handleCreateWorkspace()}
+            >
+              {UI.createWorkspace}
+            </button>
+          ) : null}
+          {tender.officialPdfUrl ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void openExternalUrl(tender.officialPdfUrl!)}
+            >
+              {UI.openOfficialPdf}
+            </button>
+          ) : null}
+        </>
+      ) : null}
+      {phase.isFormalStage ? (
+        <>
+          {isDesktop() ? (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => void handlePreparePackage()}
+            >
+              {UI.prepareOfferPackage}
+            </button>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>
+              Η προετοιμασία φακέλου είναι διαθέσιμη στην desktop εφαρμογή.
+            </p>
+          )}
+          {isDesktop() ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void handleCreateWorkspace()}
+            >
+              {UI.createWorkspace}
+            </button>
+          ) : null}
+          {tender.officialPdfUrl ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void openExternalUrl(tender.officialPdfUrl!)}
+            >
+              {UI.openOfficialPdf}
+            </button>
+          ) : null}
+        </>
+      ) : null}
     </>
   );
 
@@ -683,14 +801,17 @@ export const TenderDetailPage = () => {
     <div className="stack">
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
         <Link className="btn ghost" to="/opportunities">
-          ← Opportunities
+          {UI.backToOpportunities}
         </Link>
-        <span className={statusClass(tender.currentStatus)}>{tender.currentStatus}</span>
+        <span className={statusClass(tender.currentStatus)}>
+          {getGreekStatusLabel(tender.currentStatus)}
+        </span>
       </div>
 
       {message ? <div className="alert-box">{message}</div> : null}
       {error ? <div className="error">{error}</div> : null}
 
+      {/* 1. Header / metadata */}
       <section className="card">
         <h2>
           {tender.organization} — {tender.title}
@@ -703,42 +824,35 @@ export const TenderDetailPage = () => {
             </span>
           </div>
           <div className="meta-item">
-            <span className="k">Type</span>
+            <span className="k">{UI.type}</span>
             <span className="v">{formatRecordTypeLabel(tender.recordType)}</span>
           </div>
           <div className="meta-item">
-            <span className="k">Category</span>
-            <span className="v">
-              {category.label}
-              {category.raw ? (
-                <span className="muted" style={{ display: "block", fontSize: 12 }}>
-                  {category.raw}
-                </span>
-              ) : null}
-            </span>
+            <span className="k">{UI.category}</span>
+            <span className="v">{getGreekCategoryLabel(tender.webCategory)}</span>
           </div>
           <div className="meta-item">
-            <span className="k">Score</span>
+            <span className="k">{UI.score}</span>
             <span className="v">{tender.score ?? "—"}</span>
           </div>
           <div className="meta-item">
-            <span className="k">Budget (ex VAT)</span>
+            <span className="k">{UI.budgetExVat}</span>
             <span className="v">{formatEuro(tender.budgetWithoutVat)}</span>
           </div>
           <div className="meta-item">
-            <span className="k">Budget (inc VAT)</span>
+            <span className="k">{UI.budgetIncVat}</span>
             <span className="v">{formatEuro(tender.budgetWithVat)}</span>
           </div>
           <div className="meta-item">
-            <span className="k">Deadline</span>
+            <span className="k">{UI.deadline}</span>
             <span className="v">{formatDateTime(tender.finalSubmissionDate)}</span>
           </div>
           <div className="meta-item">
-            <span className="k">KIMDIS publication</span>
+            <span className="k">{UI.kimdisPublication}</span>
             <span className="v">{formatDateTime(tender.submissionDate)}</span>
           </div>
           <div className="meta-item">
-            <span className="k">KIMDIS URL</span>
+            <span className="k">ΚΗΜΔΗΣ</span>
             <span className="v">
               {tender.publicKimdisUrl ? (
                 <button
@@ -746,7 +860,7 @@ export const TenderDetailPage = () => {
                   className="btn ghost"
                   onClick={() => void openExternalUrl(tender.publicKimdisUrl!)}
                 >
-                  Open in KIMDIS
+                  {UI.openInKimdis}
                 </button>
               ) : (
                 "—"
@@ -754,21 +868,16 @@ export const TenderDetailPage = () => {
             </span>
           </div>
           <div className="meta-item">
-            <span className="k">Official PDF</span>
+            <span className="k">PDF</span>
             <span className="v">
               {tender.officialPdfUrl ? (
-                <>
-                  <button
-                    type="button"
-                    className="btn ghost"
-                    onClick={() => void openExternalUrl(tender.officialPdfUrl!)}
-                  >
-                    Open Official PDF
-                  </button>
-                  <span className="muted" style={{ display: "block", fontSize: 12 }}>
-                    Always verify requirements in the official document.
-                  </span>
-                </>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => void openExternalUrl(tender.officialPdfUrl!)}
+                >
+                  {UI.openOfficialPdf}
+                </button>
               ) : (
                 "—"
               )}
@@ -777,119 +886,51 @@ export const TenderDetailPage = () => {
         </div>
       </section>
 
-      <TenderPhaseCard phase={phase} />
-
-      <section className="card">
-        <h3>What should I do now?</h3>
-        {phase.isEarlyStage ? (
-          <>
-            <p className="alert-box" style={{ marginTop: 0 }}>
-              No formal offer submission is requested at this stage. Early Outreach ≠
-              Offer Submission.
-            </p>
-            <div className="actions">
-              {isDesktop() ? (
-                <>
-                  <button
-                    type="button"
-                    className="btn primary"
-                    onClick={() => void handleCopyTemplate("earlyOutreach")}
-                  >
-                    Prepare Early Outreach
-                  </button>
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => void handleCreateWorkspace()}
-                  >
-                    Create Tender Workspace
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => void handlePrepareDraft("outreach")}
-                >
-                  Prepare Early Outreach
-                </button>
-              )}
-              {tender.officialPdfUrl ? (
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => void openExternalUrl(tender.officialPdfUrl!)}
-                >
-                  Open Official PDF
-                </button>
-              ) : null}
-            </div>
-          </>
-        ) : null}
-        {phase.isFormalStage ? (
-          <div className="actions">
-            {isDesktop() ? (
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() => void handlePreparePackage()}
-              >
-                Prepare Offer Package
-              </button>
-            ) : (
-              <p className="muted">
-                Prepare Offer Package is available in the desktop app.
-              </p>
-            )}
-          </div>
-        ) : null}
-        {tender.currentStatus === "SUBMITTED" || phase.isTerminal ? (
-          <p className="muted" style={{ marginBottom: 0 }}>
-            Generation is no longer the primary task — monitor result / follow-up.
-          </p>
-        ) : null}
-      </section>
+      {/* 2. Unified phase card */}
+      <TenderPhaseCard phase={phase} actions={phaseActions} />
 
       {tender.recordType === "PROC" ? (
         <section className="card">
-          <h3>PROC verification</h3>
+          <h3>{UI.procVerification}</h3>
           <div className="meta-grid">
             <div className="meta-item">
-              <span className="k">PDF verified</span>
+              <span className="k">PDF επαληθευμένο</span>
               <span className="v">
-                {tender.pdfTextStatus === "extracted" ? "YES" : "NO"}
+                {tender.pdfTextStatus === "extracted" ? "ΝΑΙ" : "ΟΧΙ"}
               </span>
             </div>
             <div className="meta-item">
-              <span className="k">Targeted supplier</span>
-              <span className="v">{tender.targetedSupplier ? "YES" : "NO"}</span>
+              <span className="k">Στοχευμένος ανάδοχος</span>
+              <span className="v">{tender.targetedSupplier ? "ΝΑΙ" : "ΟΧΙ"}</span>
             </div>
             <div className="meta-item">
-              <span className="k">Non-invited rejected</span>
+              <span className="k">Αποκλεισμός μη προσκεκλημένων</span>
               <span className="v">
-                {tender.nonInvitedOffersRejected ? "YES" : "NO"}
+                {tender.nonInvitedOffersRejected ? "ΝΑΙ" : "ΟΧΙ"}
               </span>
             </div>
             <div className="meta-item">
-              <span className="k">Deadline open</span>
+              <span className="k">Ανοιχτή προθεσμία</span>
               <span className="v">
                 {tender.finalSubmissionDate &&
                 new Date(tender.finalSubmissionDate).getTime() >= Date.now()
-                  ? "YES"
-                  : "NO"}
+                  ? "ΝΑΙ"
+                  : "ΟΧΙ"}
               </span>
             </div>
             <div className="meta-item">
-              <span className="k">Watcher status</span>
-              <span className="v">{tender.relevanceStatus ?? "—"}</span>
+              <span className="k">Κατάσταση watcher</span>
+              <span className="v">
+                {getGreekRelevanceLabel(tender.relevanceStatus)}
+              </span>
             </div>
           </div>
           {tender.relevanceStatus === "TARGETED" ||
           tender.relevanceStatus === "EXPIRED" ||
           tender.relevanceStatus === "NEEDS_REVIEW" ? (
             <p className="alert-box" style={{ marginTop: 12 }}>
-              Not ready to submit — watcher classified this as{" "}
-              <strong>{tender.relevanceStatus}</strong>.
+              Δεν είναι έτοιμο για υποβολή — κατάταξη:{" "}
+              <strong>{getGreekRelevanceLabel(tender.relevanceStatus)}</strong>.
             </p>
           ) : null}
         </section>
@@ -897,22 +938,26 @@ export const TenderDetailPage = () => {
 
       {tender.submission ? (
         <section className="already-submitted">
-          <strong>Already submitted</strong>
+          <strong>{UI.alreadySubmitted}</strong>
           <div className="meta-grid" style={{ marginTop: 10 }}>
             <div className="meta-item">
-              <span className="k">Submitted</span>
-              <span className="v">{formatDateTime(tender.submission.submittedAt)}</span>
+              <span className="k">Υποβολή</span>
+              <span className="v">
+                {formatDateTime(tender.submission.submittedAt)}
+              </span>
             </div>
             <div className="meta-item">
-              <span className="k">Method</span>
-              <span className="v">{tender.submission.method}</span>
+              <span className="k">Τρόπος</span>
+              <span className="v">
+                {getGreekSubmissionMethodLabel(tender.submission.method)}
+              </span>
             </div>
             <div className="meta-item">
-              <span className="k">Recipient</span>
+              <span className="k">Παραλήπτης</span>
               <span className="v">{tender.submission.recipient ?? "—"}</span>
             </div>
             <div className="meta-item">
-              <span className="k">Amount</span>
+              <span className="k">Ποσό</span>
               <span className="v">
                 {formatEuro(tender.submission.amountWithoutVat)}
               </span>
@@ -921,69 +966,264 @@ export const TenderDetailPage = () => {
         </section>
       ) : null}
 
-      <div className="grid-2">
-        <section className="card">
-          <h3>Why TEKIA matched this opportunity</h3>
-          <ul className="trace-list">
-            {tender.decisionTrace.map((item) => (
-              <li key={item.text} className={`tone-${item.tone}`}>
-                {item.tone === "positive" ? "✅" : item.tone === "warning" ? "⚠" : "❌"}{" "}
-                {item.text}
-              </li>
-            ))}
-          </ul>
-          {(tender.scoreReasons ?? []).length > 0 ? (
-            <div style={{ marginTop: 12 }}>
-              <p className="muted" style={{ marginBottom: 6 }}>
-                Internal scoring reasons (not scope text):
+      {/* 3. Unified Outreach (REQ) or formal docs (PROC) */}
+      {phase.isEarlyStage ? (
+        <section className="card" aria-label="Εκδήλωση Ενδιαφέροντος">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <h3 style={{ marginTop: 0 }}>Εκδήλωση Ενδιαφέροντος</h3>
+              <p className="muted" style={{ margin: 0 }}>
+                Κατάσταση: <strong>{outreachStatusLabel}</strong>
               </p>
+            </div>
+          </div>
+
+          {outreachDrive?.unresolvedPlaceholders?.length ? (
+            <p className="muted">
+              {UI.missingPrefix}: {outreachDrive.unresolvedPlaceholders.join(", ")}
+            </p>
+          ) : null}
+
+          <div className="actions">
+            {!outreachDrive && outreachDraft.status === "NOT_STARTED" ? (
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => void handlePrepareOutreach()}
+              >
+                {UI.prepareOutreach}
+              </button>
+            ) : (
+              <>
+                {outreachDrive ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void openExternalUrl(outreachDrive.driveUrl)}
+                  >
+                    {UI.openInDrive}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setEditingDraft("outreach")}
+                >
+                  {UI.edit}
+                </button>
+                {outreachDrive && outreachDrive.status !== "READY" ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={outreachDrive.unresolvedPlaceholders.length > 0}
+                    onClick={() => void handleMarkDriveDocReady(outreachDrive.id)}
+                  >
+                    {UI.markReady}
+                  </button>
+                ) : null}
+                {!outreachDrive && outreachDraft.status !== "READY" ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void handleMarkDraftReady("outreach")}
+                  >
+                    {UI.markReady}
+                  </button>
+                ) : null}
+                {isDesktop() && !outreachDrive ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void handleCopyTemplate("earlyOutreach")}
+                  >
+                    {UI.generateDriveDoc}
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
+
+          {renderDraftEditor("outreach")}
+
+          {isOutreachReady ? (
+            <div style={{ marginTop: 16 }}>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => void handleApprove()}
+                  disabled={
+                    Boolean(tender.submission) ||
+                    tender.currentStatus !== "READY" ||
+                    tender.approvalStatus === "APPROVED"
+                  }
+                >
+                  {UI.approve}
+                </button>
+                {tender.currentStatus !== "READY" &&
+                tender.approvalStatus !== "APPROVED" ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void handleMarkReady()}
+                    disabled={Boolean(tender.submission)}
+                  >
+                    {UI.markReady}
+                  </button>
+                ) : null}
+              </div>
+              <p className="muted" style={{ marginBottom: 0 }}>
+                {UI.approveHelper}
+              </p>
+            </div>
+          ) : null}
+
+          <p className="muted" style={{ marginBottom: 0, marginTop: 12 }}>
+            {UI.safetyCompact} {UI.safetyCloud}
+          </p>
+        </section>
+      ) : null}
+
+      {phase.isFormalStage && isDesktop() ? (
+        <section className="card">
+          <h3>Επίσημη Προσφορά</h3>
+          <p className="muted" style={{ marginTop: 0 }}>
+            {UI.safetyGenerate}
+          </p>
+          {renderFormalOfferControls()}
+
+          {driveDocuments.length > 0 ? (
+            <div style={{ marginTop: 16 }}>
+              <h4>Δημιουργημένα έγγραφα</h4>
               <ul className="checklist">
-                {tender.scoreReasons.map((reason) => (
-                  <li key={reason}>{reason}</li>
+                {driveDocuments.map((doc) => (
+                  <li key={doc.id}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                      }}
+                    >
+                      <span>
+                        {getGreekDriveDocTypeLabel(doc.type)} —{" "}
+                        {getGreekDocumentStatusLabel(doc.status)}
+                      </span>
+                      <span className="actions" style={{ marginTop: 0 }}>
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() => void openExternalUrl(doc.driveUrl)}
+                        >
+                          {UI.openInDrive}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={
+                            doc.unresolvedPlaceholders.length > 0 ||
+                            doc.status === "READY"
+                          }
+                          onClick={() => void handleMarkDriveDocReady(doc.id)}
+                        >
+                          {UI.markReady}
+                        </button>
+                      </span>
+                    </div>
+                    {doc.unresolvedPlaceholders.length > 0 ? (
+                      <div className="muted">
+                        {UI.missingPrefix}:{" "}
+                        {doc.unresolvedPlaceholders.join(", ")}
+                      </div>
+                    ) : null}
+                  </li>
                 ))}
               </ul>
             </div>
           ) : null}
-        </section>
 
-        <section className="card">
-          <h3>Timeline</h3>
-          <ul className="timeline">
-            {tender.events.map((event) => (
-              <li key={event.id}>
-                <span className="muted">{formatTime(event.createdAt)}</span>
-                <span>
-                  {event.eventType}
-                  {event.note ? ` — ${event.note}` : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
+          {packageReadiness ? (
+            <div style={{ marginTop: 12 }}>
+              <strong>
+                {UI.readiness} — {packageReadiness.summary}
+              </strong>
+              <h4>{UI.companyDocuments}</h4>
+              <ul className="checklist">
+                {packageReadiness.companyDocuments.map((row) => (
+                  <li key={row.label}>
+                    {row.status === "AVAILABLE" ? "✓" : "⚠"} {row.label} —{" "}
+                    {getGreekDocumentStatusLabel(row.status)}
+                    {row.detail ? ` (${row.detail})` : ""}
+                  </li>
+                ))}
+              </ul>
+              <h4>Δημιουργημένα έγγραφα</h4>
+              <ul className="checklist">
+                {packageReadiness.generatedDocuments.map((row) => (
+                  <li key={row.label}>
+                    {row.status === "DRAFT" || row.status === "READY" ? "✓" : "⚠"}{" "}
+                    {row.label} — {getGreekDocumentStatusLabel(row.status)}
+                    {row.detail ? ` (${row.detail})` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
+          <div style={{ marginTop: 16 }}>
+            <div className="actions">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void handleMarkReady()}
+                disabled={
+                  Boolean(tender.submission) || tender.currentStatus === "READY"
+                }
+              >
+                {UI.markReady}
+              </button>
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => void handleApprove()}
+                disabled={
+                  Boolean(tender.submission) ||
+                  tender.currentStatus !== "READY" ||
+                  tender.approvalStatus === "APPROVED"
+                }
+              >
+                {UI.approve}
+              </button>
+            </div>
+            <p className="muted">
+              {UI.safetyCompact} {UI.safetyCloud}
+            </p>
+            {tender.approvalStatus === "APPROVED" ? (
+              <p className="alert-box">
+                Εγκρίθηκε στις {formatDateTime(tender.approvedAt)}. Η αποστολή
+                παραμένει μπλοκαρισμένη έως τοπική ρύθμιση.
+              </p>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {/* 4. Contact */}
       <form className="card form-grid" onSubmit={(e) => void handleSaveContact(e)}>
-        <h3>Scope summary</h3>
+        <h3>{UI.contactSection}</h3>
         <p className="muted" style={{ marginTop: 0 }}>
-          Tender-facing scope only — never scoring reasons.
-        </p>
-        <label>
-          Scope summary
-          <textarea
-            name="scope_summary"
-            defaultValue={tender.scopeSummary ?? ""}
-            placeholder="Leave empty if not extracted from the official document"
-          />
-        </label>
-
-        <h3>Tender contact</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Authority / tender contact — use for questions / early outreach. This is{" "}
-          <strong>not</strong> TEKIA Company Settings (sender / legal representative).
+          Στοιχεία του φορέα — όχι τα στοιχεία αποστολέα της TEKIA.
         </p>
         <div className="grid-2">
           <label>
-            Contact person
+            {UI.contactPerson}
             <input
               name="contact_name"
               defaultValue={tender.contact.name ?? ""}
@@ -991,7 +1231,7 @@ export const TenderDetailPage = () => {
             />
           </label>
           <label>
-            Department
+            {UI.department}
             <input
               name="contact_department"
               defaultValue={tender.contact.department ?? ""}
@@ -999,7 +1239,7 @@ export const TenderDetailPage = () => {
             />
           </label>
           <label>
-            Contact email
+            {UI.contactEmail}
             <input
               name="contact_email"
               defaultValue={tender.contact.email ?? ""}
@@ -1007,7 +1247,7 @@ export const TenderDetailPage = () => {
             />
           </label>
           <label>
-            Contact phone
+            {UI.contactPhone}
             <input
               name="contact_phone"
               defaultValue={tender.contact.phone ?? ""}
@@ -1016,476 +1256,402 @@ export const TenderDetailPage = () => {
           </label>
         </div>
         <p className="muted" style={{ margin: 0 }}>
-          Extracted: {displayOrMissing(tender.contact.name)} /{" "}
+          Εξαγωγή: {displayOrMissing(tender.contact.name)} /{" "}
           {displayOrMissing(tender.contact.email)} /{" "}
           {displayOrMissing(tender.contact.phone)}
         </p>
 
-        <h3>Formal submission</h3>
-        <p className="muted" style={{ marginTop: 0 }}>
-          Complete only when the official invitation defines how offers must be
-          submitted.
-        </p>
-        {!showFormalSubmissionFields ? (
-          <button
-            type="button"
-            className="btn"
-            onClick={() => setShowFormalSubmission(true)}
-          >
-            Show formal submission fields
-          </button>
-        ) : (
-          <div className="grid-2">
-            <label>
-              Submission method
-              <select
-                name="submission_method"
-                defaultValue={tender.submissionInfo.method || "UNKNOWN"}
-              >
-                {["EMAIL", "PORTAL", "ESIDIS", "PHYSICAL", "OTHER", "UNKNOWN"].map(
-                  (method) => (
-                    <option key={method} value={method}>
-                      {method}
-                    </option>
-                  ),
-                )}
-              </select>
-            </label>
-            <label>
-              Submission email
-              <input
-                name="submission_email"
-                defaultValue={tender.submissionInfo.email ?? ""}
-                title="Official recipient address for submitting an offer. This may differ from the contact email."
-              />
-              <span className="muted" style={{ fontSize: 12 }}>
-                Official recipient for submitting an offer — may differ from contact
-                email.
-              </span>
-            </label>
-            <label>
-              Portal / other
-              <input
-                name="submission_portal"
-                defaultValue={tender.submissionInfo.portal ?? ""}
-              />
-            </label>
-            <label>
-              Instructions
-              <textarea
-                name="submission_instructions"
-                defaultValue={tender.submissionInfo.instructions ?? ""}
-              />
-            </label>
+        {/* 5. Compact scope */}
+        <h3>{UI.scopeSummary}</h3>
+        {!editingScope ? (
+          <div>
+            <p style={{ marginTop: 0 }}>
+              {tender.scopeSummary?.trim()
+                ? tender.scopeSummary
+                : UI.scopeEmpty}
+            </p>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setEditingScope(true)}
+            >
+              {UI.edit}
+            </button>
+            <input
+              type="hidden"
+              name="scope_summary"
+              value={tender.scopeSummary ?? ""}
+            />
           </div>
+        ) : (
+          <label>
+            {UI.scopeSummary}
+            <textarea
+              name="scope_summary"
+              defaultValue={tender.scopeSummary ?? ""}
+              placeholder={UI.scopeEmpty}
+            />
+          </label>
         )}
-        {!showFormalSubmissionFields ? (
+
+        {/* Formal submission — open for PROC, collapsed for REQ */}
+        {phase.isFormalStage || Boolean(tender.submission) ? (
           <>
-            <input type="hidden" name="submission_method" value={tender.submissionInfo.method || "UNKNOWN"} />
-            <input type="hidden" name="submission_email" value={tender.submissionInfo.email ?? ""} />
-            <input type="hidden" name="submission_portal" value={tender.submissionInfo.portal ?? ""} />
+            <h3>{UI.formalSubmission}</h3>
+            <p className="muted" style={{ marginTop: 0 }}>
+              {UI.formalSubmissionHelper}
+            </p>
+            <div className="grid-2">
+              <label>
+                {UI.submissionMethod}
+                <select
+                  name="submission_method"
+                  defaultValue={tender.submissionInfo.method || "UNKNOWN"}
+                >
+                  {["EMAIL", "PORTAL", "ESIDIS", "PHYSICAL", "OTHER", "UNKNOWN"].map(
+                    (method) => (
+                      <option key={method} value={method}>
+                        {getGreekSubmissionMethodLabel(method)}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+              <label>
+                {UI.submissionEmail}
+                <input
+                  name="submission_email"
+                  defaultValue={tender.submissionInfo.email ?? ""}
+                />
+              </label>
+              <label>
+                {UI.portalOther}
+                <input
+                  name="submission_portal"
+                  defaultValue={tender.submissionInfo.portal ?? ""}
+                />
+              </label>
+              <label>
+                {UI.instructions}
+                <textarea
+                  name="submission_instructions"
+                  defaultValue={tender.submissionInfo.instructions ?? ""}
+                />
+              </label>
+            </div>
+          </>
+        ) : (
+          <>
+            <input
+              type="hidden"
+              name="submission_method"
+              value={tender.submissionInfo.method || "UNKNOWN"}
+            />
+            <input
+              type="hidden"
+              name="submission_email"
+              value={tender.submissionInfo.email ?? ""}
+            />
+            <input
+              type="hidden"
+              name="submission_portal"
+              value={tender.submissionInfo.portal ?? ""}
+            />
             <input
               type="hidden"
               name="submission_instructions"
               value={tender.submissionInfo.instructions ?? ""}
             />
           </>
-        ) : null}
+        )}
+
         <div className="actions">
           <button type="submit" className="btn primary">
-            Save details
+            {UI.save}
           </button>
         </div>
       </form>
 
+      {/* 6. Current phase documents */}
       <section className="card">
         <h3>
-          {phase.isEarlyStage ? "Current phase documents" : "Document checklist"}
+          {phase.isEarlyStage ? UI.currentPhaseDocs : "Έλεγχος εγγράφων"}
         </h3>
         {phase.isEarlyStage ? (
           <p className="muted" style={{ marginTop: 0 }}>
-            Formal company clearances and offer docs are <strong>not required</strong>{" "}
-            for Primary Request / Early Outreach.
+            Στο Πρωτογενές Αίτημα αρκεί κυρίως το Εταιρικό Προφίλ.
           </p>
         ) : null}
+
         {vaultChecklist && vaultChecklist.length > 0 ? (
-          <>
-            <ul className="checklist">
-              {vaultChecklist
-                .filter((item) =>
-                  phase.isEarlyStage
-                    ? EARLY_PHASE_DOC_KEYS.has(item.key) ||
-                      item.key.toLowerCase().includes("outreach") ||
-                      item.key.toLowerCase().includes("profile")
-                    : true,
-                )
-                .map((item) => (
-                  <li key={item.key}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                      <span>
-                        {item.status === "AVAILABLE" ? "✅" : "•"} {item.label}
-                        <span className="muted">
-                          {" "}
-                          — {item.status}
-                          {item.validUntil ? ` · until ${item.validUntil}` : ""}
-                          {item.note ? ` · ${item.note}` : ""}
-                        </span>
-                      </span>
-                      {item.driveUrl ? (
-                        <button
-                          type="button"
-                          className="btn ghost"
-                          onClick={() => void openExternalUrl(item.driveUrl!)}
-                        >
-                          Open in Drive
-                        </button>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-            </ul>
-            {phase.isEarlyStage ? (
-              <details style={{ marginTop: 12 }}>
-                <summary className="muted">
-                  Documents that may be required later (not required at this stage)
-                </summary>
-                <ul className="checklist" style={{ marginTop: 8 }}>
-                  {vaultChecklist
-                    .filter(
-                      (item) =>
-                        !EARLY_PHASE_DOC_KEYS.has(item.key) &&
-                        !item.key.toLowerCase().includes("outreach") &&
-                        !item.key.toLowerCase().includes("profile"),
-                    )
-                    .map((item) => (
-                      <li key={item.key}>
-                        {item.label}
-                        <span className="muted"> — Not required at this stage</span>
-                      </li>
-                    ))}
-                </ul>
-              </details>
-            ) : null}
-          </>
+          <ul className="checklist">
+            {(phase.isEarlyStage ? earlyVaultItems : vaultChecklist).map((item) => (
+              <li key={item.key}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                  }}
+                >
+                  <span>
+                    {item.status === "AVAILABLE" ? "✅" : "•"}{" "}
+                    {getGreekChecklistLabel(item.key, item.label)}
+                    <span className="muted">
+                      {" "}
+                      — {getGreekDocumentStatusLabel(item.status)}
+                      {item.validUntil
+                        ? ` · έως ${item.validUntil}`
+                        : item.status === "AVAILABLE"
+                          ? ` · ${item.note ?? getNoExpiryNote(item.key)}`
+                          : item.note
+                            ? ` · ${item.note}`
+                            : ""}
+                    </span>
+                  </span>
+                  {item.driveUrl ? (
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() => void openExternalUrl(item.driveUrl!)}
+                    >
+                      {UI.openInDrive}
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
         ) : (
-          <>
-            <ul className="checklist">
-              {tender.documentChecklist
-                .filter((item) =>
-                  phase.isEarlyStage
-                    ? item.key.includes("outreach") ||
-                      item.key.includes("company_profile") ||
-                      item.key.includes("profile")
-                    : true,
-                )
-                .map((item) => (
-                  <li key={item.key}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                      <span>
-                        {item.status === "AVAILABLE" ? "✅" : "•"} {item.label}
-                      </span>
-                      <select
-                        aria-label={`${item.label} status`}
-                        value={item.status}
-                        onChange={(e) =>
-                          void handleChecklistToggle(item.key, e.target.value)
-                        }
-                      >
-                        {[
-                          "AVAILABLE",
-                          "MISSING",
-                          "EXPIRED",
-                          "REQUIRED",
-                          "NOT_REQUIRED",
-                          "UNKNOWN",
-                        ].map((status) => (
-                          <option key={status} value={status}>
-                            {status}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </li>
-                ))}
-            </ul>
-            {phase.isEarlyStage ? (
-              <details style={{ marginTop: 12 }}>
-                <summary className="muted">
-                  Documents that may be required later (not required at this stage)
-                </summary>
-                <ul className="checklist" style={{ marginTop: 8 }}>
-                  {tender.documentChecklist
-                    .filter(
-                      (item) =>
-                        !item.key.includes("outreach") &&
-                        !item.key.includes("company_profile") &&
-                        !item.key.includes("profile"),
-                    )
-                    .map((item) => (
-                      <li key={item.key}>
-                        {item.label}
-                        <span className="muted"> — Not required at this stage</span>
-                      </li>
+          <ul className="checklist">
+            {(phase.isEarlyStage
+              ? earlyChecklistItems
+              : tender.documentChecklist
+            ).map((item) => (
+              <li key={item.key}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                  }}
+                >
+                  <span>
+                    {item.status === "AVAILABLE" ? "✅" : "•"}{" "}
+                    {getGreekChecklistLabel(item.key, item.label)}
+                    <span className="muted">
+                      {" "}
+                      — {getGreekDocumentStatusLabel(item.status)}
+                    </span>
+                  </span>
+                  <select
+                    aria-label={`${item.label} status`}
+                    value={item.status}
+                    onChange={(e) =>
+                      void handleChecklistToggle(item.key, e.target.value)
+                    }
+                  >
+                    {[
+                      "AVAILABLE",
+                      "MISSING",
+                      "EXPIRED",
+                      "REQUIRED",
+                      "NOT_REQUIRED",
+                      "UNKNOWN",
+                    ].map((status) => (
+                      <option key={status} value={status}>
+                        {getGreekDocumentStatusLabel(status)}
+                      </option>
                     ))}
-                </ul>
-              </details>
-            ) : null}
-          </>
+                  </select>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
-      {isDesktop() && !phase.isTerminal ? (
-        <section className="card">
-          {phase.isEarlyStage ? (
-            <>
-              <h3>Early-stage actions</h3>
-              <p className="muted" style={{ marginTop: 0 }}>
-                Early Outreach ≠ Offer Submission. Generate creates a Drive copy and
-                fills known fields — nothing is sent.
-              </p>
-              <div className="actions">
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => void handleCopyTemplate("earlyOutreach")}
-                >
-                  Generate Early Outreach
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => void handleCreateWorkspace()}
-                >
-                  Create Tender Workspace
-                </button>
-              </div>
-              <details style={{ marginTop: 16 }}>
-                <summary>
-                  Formal offer — not required at Primary Request stage
-                </summary>
-                <p className="muted">
-                  Technical / Economic / Declaration become primary when a formal
-                  invitation (PROC) is detected. Available here only if needed early.
-                </p>
-                <div className="actions">
+      {/* 7. Collapsed secondary areas */}
+      <details className="card">
+        <summary>
+          <strong>{UI.whyMatched}</strong>
+        </summary>
+        <ul className="trace-list" style={{ marginTop: 12 }}>
+          {tender.decisionTrace.map((item) => (
+            <li key={item.text} className={`tone-${item.tone}`}>
+              {item.tone === "positive" ? "✅" : item.tone === "warning" ? "⚠" : "❌"}{" "}
+              {item.text}
+            </li>
+          ))}
+        </ul>
+      </details>
+
+      <details className="card">
+        <summary>
+          <strong>{UI.timeline}</strong>
+        </summary>
+        <ul className="timeline" style={{ marginTop: 12 }}>
+          {tender.events.map((event) => (
+            <li key={event.id}>
+              <span className="muted">{formatTime(event.createdAt)}</span>
+              <span>
+                {event.eventType}
+                {event.note ? ` — ${event.note}` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
+
+      {phase.isEarlyStage ? (
+        <details className="card">
+          <summary>
+            <strong>
+              {formalDriveDocs.length > 0
+                ? UI.laterStageTestDocs
+                : UI.laterStageDocs}
+            </strong>
+          </summary>
+          <p className="muted">{UI.laterStageHelper}</p>
+          {vaultChecklist && laterVaultItems.length > 0 ? (
+            <ul className="checklist">
+              {laterVaultItems.map((item) => (
+                <li key={item.key}>
+                  {getGreekChecklistLabel(item.key, item.label)}
+                  <span className="muted"> — Δεν απαιτείται σε αυτό το στάδιο</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <ul className="checklist">
+              {laterChecklistItems.map((item) => (
+                <li key={item.key}>
+                  {getGreekChecklistLabel(item.key, item.label)}
+                  <span className="muted"> — Δεν απαιτείται σε αυτό το στάδιο</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {formalDriveDocs.length > 0 ? (
+            <ul className="checklist">
+              {formalDriveDocs.map((doc) => (
+                <li key={doc.id}>
+                  {getGreekDriveDocTypeLabel(doc.type)} —{" "}
+                  {getGreekDocumentStatusLabel(doc.status)}{" "}
                   <button
                     type="button"
-                    className="btn"
-                    onClick={() => setShowLaterStage((v) => !v)}
+                    className="btn ghost"
+                    onClick={() => void openExternalUrl(doc.driveUrl)}
                   >
-                    {showLaterStage ? "Hide formal offer tools" : "Show formal offer tools"}
+                    {UI.openInDrive}
                   </button>
-                </div>
-                {showLaterStage ? (
-                  <>
-                    <div className="actions">
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => void handlePreparePackage()}
-                      >
-                        Prepare Offer Package
-                      </button>
-                    </div>
-                    {renderFormalOfferControls()}
-                  </>
-                ) : null}
-              </details>
-            </>
+                </li>
+              ))}
+            </ul>
           ) : null}
-
-          {phase.isFormalStage || (!phase.isEarlyStage && tender.currentStatus !== "SUBMITTED") ? (
-            <>
-              <h3>Formal offer package</h3>
-              <p className="muted" style={{ marginTop: 0 }}>
-                Creates Drive copies from master templates and fills known fields.
-                Does not send anything.
-              </p>
-              <div className="actions">
-                <button
-                  type="button"
-                  className="btn primary"
-                  onClick={() => void handlePreparePackage()}
-                >
-                  Prepare Offer Package
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => void handleCreateWorkspace()}
-                >
-                  Create Tender Workspace
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => void handleCopyTemplate("earlyOutreach")}
-                >
-                  Generate Early Outreach
-                </button>
-              </div>
-              {renderFormalOfferControls()}
-            </>
-          ) : null}
-
-          {tender.currentStatus === "SUBMITTED" ? (
-            <>
-              <h3>Drive documents</h3>
-              <p className="muted">Submission already recorded — generation is secondary.</p>
-            </>
-          ) : null}
-
-          {driveDocuments.length > 0 ? (
-            <div style={{ marginTop: 16 }}>
-              <h4>Generated Drive documents</h4>
-              <ul className="checklist">
-                {driveDocuments.map((doc) => (
-                  <li key={doc.id}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                        <span>
-                          {doc.type} — {doc.status}
-                        </span>
-                        <span className="actions" style={{ marginTop: 0 }}>
-                          <button
-                            type="button"
-                            className="btn ghost"
-                            onClick={() => void openExternalUrl(doc.driveUrl)}
-                          >
-                            Open in Drive
-                          </button>
-                          <button
-                            type="button"
-                            className="btn"
-                            disabled={
-                              doc.unresolvedPlaceholders.length > 0 ||
-                              doc.status === "READY"
-                            }
-                            onClick={() => void handleMarkDriveDocReady(doc.id)}
-                          >
-                            Mark READY
-                          </button>
-                        </span>
-                      </div>
-                      {doc.unresolvedPlaceholders.length > 0 ? (
-                        <div className="muted">
-                          Unresolved fields: {doc.unresolvedPlaceholders.join(", ")}
-                        </div>
-                      ) : (
-                        <div className="muted">No unresolved placeholders</div>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {packageReadiness && phase.isFormalStage ? (
-            <div style={{ marginTop: 12 }}>
-              <strong>PACKAGE READINESS — {packageReadiness.summary}</strong>
-              <h4>Company Documents</h4>
-              <ul className="checklist">
-                {packageReadiness.companyDocuments.map((row) => (
-                  <li key={row.label}>
-                    {row.status === "AVAILABLE" ? "✓" : "⚠"} {row.label} — {row.status}
-                    {row.detail ? ` (${row.detail})` : ""}
-                  </li>
-                ))}
-              </ul>
-              <h4>Generated Documents</h4>
-              <ul className="checklist">
-                {packageReadiness.generatedDocuments.map((row) => (
-                  <li key={row.label}>
-                    {row.status === "DRAFT" || row.status === "READY" ? "✓" : "⚠"}{" "}
-                    {row.label} — {row.status}
-                    {row.detail ? ` (${row.detail})` : ""}
-                  </li>
-                ))}
-              </ul>
-              <p className="muted">
-                Readiness: {packageReadiness.ready ? "READY" : "NOT READY"} — not sent
-              </p>
-            </div>
-          ) : null}
-        </section>
+        </details>
       ) : null}
 
-      <section className="card">
-        <h3>Draft area</h3>
-        {phase.isEarlyStage ? (
-          <>
-            {earlyDraftKeys.map((key) => renderDraftRow(key))}
-            <details style={{ marginTop: 12 }}>
-              <summary className="muted">Later-stage drafts</summary>
-              <div style={{ marginTop: 8 }}>
-                {laterDraftKeys.map((key) => renderDraftRow(key))}
-              </div>
-            </details>
-          </>
-        ) : (
-          visibleDraftKeys.map((key) => renderDraftRow(key))
-        )}
-      </section>
-
-      <section className="card">
-        <h3>Approval & send gate</h3>
-        <p className="muted">
-          Generate, Mark Ready, and Approve do <strong>not</strong> send anything.
-          Explicit approval is mandatory before any future send. Cloud watcher never
-          sends externally.
-        </p>
-        <div className="actions">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => void handleMarkReady()}
-            disabled={Boolean(tender.submission) || tender.currentStatus === "READY"}
-          >
-            Mark Ready
-          </button>
-          <button
-            type="button"
-            className="btn primary"
-            onClick={() => void handleApprove()}
-            disabled={
-              Boolean(tender.submission) ||
-              tender.currentStatus !== "READY" ||
-              tender.approvalStatus === "APPROVED"
-            }
-          >
-            Approve
-          </button>
-          <button type="button" className="btn" disabled title="Sending integration not configured">
-            Send — Sending integration not configured
-          </button>
-        </div>
-        {tender.approvalStatus === "APPROVED" ? (
-          <p className="alert-box" style={{ marginTop: 12 }}>
-            Approved at {formatDateTime(tender.approvedAt)}. Send is still blocked
-            until local sending is configured.
-          </p>
-        ) : null}
-      </section>
+      {phase.isEarlyStage ? (
+        <details className="card">
+          <summary>
+            <strong>{UI.formalSubmission}</strong>
+          </summary>
+          <p className="muted">{UI.formalSubmissionHelper}</p>
+          <form className="form-grid" onSubmit={(e) => void handleSaveContact(e)}>
+            <input
+              type="hidden"
+              name="contact_name"
+              value={tender.contact.name ?? ""}
+            />
+            <input
+              type="hidden"
+              name="contact_department"
+              value={tender.contact.department ?? ""}
+            />
+            <input
+              type="hidden"
+              name="contact_email"
+              value={tender.contact.email ?? ""}
+            />
+            <input
+              type="hidden"
+              name="contact_phone"
+              value={tender.contact.phone ?? ""}
+            />
+            <input
+              type="hidden"
+              name="scope_summary"
+              value={tender.scopeSummary ?? ""}
+            />
+            <div className="grid-2">
+              <label>
+                {UI.submissionMethod}
+                <select
+                  name="submission_method"
+                  defaultValue={tender.submissionInfo.method || "UNKNOWN"}
+                >
+                  {["EMAIL", "PORTAL", "ESIDIS", "PHYSICAL", "OTHER", "UNKNOWN"].map(
+                    (method) => (
+                      <option key={method} value={method}>
+                        {getGreekSubmissionMethodLabel(method)}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
+              <label>
+                {UI.submissionEmail}
+                <input
+                  name="submission_email"
+                  defaultValue={tender.submissionInfo.email ?? ""}
+                />
+              </label>
+              <label>
+                {UI.portalOther}
+                <input
+                  name="submission_portal"
+                  defaultValue={tender.submissionInfo.portal ?? ""}
+                />
+              </label>
+              <label>
+                {UI.instructions}
+                <textarea
+                  name="submission_instructions"
+                  defaultValue={tender.submissionInfo.instructions ?? ""}
+                />
+              </label>
+            </div>
+            <div className="actions">
+              <button type="submit" className="btn primary">
+                {UI.save}
+              </button>
+            </div>
+          </form>
+        </details>
+      ) : null}
 
       {!tender.submission ? (
-        <section className="card">
-          <h3>Record existing submission</h3>
-          <p className="muted">
-            Use only when something was already sent outside the dashboard. This
-            does not send anything.
-          </p>
+        <details className="card">
+          <summary>
+            <strong>{UI.moreActions}</strong>
+          </summary>
+          <p className="muted">{UI.recordSubmissionHelper}</p>
           {!showRecordForm ? (
             <button
               type="button"
               className="btn"
               onClick={() => setShowRecordForm(true)}
             >
-              Record Existing Submission
+              {UI.recordSubmission}
             </button>
           ) : (
-            <form className="form-grid" onSubmit={(e) => void handleRecordSubmission(e)}>
+            <form
+              className="form-grid"
+              onSubmit={(e) => void handleRecordSubmission(e)}
+            >
               <label>
-                Submission date
+                Ημερομηνία υποβολής
                 <input
                   name="submitted_at"
                   type="datetime-local"
@@ -1494,50 +1660,52 @@ export const TenderDetailPage = () => {
                 />
               </label>
               <label>
-                Method
+                Τρόπος
                 <select name="submission_method" required defaultValue="EMAIL">
-                  {["EMAIL", "PORTAL", "ESIDIS", "PHYSICAL", "OTHER"].map((method) => (
-                    <option key={method} value={method}>
-                      {method}
-                    </option>
-                  ))}
+                  {["EMAIL", "PORTAL", "ESIDIS", "PHYSICAL", "OTHER"].map(
+                    (method) => (
+                      <option key={method} value={method}>
+                        {getGreekSubmissionMethodLabel(method)}
+                      </option>
+                    ),
+                  )}
                 </select>
               </label>
               <label>
-                Recipient
+                Παραλήπτης
                 <input name="recipient" />
               </label>
               <label>
-                Subject
+                Θέμα
                 <input name="subject" />
               </label>
               <label>
-                Amount without VAT
+                Ποσό χωρίς ΦΠΑ
                 <input name="amount_without_vat" type="number" />
               </label>
               <label>
-                External / protocol reference
+                Εξωτερική / αριθμός πρωτοκόλλου
                 <input name="external_reference" />
               </label>
               <label>
-                Notes
+                Σημειώσεις
                 <textarea name="notes" />
               </label>
               <div className="actions">
                 <button type="submit" className="btn primary">
-                  Confirm record
+                  Επιβεβαίωση καταχώρισης
                 </button>
                 <button
                   type="button"
                   className="btn"
                   onClick={() => setShowRecordForm(false)}
                 >
-                  Cancel
+                  {UI.cancel}
                 </button>
               </div>
             </form>
           )}
-        </section>
+        </details>
       ) : null}
     </div>
   );

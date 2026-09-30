@@ -87,6 +87,22 @@ const parseReasons = (raw: string | null): string[] => {
   }
 };
 
+/** Mirror poll-kimdis collectDescription so re-scores match live poll. */
+const descriptionFromRaw = (rawJson: string | null): string => {
+  if (!rawJson) return "";
+  try {
+    const parsed = JSON.parse(rawJson) as {
+      objectDetails?: Array<{ shortDescription?: string | null }> | null;
+    };
+    return (parsed.objectDetails ?? [])
+      .map((detail) => detail.shortDescription ?? "")
+      .filter(Boolean)
+      .join("\n");
+  } catch {
+    return "";
+  }
+};
+
 const stageLabel = (recordType: RecordType, stage: string): string => {
   if (stage === "ALREADY_ADVANCED") return "Already advanced";
   if (stage === "TARGETED") return "Targeted invitation";
@@ -131,6 +147,7 @@ const classifyRow = (
   slackBlockReason: string | null;
 } => {
   const cpvs = parseCpvs(row.cpvs);
+  const description = descriptionFromRaw(row.raw_json);
   const targetedSupplier = Boolean(row.targeted_supplier);
   const nonInvitedOffersRejected = Boolean(row.non_invited_offers_rejected);
   const pdfStatus = row.pdf_text_status ?? "none";
@@ -138,7 +155,7 @@ const classifyRow = (
 
   const gate = isWebRelevant({
     title: row.title ?? "",
-    description: "",
+    description,
     cpvs,
   });
 
@@ -186,7 +203,7 @@ const classifyRow = (
     const scored = scoreOpportunity({
       recordType: row.record_type,
       title: row.title ?? "",
-      description: "",
+      description,
       cpvs,
       budgetWithoutVat: row.budget_without_vat,
       minBudget: config.MIN_BUDGET,

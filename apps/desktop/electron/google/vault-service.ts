@@ -389,15 +389,22 @@ export const getChecklistFromVault = async (): Promise<
 
   for (const doc of status.companyDocuments) {
     const first = doc.files[0];
+    let note: string | null = null;
+    if (!first) {
+      note = "Δεν υπάρχει αρχείο στον φάκελο Vault";
+    } else if (!first.validUntil?.trim()) {
+      note =
+        doc.key === "gemi" || doc.folderName.toLowerCase().includes("gemi")
+          ? "Δεν αναγράφεται ημερομηνία λήξης"
+          : "Χωρίς ημερομηνία λήξης";
+    }
     items.push({
       key: doc.key,
       label: doc.folderName,
-      status: first
-        ? first.validity
-        : "MISSING",
+      status: first ? first.validity : "MISSING",
       validUntil: first?.validUntil ?? null,
       driveUrl: first?.webViewLink ?? null,
-      note: first ? null : "No file in Vault folder",
+      note,
     });
   }
 
@@ -458,12 +465,12 @@ export const preparePackageReadiness = async (
       status: first.validity,
       detail:
         first.validity === "EXPIRED"
-          ? `Expired ${first.validUntil}`
-          : first.validity === "UNKNOWN"
-            ? "Expiry unknown — not treated as valid"
-            : first.validUntil
-              ? `Valid until ${first.validUntil}`
-              : null,
+          ? `Έληξε ${first.validUntil}`
+          : first.validUntil
+            ? `Ισχύει έως ${first.validUntil}`
+            : doc.key === "gemi" || doc.folderName.toLowerCase().includes("gemi")
+              ? "Δεν αναγράφεται ημερομηνία λήξης"
+              : "Χωρίς ημερομηνία λήξης",
     };
   });
 
