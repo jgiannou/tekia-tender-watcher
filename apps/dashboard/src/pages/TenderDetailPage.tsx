@@ -1,6 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, openExternalUrl, type DraftPackage, type TenderDetail } from "../api";
+import {
+  api,
+  isDesktop,
+  openExternalUrl,
+  type DraftPackage,
+  type TenderDetail,
+} from "../api";
 import { formatDateTime, formatEuro, formatTime, statusClass } from "../lib/format";
 
 const draftKeys = ["outreach", "technical", "economic", "declarations"] as const;
@@ -13,6 +19,24 @@ const draftLabels: Record<DraftKey, string> = {
   declarations: "Declarations",
 };
 
+type VaultChecklistItem = {
+  key: string;
+  label: string;
+  status: string;
+  validUntil: string | null;
+  driveUrl: string | null;
+  note: string | null;
+};
+
+type PackageReadiness = {
+  companyDocuments: Array<{ label: string; status: string; detail: string | null }>;
+  generatedDocuments: Array<{ label: string; status: string; detail: string | null }>;
+  ready: boolean;
+  summary: string;
+  __tekiaError?: boolean;
+  message?: string;
+};
+
 export const TenderDetailPage = () => {
   const { referenceNumber = "" } = useParams();
   const [tender, setTender] = useState<TenderDetail | null>(null);
@@ -21,6 +45,12 @@ export const TenderDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [showRecordForm, setShowRecordForm] = useState(false);
   const [editingDraft, setEditingDraft] = useState<DraftKey | null>(null);
+  const [vaultChecklist, setVaultChecklist] = useState<VaultChecklistItem[] | null>(
+    null,
+  );
+  const [packageReadiness, setPackageReadiness] = useState<PackageReadiness | null>(
+    null,
+  );
 
   const load = async (markReviewed = false) => {
     setLoading(true);
@@ -43,6 +73,90 @@ export const TenderDetailPage = () => {
     void load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referenceNumber]);
+
+  useEffect(() => {
+    if (!isDesktop() || !window.tekia?.drive) {
+      setVaultChecklist(null);
+      return;
+    }
+    void window.tekia.drive.checklist().then((rows) => {
+      if (rows && typeof rows === "object" && "__tekiaError" in (rows as object)) {
+        return;
+      }
+      setVaultChecklist(rows as VaultChecklistItem[]);
+    });
+  }, [referenceNumber]);
+
+  const handlePreparePackage = async () => {
+    if (!isDesktop() || !window.tekia?.drive) {
+      setMessage("Prepare Package (Drive) is available in the desktop app.");
+      return;
+    }
+    try {
+      const result = (await window.tekia.drive.packageReadiness(
+        referenceNumber,
+      )) as PackageReadiness;
+      if (result?.__tekiaError) {
+        setError(result.message ?? "Package readiness failed");
+        return;
+      }
+      setPackageReadiness(result);
+      setMessage(
+        `Package readiness: ${result.summary}. Nothing was sent.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleCreateWorkspace = async () => {
+    if (!isDesktop() || !window.tekia?.drive) return;
+    try {
+      const result = (await window.tekia.drive.createWorkspace(
+        referenceNumber,
+      )) as { webViewLink?: string; __tekiaError?: boolean; message?: string };
+      if (result?.__tekiaError) {
+        setError(result.message ?? "Workspace creation failed");
+        return;
+      }
+      setMessage("Tender workspace created under Submissions/{ADAM}/.");
+      if (result.webViewLink) void openExternalUrl(result.webViewLink);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleCopyTemplate = async (
+    templateKey:
+      | "earlyOutreach"
+      | "technicalOffer"
+      | "economicOffer"
+      | "declarations",
+  ) => {
+    if (!isDesktop() || !window.tekia?.drive) return;
+    try {
+      const result = (await window.tekia.drive.copyTemplate(
+        referenceNumber,
+        templateKey,
+      )) as {
+        name?: string;
+        driveUrl?: string;
+        masterUntouched?: boolean;
+        __tekiaError?: boolean;
+        message?: string;
+      };
+      if (result?.__tekiaError) {
+        setError(result.message ?? "Template copy failed");
+        return;
+      }
+      setMessage(
+        `Created tender copy “${result.name}” (master untouched). Nothing sent.`,
+      );
+      if (result.driveUrl) void openExternalUrl(result.driveUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const handleSaveContact = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -469,41 +583,134 @@ export const TenderDetailPage = () => {
 
       <section className="card">
         <h3>Document checklist</h3>
-        <ul className="checklist">
-          {tender.documentChecklist.map((item) => (
-            <li key={item.key}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                <span>
-                  {item.status === "AVAILABLE"
-                    ? "✅"
-                    : item.status === "REQUIRED" || item.status === "MISSING"
-                      ? "⚠"
-                      : "•"}{" "}
-                  {item.label}
-                </span>
-                <select
-                  aria-label={`${item.label} status`}
-                  value={item.status}
-                  onChange={(e) => void handleChecklistToggle(item.key, e.target.value)}
-                >
-                  {[
-                    "AVAILABLE",
-                    "MISSING",
-                    "EXPIRED",
-                    "REQUIRED",
-                    "NOT_REQUIRED",
-                    "UNKNOWN",
-                  ].map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </li>
-          ))}
-        </ul>
+        {vaultChecklist && vaultChecklist.length > 0 ? (
+          <ul className="checklist">
+            {vaultChecklist.map((item) => (
+              <li key={item.key}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <span>
+                    {item.status === "AVAILABLE"
+                      ? "✅"
+                      : item.status === "EXPIRED" ||
+                          item.status === "MISSING" ||
+                          item.status === "TO_GENERATE"
+                        ? "⚠"
+                        : "•"}{" "}
+                    {item.label}
+                    <span className="muted">
+                      {" "}
+                      — {item.status}
+                      {item.validUntil ? ` · until ${item.validUntil}` : ""}
+                      {item.note ? ` · ${item.note}` : ""}
+                    </span>
+                  </span>
+                  {item.driveUrl ? (
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() => void openExternalUrl(item.driveUrl!)}
+                    >
+                      Open in Drive
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <ul className="checklist">
+            {tender.documentChecklist.map((item) => (
+              <li key={item.key}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <span>
+                    {item.status === "AVAILABLE"
+                      ? "✅"
+                      : item.status === "REQUIRED" || item.status === "MISSING"
+                        ? "⚠"
+                        : "•"}{" "}
+                    {item.label}
+                  </span>
+                  <select
+                    aria-label={`${item.label} status`}
+                    value={item.status}
+                    onChange={(e) => void handleChecklistToggle(item.key, e.target.value)}
+                  >
+                    {[
+                      "AVAILABLE",
+                      "MISSING",
+                      "EXPIRED",
+                      "REQUIRED",
+                      "NOT_REQUIRED",
+                      "UNKNOWN",
+                    ].map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
+
+      {isDesktop() ? (
+        <section className="card">
+          <h3>Prepare Offer Package</h3>
+          <p className="muted">
+            Inspects Vault documents and templates. Does not send anything.
+          </p>
+          <div className="actions">
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => void handlePreparePackage()}
+            >
+              Prepare Offer Package
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void handleCreateWorkspace()}
+            >
+              Create Tender Workspace
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void handleCopyTemplate("technicalOffer")}
+            >
+              Copy Technical Offer → draft
+            </button>
+          </div>
+          {packageReadiness ? (
+            <div style={{ marginTop: 12 }}>
+              <strong>PACKAGE READINESS — {packageReadiness.summary}</strong>
+              <h4>Company Documents</h4>
+              <ul className="checklist">
+                {packageReadiness.companyDocuments.map((row) => (
+                  <li key={row.label}>
+                    {row.status === "AVAILABLE" ? "✓" : "⚠"} {row.label} — {row.status}
+                    {row.detail ? ` (${row.detail})` : ""}
+                  </li>
+                ))}
+              </ul>
+              <h4>Generated Documents</h4>
+              <ul className="checklist">
+                {packageReadiness.generatedDocuments.map((row) => (
+                  <li key={row.label}>
+                    {row.status === "DRAFT" || row.status === "READY" ? "✓" : "⚠"}{" "}
+                    {row.label} — {row.status}
+                    {row.detail ? ` (${row.detail})` : ""}
+                  </li>
+                ))}
+              </ul>
+              <p className="muted">Readiness: {packageReadiness.ready ? "READY" : "NOT READY"}</p>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="card">
         <h3>Draft area</h3>

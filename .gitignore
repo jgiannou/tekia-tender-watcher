@@ -7,6 +7,8 @@ data/
 .env
 .env.local
 apps/dashboard/.env
+apps/desktop/.env
+apps/desktop/google-oauth.local.json
 .DS_Store
 coverage/
 *.log

@@ -200,6 +200,67 @@ Bundle id: `gr.tekia.tenderwatcher`
 - Desktop has **no** automatic email/offer/portal submission
 - Approval + Send remain explicit human actions (Send still not configured)
 
+## Google Drive Vault Setup
+
+Google Drive OAuth belongs **only** to the Electron desktop app (Main process).  
+Do **not** put Google credentials in Coolify / cloud watcher / `VITE_*` variables.
+
+### Google Cloud Console
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/)
+2. Create or select project: **TEKIA Tender Watcher**
+3. **APIs & Services → Library → Google Drive API → Enable**
+4. **Google Auth Platform / APIs & Services → OAuth consent screen**  
+   Configure for internal/testing users as needed
+5. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
+   - Application type: **Desktop app**
+   - Name: **TEKIA Tender Watcher Desktop**
+6. Copy **Client ID** (and Client Secret if shown — Desktop secrets are not server-confidential)
+
+### Local desktop configuration
+
+Edit (gitignored):
+
+`apps/desktop/.env`
+
+```env
+GOOGLE_OAUTH_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=xxxxxxxx
+GOOGLE_DRIVE_SCOPE=https://www.googleapis.com/auth/drive.file openid email profile
+```
+
+Do **not** put the TEKIA/Tenders folder ID in `.env`. Select it in the app UI.
+
+Alternative (also gitignored): `apps/desktop/google-oauth.local.json`
+
+```json
+{
+  "clientId": "xxxxxxxx.apps.googleusercontent.com",
+  "clientSecret": "xxxxxxxx"
+}
+```
+
+### In the app
+
+1. `pnpm desktop:dev` (or packaged app)
+2. **Settings → Google Drive Vault → Connect Google Drive**
+3. Sign in via **system browser** (PKCE + loopback)
+4. Paste **one** root folder URL/ID: **TEKIA / Tenders**
+5. App discovers Company Documents / Templates / Submissions and known children
+6. **Refresh Vault** as needed
+
+### Scope note
+
+Initial scope is `drive.file` (narrow). Accessing a **pre-existing** TEKIA/Tenders tree by pasted folder ID may return **403**.  
+If that happens, the app **does not** silently escalate. It shows a scope warning. Broader read scope (`drive.readonly`) requires an explicit operator decision.
+
+### Tokens
+
+- Access/refresh tokens: Electron `safeStorage` in  
+  `~/Library/Application Support/TEKIA Tender Watcher/drive-vault.json`  
+  (token field encrypted; never sent to renderer or cloud watcher)
+- Disconnect removes local OAuth state; does **not** delete Drive files
+
 ## Local operator dashboard (web)
 
 The dashboard React app remains available in the browser for development. Do not deploy it to Coolify.

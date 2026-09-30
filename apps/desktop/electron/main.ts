@@ -22,6 +22,19 @@ import {
   loadWindowState,
   trackWindowState,
 } from "./window-state.js";
+import {
+  chooseTemplateMaster,
+  connectGoogleDrive,
+  copyTemplateForTender,
+  createTenderWorkspace,
+  disconnectDrive,
+  getChecklistFromVault,
+  getDriveStatus,
+  preparePackageReadiness,
+  saveVaultDocumentMeta,
+  setVaultRootFromInput,
+} from "./google/vault-service.js";
+import type { VaultDocumentMeta } from "./google/vault-store.js";
 
 assertDesktopCannotAutoSend();
 
@@ -304,6 +317,145 @@ const registerIpc = (): void => {
 
   ipcMain.handle("tekia:open-external", async (_event, url: string) =>
     openExternalSafe(String(url ?? "")),
+  );
+
+  const driveError = (error: unknown) => ({
+    __tekiaError: true,
+    status: 0,
+    code: "drive_error",
+    message: error instanceof Error ? error.message : String(error),
+    body: null,
+  });
+
+  ipcMain.handle("tekia:drive-status", async (_event, opts?: { refresh?: boolean }) => {
+    try {
+      return await getDriveStatus({ refresh: Boolean(opts?.refresh) });
+    } catch (error) {
+      return driveError(error);
+    }
+  });
+
+  ipcMain.handle("tekia:drive-connect", async () => {
+    try {
+      return await connectGoogleDrive();
+    } catch (error) {
+      return driveError(error);
+    }
+  });
+
+  ipcMain.handle("tekia:drive-disconnect", () => {
+    disconnectDrive();
+    return { ok: true };
+  });
+
+  ipcMain.handle(
+    "tekia:drive-set-root",
+    async (_event, folderUrlOrId: string) => {
+      try {
+        return await setVaultRootFromInput(String(folderUrlOrId ?? ""));
+      } catch (error) {
+        return driveError(error);
+      }
+    },
+  );
+
+  ipcMain.handle("tekia:drive-refresh", async () => {
+    try {
+      return await getDriveStatus({ refresh: true });
+    } catch (error) {
+      return driveError(error);
+    }
+  });
+
+  ipcMain.handle(
+    "tekia:drive-choose-template",
+    (_event, payload: { key: string; fileId: string }) => {
+      try {
+        chooseTemplateMaster(
+          payload.key as
+            | "earlyOutreach"
+            | "technicalOffer"
+            | "economicOffer"
+            | "declarations",
+          payload.fileId,
+        );
+        return { ok: true };
+      } catch (error) {
+        return driveError(error);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "tekia:drive-save-doc-meta",
+    (
+      _event,
+      meta: {
+        driveFileId: string;
+        documentType: VaultDocumentMeta["documentType"];
+        validFrom: string | null;
+        validUntil: string | null;
+        notes: string | null;
+      },
+    ) => {
+      try {
+        saveVaultDocumentMeta(meta);
+        return { ok: true };
+      } catch (error) {
+        return driveError(error);
+      }
+    },
+  );
+
+  ipcMain.handle("tekia:drive-checklist", async () => {
+    try {
+      return await getChecklistFromVault();
+    } catch (error) {
+      return driveError(error);
+    }
+  });
+
+  ipcMain.handle(
+    "tekia:drive-package-readiness",
+    async (_event, referenceNumber: string) => {
+      try {
+        return await preparePackageReadiness(String(referenceNumber ?? ""));
+      } catch (error) {
+        return driveError(error);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "tekia:drive-create-workspace",
+    async (_event, referenceNumber: string) => {
+      try {
+        return await createTenderWorkspace(String(referenceNumber ?? ""));
+      } catch (error) {
+        return driveError(error);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "tekia:drive-copy-template",
+    async (
+      _event,
+      payload: {
+        referenceNumber: string;
+        templateKey:
+          | "earlyOutreach"
+          | "technicalOffer"
+          | "economicOffer"
+          | "declarations";
+      },
+    ) => {
+      try {
+        return await copyTemplateForTender(payload);
+      } catch (error) {
+        return driveError(error);
+      }
+    },
   );
 };
 

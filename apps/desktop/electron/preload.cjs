@@ -31,10 +31,33 @@ const api = {
     }),
 };
 
+const drive = {
+  status: (opts) => ipcRenderer.invoke("tekia:drive-status", opts ?? {}),
+  connect: () => ipcRenderer.invoke("tekia:drive-connect"),
+  disconnect: () => ipcRenderer.invoke("tekia:drive-disconnect"),
+  setRoot: (folderUrlOrId) =>
+    ipcRenderer.invoke("tekia:drive-set-root", folderUrlOrId),
+  refresh: () => ipcRenderer.invoke("tekia:drive-refresh"),
+  chooseTemplate: (key, fileId) =>
+    ipcRenderer.invoke("tekia:drive-choose-template", { key, fileId }),
+  saveDocMeta: (meta) => ipcRenderer.invoke("tekia:drive-save-doc-meta", meta),
+  checklist: () => ipcRenderer.invoke("tekia:drive-checklist"),
+  packageReadiness: (referenceNumber) =>
+    ipcRenderer.invoke("tekia:drive-package-readiness", referenceNumber),
+  createWorkspace: (referenceNumber) =>
+    ipcRenderer.invoke("tekia:drive-create-workspace", referenceNumber),
+  copyTemplate: (referenceNumber, templateKey) =>
+    ipcRenderer.invoke("tekia:drive-copy-template", {
+      referenceNumber,
+      templateKey,
+    }),
+};
+
 const tekia = {
   isDesktop: true,
   platform: process.platform,
   api,
+  drive,
   connection: {
     get: () => ipcRenderer.invoke("tekia:connection-get"),
     save: (input) => ipcRenderer.invoke("tekia:connection-save", input),

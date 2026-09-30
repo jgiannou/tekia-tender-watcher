@@ -10,12 +10,22 @@ export const DesktopConnectionPanel = () => {
   const [apiUrl, setApiUrl] = useState("");
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     if (!isDesktop() || !window.tekia) return;
-    void window.tekia.connection.get().then((value) => {
+    void window.tekia.connection.get().then(async (value) => {
       setConn(value);
       setApiUrl(value.apiUrl);
+      if (!value.apiUrl || !value.hasToken) {
+        setEditing(true);
+        setStatus("not_configured");
+        return;
+      }
+      const result = await window.tekia!.connection.test();
+      setStatus(result.status);
+      setMessage(result.message);
+      setEditing(result.status !== "connected");
     });
   }, []);
 
@@ -50,9 +60,10 @@ export const DesktopConnectionPanel = () => {
       setToken("");
       const result = await window.tekia!.connection.test();
       setStatus(result.status);
+      setEditing(result.status !== "connected");
       setMessage(
         result.status === "connected"
-          ? "Saved and connected. Token is stored securely and will not be shown again."
+          ? "Saved and connected."
           : `Saved. ${result.message}`,
       );
     } catch (err) {
@@ -74,12 +85,29 @@ export const DesktopConnectionPanel = () => {
             ? "API Unreachable"
             : "Disconnected";
 
+  if (status === "connected" && !editing) {
+    return (
+      <section className="card">
+        <div className="draft-row">
+          <div>
+            <h2 style={{ margin: 0 }}>Desktop Connection</h2>
+            <p className="muted" style={{ margin: "4px 0 0" }}>
+              Connected · {conn?.apiUrl || apiUrl}
+            </p>
+          </div>
+          <button type="button" className="btn" onClick={() => setEditing(true)}>
+            Update connection
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="card form-grid">
       <h2>Desktop Connection</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        Cloud Watcher API credentials stay in the Electron main process (encrypted
-        with macOS safeStorage). The renderer never receives the raw token.
+        Only on this Settings page. Use the ADMIN_TOKEN from the watcher .env.
       </p>
       <div className="meta-grid">
         <div className="meta-item">

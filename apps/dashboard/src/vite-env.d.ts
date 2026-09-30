@@ -9,6 +9,23 @@ interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
 
+type TekiaDriveBridge = {
+  status: (opts?: { refresh?: boolean }) => Promise<unknown>;
+  connect: () => Promise<unknown>;
+  disconnect: () => Promise<unknown>;
+  setRoot: (folderUrlOrId: string) => Promise<unknown>;
+  refresh: () => Promise<unknown>;
+  chooseTemplate: (key: string, fileId: string) => Promise<unknown>;
+  saveDocMeta: (meta: unknown) => Promise<unknown>;
+  checklist: () => Promise<unknown>;
+  packageReadiness: (referenceNumber: string) => Promise<unknown>;
+  createWorkspace: (referenceNumber: string) => Promise<unknown>;
+  copyTemplate: (
+    referenceNumber: string,
+    templateKey: string,
+  ) => Promise<unknown>;
+};
+
 type TekiaDesktopBridge = {
   isDesktop: true;
   platform: string;
@@ -27,6 +44,7 @@ type TekiaDesktopBridge = {
       body: unknown,
     ) => Promise<unknown>;
   };
+  drive: TekiaDriveBridge;
   connection: {
     get: () => Promise<{ apiUrl: string; hasToken: boolean }>;
     save: (input: {
