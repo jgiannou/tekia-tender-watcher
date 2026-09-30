@@ -8,6 +8,11 @@ import type {
   RecordType,
 } from "../kimdis/types.js";
 import { scoreOpportunity } from "../filters/scorer.js";
+import {
+  isWebRelevant,
+  webCategorySlackLabel,
+  type WebCategory,
+} from "../filters/web-relevance.js";
 import { extractPdfText, type PdfTextStatus } from "../pdf/extract-text.js";
 import { classifyPdfText } from "../pdf/classify.js";
 import type { Repository } from "../db/repository.js";
@@ -117,14 +122,26 @@ const normalizeNotice = (record: KimdisNoticeRecord): NormalizedRecord => ({
 });
 
 const shouldNotify = (
+  webRelevant: boolean,
+  category: WebCategory,
   score: number,
   threshold: number,
   targetedSupplier: boolean,
   targetedAlertScore: number,
 ): boolean => {
+  if (!webRelevant) return false;
+  if (category === "UNKNOWN") return false;
   if (score < threshold) return false;
   if (targetedSupplier && score < targetedAlertScore) return false;
   return true;
+};
+
+/** Lightweight pre-filter: skip PDF download for obvious non-web noise. */
+const maybeWorthPdf = (title: string, description: string, cpvs: string[]): boolean => {
+  const gate = isWebRelevant({ title, description, cpvs });
+  if (gate.isWebRelevant || gate.status === "NEEDS_REVIEW") return true;
+  // Broad IT / weak signals — still try PDF only if weak IT terms exist (might reveal web scope)
+  return gate.weakOnlySignals.length > 0 || gate.highConfidenceCpv;
 };
 
 export const createPollJob = (deps: {
@@ -157,16 +174,83 @@ export const createPollJob = (deps: {
         targetedSupplier: Boolean(existing.targeted_supplier),
         nonInvitedOffersRejected: Boolean(existing.non_invited_offers_rejected),
         pdfTextStatus: (existing.pdf_text_status as PdfTextStatus) ?? "none",
-        officialPdfUrl: existing.official_pdf_url ?? deps.kimdis.pdfUrl(record.recordType, record.adam),
-        publicKimdisUrl: existing.public_kimdis_url ?? deps.kimdis.publicUrl(record.adam),
+        officialPdfUrl:
+          existing.official_pdf_url ??
+          deps.kimdis.pdfUrl(record.recordType, record.adam),
+        publicKimdisUrl:
+          existing.public_kimdis_url ?? deps.kimdis.publicUrl(record.adam),
         scoreReasons: [],
+        webRelevant: Boolean(existing.web_relevant),
+        webCategory: (existing.web_category as WebCategory) ?? "UNKNOWN",
+        relevanceStatus: existing.relevance_status ?? "IRRELEVANT",
+        ignoreReason: existing.ignore_reason,
         rawJson: record.raw,
         nowIso: new Date().toISOString(),
       });
       return { isNew: false, matching: false, notified: false };
     }
 
-    let metadataScore = scoreOpportunity({
+    let pdfText = "";
+    let pdfTextStatus: PdfTextStatus = "skipped";
+    let pdfClassification = classifyPdfText("");
+    let stage = record.recordType === "REQ" ? "EARLY" : "UNKNOWN";
+
+    // 1) metadata pre-filter → optionally fetch PDF for ambiguous cases
+    if (maybeWorthPdf(record.title, record.description, record.cpvs)) {
+      // Pre-score for PDF threshold using strong web hints only after a cheap gate peek
+      const preGate = isWebRelevant({
+        title: record.title,
+        description: record.description,
+        cpvs: record.cpvs,
+      });
+      const shouldFetchPdf =
+        preGate.isWebRelevant ||
+        preGate.status === "NEEDS_REVIEW" ||
+        preGate.highConfidenceCpv ||
+        preGate.weakOnlySignals.length > 0;
+
+      if (shouldFetchPdf) {
+        try {
+          const pdfBuffer = await deps.kimdis.downloadAttachment(
+            record.recordType,
+            record.adam,
+          );
+          const extracted = await extractPdfText(pdfBuffer);
+          pdfTextStatus = extracted.status;
+          if (extracted.status === "extracted") {
+            pdfText = extracted.text;
+            pdfClassification = classifyPdfText(extracted.text);
+            if (pdfClassification.stage === "ALREADY_ADVANCED") {
+              stage = "ALREADY_ADVANCED";
+            } else if (record.recordType === "REQ") {
+              stage = "EARLY";
+            } else {
+              stage = pdfClassification.targetedSupplier
+                ? "TARGETED_INVITATION"
+                : "OPEN_INVITATION";
+            }
+          }
+        } catch (error) {
+          pdfTextStatus = "error";
+          console.warn(
+            `pdf processing failed for ${record.adam}:`,
+            error instanceof Error ? error.message : error,
+          );
+        }
+      }
+    }
+
+    // 2) Hard web relevance gate (title + description + PDF)
+    const relevance = isWebRelevant({
+      title: record.title,
+      description: record.description,
+      cpvs: record.cpvs,
+      pdfText,
+    });
+
+    let score = 0;
+    let reasons: string[] = [];
+    let scoreFlags = scoreOpportunity({
       recordType: record.recordType,
       title: record.title,
       description: record.description,
@@ -176,58 +260,34 @@ export const createPollJob = (deps: {
       maxBudget: deps.config.MAX_BUDGET,
       hasNoticeRef: record.hasNoticeRef,
       isPrimaryRequest: record.isPrimaryRequest,
-    });
+      webCategory: relevance.category,
+    }).flags;
 
-    let pdfTextStatus: PdfTextStatus = "skipped";
-    let pdfClassification = classifyPdfText("");
-    let stage = record.recordType === "REQ" ? "EARLY" : "UNKNOWN";
-
-    if (metadataScore.score >= deps.config.PDF_SCORE_THRESHOLD) {
-      try {
-        const pdfBuffer = await deps.kimdis.downloadAttachment(
-          record.recordType,
-          record.adam,
-        );
-        const extracted = await extractPdfText(pdfBuffer);
-        pdfTextStatus = extracted.status;
-
-        if (extracted.status === "extracted") {
-          pdfClassification = classifyPdfText(extracted.text);
-          if (pdfClassification.stage === "ALREADY_ADVANCED") {
-            stage = "ALREADY_ADVANCED";
-          } else if (record.recordType === "REQ") {
-            stage = "EARLY";
-          } else {
-            stage = pdfClassification.targetedSupplier
-              ? "TARGETED_INVITATION"
-              : "OPEN_INVITATION";
-          }
-
-          metadataScore = scoreOpportunity({
-            recordType: record.recordType,
-            title: record.title,
-            description: record.description,
-            cpvs: record.cpvs,
-            budgetWithoutVat: record.budgetWithoutVat,
-            minBudget: deps.config.MIN_BUDGET,
-            maxBudget: deps.config.MAX_BUDGET,
-            hasNoticeRef: record.hasNoticeRef,
-            isPrimaryRequest: record.isPrimaryRequest,
-            pdf: {
-              alreadyAdvanced: pdfClassification.stage === "ALREADY_ADVANCED",
-              targetedSupplier: pdfClassification.targetedSupplier,
-              nonInvitedOffersRejected:
-                pdfClassification.nonInvitedOffersRejected,
-            },
-          });
-        }
-      } catch (error) {
-        pdfTextStatus = "error";
-        console.warn(
-          `pdf processing failed for ${record.adam}:`,
-          error instanceof Error ? error.message : error,
-        );
-      }
+    if (!relevance.isWebRelevant) {
+      score = 0;
+      stage = relevance.status === "NEEDS_REVIEW" ? "NEEDS_REVIEW" : "IRRELEVANT";
+      reasons = [relevance.ignoreReason ?? "Not web relevant"];
+    } else {
+      const scored = scoreOpportunity({
+        recordType: record.recordType,
+        title: record.title,
+        description: record.description,
+        cpvs: record.cpvs,
+        budgetWithoutVat: record.budgetWithoutVat,
+        minBudget: deps.config.MIN_BUDGET,
+        maxBudget: deps.config.MAX_BUDGET,
+        hasNoticeRef: record.hasNoticeRef,
+        isPrimaryRequest: record.isPrimaryRequest,
+        webCategory: relevance.category,
+        pdf: {
+          alreadyAdvanced: pdfClassification.stage === "ALREADY_ADVANCED",
+          targetedSupplier: pdfClassification.targetedSupplier,
+          nonInvitedOffersRejected: pdfClassification.nonInvitedOffersRejected,
+        },
+      });
+      score = scored.score;
+      reasons = scored.reasons;
+      scoreFlags = scored.flags;
     }
 
     const publicUrl = deps.kimdis.publicUrl(record.adam);
@@ -245,20 +305,26 @@ export const createPollJob = (deps: {
       budgetWithoutVat: record.budgetWithoutVat,
       budgetWithVat: record.budgetWithVat,
       cpvs: record.cpvs,
-      score: metadataScore.score,
+      score,
       stage,
       targetedSupplier: pdfClassification.targetedSupplier,
       nonInvitedOffersRejected: pdfClassification.nonInvitedOffersRejected,
       pdfTextStatus,
       officialPdfUrl: pdfUrl,
       publicKimdisUrl: publicUrl,
-      scoreReasons: metadataScore.reasons,
+      scoreReasons: reasons,
+      webRelevant: relevance.isWebRelevant,
+      webCategory: relevance.category,
+      relevanceStatus: relevance.status,
+      ignoreReason: relevance.ignoreReason,
       rawJson: record.raw,
       nowIso,
     });
 
     const matching = shouldNotify(
-      metadataScore.score,
+      relevance.isWebRelevant,
+      relevance.category,
+      score,
       deps.config.ALERT_SCORE_THRESHOLD,
       pdfClassification.targetedSupplier,
       deps.config.TARGETED_ALERT_SCORE,
@@ -268,27 +334,27 @@ export const createPollJob = (deps: {
       return { isNew: true, matching, notified: false };
     }
 
-    // Dedupe: never notify twice for same ADAM.
     if (deps.repo.wasNotified(record.adam)) {
       return { isNew: true, matching, notified: false };
     }
 
     const text = formatSlackMessage({
-      score: metadataScore.score,
+      score,
       title: record.title,
       organization: record.organization,
       budgetWithoutVat: record.budgetWithoutVat,
       recordType: record.recordType,
       stageLabel: stageLabel(record.recordType, stage, record.isPrimaryRequest),
+      webCategoryLabel: webCategorySlackLabel(relevance.category),
       cpvs: record.cpvs,
       submissionDate: record.submissionDate,
       finalSubmissionDate: record.finalSubmissionDate,
       publicUrl,
       pdfUrl,
-      reasons: metadataScore.reasons,
+      reasons,
       flags: {
-        earlyStage: metadataScore.flags.earlyStage,
-        hasLinkedNotice: metadataScore.flags.hasLinkedNotice,
+        earlyStage: scoreFlags.earlyStage,
+        hasLinkedNotice: scoreFlags.hasLinkedNotice,
         targetedSupplier: pdfClassification.targetedSupplier,
         nonInvitedOffersRejected: pdfClassification.nonInvitedOffersRejected,
         alreadyAdvanced: pdfClassification.stage === "ALREADY_ADVANCED",
@@ -324,11 +390,8 @@ export const createPollJob = (deps: {
     const started = Date.now();
 
     try {
-      const bootstrap =
-        !deps.repo.isBootstrapDone() && deps.repo.isEmpty();
-      const sendAlerts = bootstrap
-        ? deps.config.BOOTSTRAP_SEND_ALERTS
-        : true;
+      const bootstrap = !deps.repo.isBootstrapDone() && deps.repo.isEmpty();
+      const sendAlerts = bootstrap ? deps.config.BOOTSTRAP_SEND_ALERTS : true;
 
       const { dateFrom, dateTo } = lookbackWindow(deps.config.LOOKBACK_HOURS);
       console.log(
@@ -356,7 +419,6 @@ export const createPollJob = (deps: {
         records.push(...notices.map(normalizeNotice));
       }
 
-      // Dedupe within the same cycle (REQ/PROC shouldn't collide, but be safe).
       const unique = new Map<string, NormalizedRecord>();
       for (const record of records) {
         if (!record.adam) continue;

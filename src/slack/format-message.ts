@@ -5,6 +5,7 @@ export type SlackOpportunity = {
   budgetWithoutVat: number | null;
   recordType: "REQ" | "PROC";
   stageLabel: string;
+  webCategoryLabel: string;
   cpvs: string[];
   submissionDate: string | null;
   finalSubmissionDate?: string | null;
@@ -69,6 +70,7 @@ export const formatSlackMessage = (item: SlackOpportunity): string => {
     "",
     `*${item.organization} — ${item.title}*`,
     "",
+    `${item.webCategoryLabel}`,
     `🏛 ${item.organization}`,
     `💰 ${formatEuro(item.budgetWithoutVat)}`,
     `📌 ${item.recordType} — ${item.stageLabel}`,
@@ -87,9 +89,7 @@ export const formatSlackMessage = (item: SlackOpportunity): string => {
   lines.push("");
 
   if (item.flags.earlyStage) lines.push("✅ Early stage");
-  if (item.reasons.some((r) => /website|software|cpv|keyword/i.test(r))) {
-    lines.push("✅ Website/software relevance");
-  }
+  lines.push("✅ Clear web scope");
   if (!item.flags.hasLinkedNotice) {
     lines.push("✅ No linked invitation found");
   } else {

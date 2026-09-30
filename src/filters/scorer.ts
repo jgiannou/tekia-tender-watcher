@@ -2,10 +2,11 @@ import { classifyCpvs } from "./cpvs.js";
 import {
   findKeywordHits,
   HARDWARE_KEYWORDS,
-  POSITIVE_KEYWORDS,
   SOCIAL_MEDIA_KEYWORDS,
 } from "./keywords.js";
 import type { RecordType } from "../kimdis/types.js";
+import type { WebCategory } from "./web-relevance.js";
+import { STRONG_WEB_SIGNALS, softenGreekInflection } from "./web-relevance.js";
 
 export type ScoreInput = {
   recordType: RecordType;
@@ -17,6 +18,7 @@ export type ScoreInput = {
   maxBudget: number;
   hasNoticeRef: boolean;
   isPrimaryRequest: boolean;
+  webCategory?: WebCategory;
   pdf?: {
     alreadyAdvanced: boolean;
     targetedSupplier: boolean;
@@ -29,6 +31,7 @@ export type ScoreResult = {
   reasons: string[];
   flags: {
     stronglyRelevantCpv: boolean;
+    highConfidenceWebCpv: boolean;
     relevantKeywordInTitle: boolean;
     relevantKeywordInDescription: boolean;
     earlyStage: boolean;
@@ -44,16 +47,31 @@ export type ScoreResult = {
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
 
+const findStrongWebHits = (title: string, description: string) => {
+  const t = softenGreekInflection(title);
+  const d = softenGreekInflection(description);
+  const hits: Array<{ keyword: string; inTitle: boolean; inDescription: boolean }> =
+    [];
+  for (const keyword of STRONG_WEB_SIGNALS) {
+    const needle = softenGreekInflection(keyword);
+    if (!needle) continue;
+    const inTitle = t.includes(needle);
+    const inDescription = d.includes(needle);
+    if (inTitle || inDescription) hits.push({ keyword, inTitle, inDescription });
+  }
+  return hits;
+};
+
+/**
+ * Score ONLY after isWebRelevant === true.
+ * Broad IT CPVs alone no longer produce high scores.
+ */
 export const scoreOpportunity = (input: ScoreInput): ScoreResult => {
   let score = 0;
   const reasons: string[] = [];
 
   const cpv = classifyCpvs(input.cpvs);
-  const positiveHits = findKeywordHits(
-    input.title,
-    input.description,
-    POSITIVE_KEYWORDS,
-  );
+  const webHits = findStrongWebHits(input.title, input.description);
   const hardwareHits = findKeywordHits(
     input.title,
     input.description,
@@ -65,27 +83,43 @@ export const scoreOpportunity = (input: ScoreInput): ScoreResult => {
     SOCIAL_MEDIA_KEYWORDS,
   );
 
-  const relevantKeywordInTitle = positiveHits.some((hit) => hit.inTitle);
-  const relevantKeywordInDescription = positiveHits.some(
-    (hit) => hit.inDescription,
-  );
+  const relevantKeywordInTitle = webHits.some((hit) => hit.inTitle);
+  const relevantKeywordInDescription = webHits.some((hit) => hit.inDescription);
 
-  if (cpv.strong) {
-    score += 40;
-    reasons.push("Strongly relevant CPV");
-  } else if (cpv.itFamily) {
-    score += 20;
-    reasons.push("IT/software CPV family (72xxxxxx)");
+  // High-confidence web CPVs help; broad IT CPVs only give a small bonus.
+  if (cpv.highConfidenceWeb) {
+    score += 25;
+    reasons.push("High-confidence website/internet CPV");
+  } else if (cpv.strong && !cpv.broadOnly) {
+    score += 10;
+    reasons.push("Supporting IT CPV (not sufficient alone)");
+  } else if (cpv.broadOnly) {
+    score += 5;
+    reasons.push("Broad IT CPV — text web scope required");
   }
 
   if (relevantKeywordInTitle) {
-    score += 25;
-    reasons.push("Highly relevant keyword in title");
+    score += 35;
+    reasons.push("Strong web keyword in title");
   }
 
   if (relevantKeywordInDescription) {
-    score += 15;
-    reasons.push("Relevant keyword in object description");
+    score += 20;
+    reasons.push("Strong web keyword in description");
+  }
+
+  if (input.webCategory === "WEBSITE" || input.webCategory === "WEB_APPLICATION") {
+    score += 10;
+    reasons.push(`Clear web category: ${input.webCategory}`);
+  } else if (input.webCategory === "WEBSITE_SUPPORT") {
+    score += 8;
+    reasons.push("Website support / maintenance scope");
+  } else if (input.webCategory === "WEB_PLATFORM") {
+    score += 10;
+    reasons.push("Web platform scope");
+  } else if (input.webCategory === "WEB_API_INTEGRATION") {
+    score += 5;
+    reasons.push("Web/API integration scope");
   }
 
   const budget = input.budgetWithoutVat;
@@ -97,7 +131,6 @@ export const scoreOpportunity = (input: ScoreInput): ScoreResult => {
       score += 5;
       reasons.push("Budget within configured range");
     } else if (budget < input.minBudget || budget > input.maxBudget) {
-      // Soft signal only — do not discard missing/out-of-range budgets hard.
       score -= 5;
       reasons.push("Budget outside preferred range");
     }
@@ -113,48 +146,19 @@ export const scoreOpportunity = (input: ScoreInput): ScoreResult => {
     reasons.push("Primary Request / early stage");
   }
 
-  if (cpv.strong || cpv.itFamily || relevantKeywordInTitle || relevantKeywordInDescription) {
-    score += 5;
-    reasons.push("Website/software/IT-related contracting scope");
-  }
-
   const hardwareDominant =
-    hardwareHits.length > 0 &&
-    positiveHits.length === 0 &&
-    !cpv.strong &&
-    !cpv.itFamily;
-
+    hardwareHits.length > 0 && webHits.length === 0 && !cpv.highConfidenceWeb;
   const socialMediaDominant =
-    socialHits.length > 0 &&
-    positiveHits.length === 0 &&
-    !cpv.strong;
+    socialHits.length > 0 && webHits.length === 0 && !cpv.highConfidenceWeb;
 
   if (hardwareDominant) {
     score -= 25;
     reasons.push("Primarily hardware/equipment");
-  } else if (hardwareHits.length > 0 && positiveHits.length === 0) {
-    score -= 15;
-    reasons.push("Hardware terms present");
   }
 
   if (socialMediaDominant) {
     score -= 25;
     reasons.push("Primarily social media/content/marketing");
-  } else if (socialHits.length > 0 && positiveHits.length <= 1) {
-    score -= 10;
-    reasons.push("Social/content terms present");
-  }
-
-  // Clearly unrelated: no CPV signal, no positive keywords, maybe negative.
-  const clearlyUnrelated =
-    !cpv.strong &&
-    !cpv.itFamily &&
-    positiveHits.length === 0 &&
-    (hardwareDominant || socialMediaDominant || (hardwareHits.length + socialHits.length > 0));
-
-  if (clearlyUnrelated) {
-    score -= 40;
-    reasons.push("Clearly unrelated procurement");
   }
 
   if (input.hasNoticeRef) {
@@ -163,21 +167,15 @@ export const scoreOpportunity = (input: ScoreInput): ScoreResult => {
   }
 
   const pdf = input.pdf;
-  const alreadyAdvanced = Boolean(pdf?.alreadyAdvanced);
-  const targetedSupplier = Boolean(pdf?.targetedSupplier);
-  const nonInvitedOffersRejected = Boolean(pdf?.nonInvitedOffersRejected);
-
-  if (alreadyAdvanced) {
+  if (pdf?.alreadyAdvanced) {
     score -= 40;
     reasons.push("Already appears awarded / selected (PDF)");
   }
-
-  if (targetedSupplier) {
+  if (pdf?.targetedSupplier) {
     score -= 20;
     reasons.push("Targeted invitation to a named supplier");
   }
-
-  if (nonInvitedOffersRejected) {
+  if (pdf?.nonInvitedOffersRejected) {
     score -= 30;
     reasons.push("Non-invited offers explicitly rejected");
   }
@@ -187,14 +185,15 @@ export const scoreOpportunity = (input: ScoreInput): ScoreResult => {
     reasons,
     flags: {
       stronglyRelevantCpv: cpv.strong,
+      highConfidenceWebCpv: cpv.highConfidenceWeb,
       relevantKeywordInTitle,
       relevantKeywordInDescription,
       earlyStage,
       hardwareDominant,
       socialMediaDominant,
-      alreadyAdvanced,
-      targetedSupplier,
-      nonInvitedOffersRejected,
+      alreadyAdvanced: Boolean(pdf?.alreadyAdvanced),
+      targetedSupplier: Boolean(pdf?.targetedSupplier),
+      nonInvitedOffersRejected: Boolean(pdf?.nonInvitedOffersRejected),
       hasLinkedNotice: input.hasNoticeRef,
     },
   };

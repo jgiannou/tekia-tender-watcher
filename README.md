@@ -13,6 +13,20 @@ This is **not** a SaaS product. No customer UI. Slack is the main notification c
 5. Never Slack-alerts the same ADAM twice
 6. On first empty DB bootstrap: indexes existing records and sends **one** startup message (no spam)
 
+## Hard web relevance gate
+
+Before scoring or Slack, every item must pass `isWebRelevant()` in `src/filters/web-relevance.ts`.
+
+Rules:
+
+1. At least one **strong web signal** must exist (ιστοσελίδα, web εφαρμογή, portal, CMS, WordPress, …)
+2. Weak terms alone (`λογισμικό`, `εφαρμογή`, `συντήρηση`, `hosting`) are **not** enough
+3. Broad CPVs like `72261000-2` are **never** enough alone
+4. Hosting-only / generic software maintenance / Η/Υ repair / electronic protocol → `IRRELEVANT`, no Slack
+5. Slack only if `isWebRelevant` **and** a concrete web category **and** `score >= ALERT_SCORE_THRESHOLD`
+
+Statuses stored in SQLite: `RELEVANT` | `NEEDS_REVIEW` | `IRRELEVANT`.
+
 ## Architecture
 
 ```

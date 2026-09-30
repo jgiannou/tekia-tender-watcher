@@ -43,6 +43,10 @@ describe("dedupe", () => {
       officialPdfUrl: "https://example.com/pdf",
       publicKimdisUrl: "https://example.com/public",
       scoreReasons: ["test"],
+      webRelevant: true,
+      webCategory: "WEBSITE",
+      relevanceStatus: "RELEVANT",
+      ignoreReason: null,
       rawJson: { referenceNumber: adam },
       nowIso: now,
     });
@@ -73,6 +77,10 @@ describe("dedupe", () => {
       officialPdfUrl: "https://example.com/pdf",
       publicKimdisUrl: "https://example.com/public",
       scoreReasons: ["test"],
+      webRelevant: true,
+      webCategory: "WEBSITE",
+      relevanceStatus: "RELEVANT",
+      ignoreReason: null,
       rawJson: { referenceNumber: adam },
       nowIso: new Date().toISOString(),
     });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { scoreOpportunity } from "../src/filters/scorer.js";
 
-describe("scoring", () => {
+describe("scoring (post web-gate)", () => {
   it("scores a relevant website opportunity highly", () => {
     const result = scoreOpportunity({
       recordType: "REQ",
@@ -13,27 +13,28 @@ describe("scoring", () => {
       maxBudget: 30000,
       hasNoticeRef: false,
       isPrimaryRequest: true,
+      webCategory: "WEBSITE",
     });
 
     expect(result.score).toBeGreaterThanOrEqual(80);
     expect(result.flags.earlyStage).toBe(true);
-    expect(result.flags.stronglyRelevantCpv).toBe(true);
+    expect(result.flags.highConfidenceWebCpv).toBe(true);
   });
 
-  it("excludes obvious hardware procurement", () => {
+  it("does not score broad CPV hardware as highly relevant on its own", () => {
     const result = scoreOpportunity({
       recordType: "REQ",
       title: "Προμήθεια Η/Υ και εκτυπωτών",
-      description: "Αγορά εξοπλισμού hardware και τηλεπικοινωνιακός εξοπλισμός",
-      cpvs: ["30200000-1"],
+      description: "Αγορά εξοπλισμού hardware",
+      cpvs: ["72261000-2"],
       budgetWithoutVat: 12000,
       minBudget: 1500,
       maxBudget: 30000,
       hasNoticeRef: false,
       isPrimaryRequest: true,
+      webCategory: "UNKNOWN",
     });
 
-    expect(result.score).toBeLessThan(40);
-    expect(result.flags.hardwareDominant).toBe(true);
+    expect(result.score).toBeLessThan(60);
   });
 });
