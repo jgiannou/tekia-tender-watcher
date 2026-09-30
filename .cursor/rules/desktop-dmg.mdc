@@ -1,0 +1,15 @@
+---
+description: Always rebuild DMG after desktop/dashboard UI changes and tell user to reinstall
+alwaysApply: true
+---
+
+# Desktop DMG packaging
+
+Whenever you change code that affects the Electron desktop app or its bundled dashboard UI (anything under `apps/desktop/**`, `apps/dashboard/**`, or shared code that ships in the DMG), before finishing the task:
+
+1. Build a fresh arm64 DMG with `pnpm desktop:package`.
+2. Tell the user clearly that they need a **new install** from the new DMG (old app will not pick up the changes).
+3. Give the DMG path: `apps/desktop/release/TEKIA Tender Watcher-1.0.0-arm64.dmg`.
+
+Do this even if the user did not explicitly ask for a DMG, unless they explicitly say to skip packaging.
+Do not commit the DMG/release artifacts unless the user asks.
