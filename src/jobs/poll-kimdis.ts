@@ -401,6 +401,8 @@ export const createPollJob = (deps: {
       publicUrl,
       pdfUrl,
       reasons,
+      referenceNumber: record.adam,
+      localDashboardUrl: deps.config.LOCAL_DASHBOARD_URL,
       flags: {
         earlyStage: scoreFlags.earlyStage,
         hasLinkedNotice: scoreFlags.hasLinkedNotice,

@@ -29,6 +29,29 @@ const envSchema = z.object({
   HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   PDF_SCORE_THRESHOLD: z.coerce.number().int().min(0).max(100).default(45),
   TARGETED_ALERT_SCORE: z.coerce.number().int().min(0).max(100).default(85),
+  OPERATOR_API_TOKEN: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  LOCAL_DASHBOARD_URL: z
+    .string()
+    .url()
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  LOCAL_DASHBOARD_ORIGINS: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .transform((v) => {
+      const raw = (v ?? "").trim();
+      if (!raw) return ["http://localhost:5173"];
+      return raw
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+    }),
 });
 
 export type Config = z.infer<typeof envSchema> & {

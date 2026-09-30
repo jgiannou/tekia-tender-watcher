@@ -379,7 +379,10 @@ const shouldAlertRow = (
   return eligibility.eligible;
 };
 
-const buildSlackText = (row: TenderRow): string => {
+const buildSlackText = (
+  row: TenderRow,
+  localDashboardUrl?: string | null,
+): string => {
   const cpvs = parseCpvs(row.cpvs);
   const reasons = parseReasons(row.score_reasons);
   const category = (row.web_category as WebCategory) ?? "UNKNOWN";
@@ -400,6 +403,8 @@ const buildSlackText = (row: TenderRow): string => {
     publicUrl: row.public_kimdis_url ?? "",
     pdfUrl: row.official_pdf_url ?? "",
     reasons,
+    referenceNumber: row.reference_number,
+    localDashboardUrl,
     flags: {
       earlyStage: stage === "EARLY" || row.record_type === "REQ",
       hasLinkedNotice: false,
@@ -419,7 +424,11 @@ export const resendMatchingAlerts = async (
     slack: SlackClient;
     config: Pick<
       Config,
-      "MIN_BUDGET" | "MAX_BUDGET" | "ALERT_SCORE_THRESHOLD" | "TARGETED_ALERT_SCORE"
+      | "MIN_BUDGET"
+      | "MAX_BUDGET"
+      | "ALERT_SCORE_THRESHOLD"
+      | "TARGETED_ALERT_SCORE"
+      | "LOCAL_DASHBOARD_URL"
     >;
   },
   options: ResendOptions = {},
@@ -466,7 +475,7 @@ export const resendMatchingAlerts = async (
 
     if (dryRun) continue;
 
-    const text = buildSlackText(row);
+    const text = buildSlackText(row, deps.config.LOCAL_DASHBOARD_URL);
     const ok = await deps.slack.sendText(text);
     if (!ok) {
       failed += 1;

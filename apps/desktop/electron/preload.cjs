@@ -1,0 +1,62 @@
+const { contextBridge, ipcRenderer } = require("electron");
+
+const api = {
+  request: (payload) => ipcRenderer.invoke("tekia:api-request", payload),
+  getOpportunities: (filter = "all") =>
+    ipcRenderer.invoke("tekia:api-request", {
+      path: `/api/operator/opportunities?filter=${encodeURIComponent(filter)}`,
+      method: "GET",
+    }),
+  getTender: (referenceNumber) =>
+    ipcRenderer.invoke("tekia:api-request", {
+      path: `/api/operator/tenders/${encodeURIComponent(referenceNumber)}`,
+      method: "GET",
+    }),
+  updateTender: (referenceNumber, body) =>
+    ipcRenderer.invoke("tekia:api-request", {
+      path: `/api/operator/tenders/${encodeURIComponent(referenceNumber)}`,
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getSubmissions: (result = "all") =>
+    ipcRenderer.invoke("tekia:api-request", {
+      path: `/api/operator/submissions?result=${encodeURIComponent(result)}`,
+      method: "GET",
+    }),
+  recordSubmission: (referenceNumber, body) =>
+    ipcRenderer.invoke("tekia:api-request", {
+      path: `/api/operator/tenders/${encodeURIComponent(referenceNumber)}/submission`,
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+};
+
+const tekia = {
+  isDesktop: true,
+  platform: process.platform,
+  api,
+  connection: {
+    get: () => ipcRenderer.invoke("tekia:connection-get"),
+    save: (input) => ipcRenderer.invoke("tekia:connection-save", input),
+    test: (input) => ipcRenderer.invoke("tekia:connection-test", input ?? {}),
+  },
+  shell: {
+    openExternal: (url) => ipcRenderer.invoke("tekia:open-external", url),
+  },
+  navigation: {
+    onOpenTender: (callback) => {
+      const listener = (_event, ref) => {
+        callback(ref);
+      };
+      ipcRenderer.on("tekia:open-tender", listener);
+      return () => ipcRenderer.removeListener("tekia:open-tender", listener);
+    },
+    onOpenSettings: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on("tekia:open-settings", listener);
+      return () => ipcRenderer.removeListener("tekia:open-settings", listener);
+    },
+  },
+};
+
+contextBridge.exposeInMainWorld("tekia", tekia);

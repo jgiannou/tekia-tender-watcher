@@ -11,6 +11,7 @@ import { createSlackClient } from "./slack/client.js";
 import { createPollJob } from "./jobs/poll-kimdis.js";
 import { createHealthRoutes } from "./routes/health.js";
 import { createAdminRoutes } from "./routes/admin.js";
+import { createOperatorRoutes } from "./routes/operator.js";
 import { POSITIVE_KEYWORDS } from "./filters/keywords.js";
 import { STRONG_CPVS } from "./filters/cpvs.js";
 
@@ -64,6 +65,18 @@ app.route("/", createAdminRoutes({
   config,
   repo,
 }));
+app.route("/", createOperatorRoutes({
+  operatorToken: config.OPERATOR_API_TOKEN,
+  allowedOrigins: config.LOCAL_DASHBOARD_ORIGINS,
+  config,
+  repo,
+}));
+
+if (config.OPERATOR_API_TOKEN) {
+  console.log("operator API: enabled (token configured)");
+} else {
+  console.log("operator API: disabled (set OPERATOR_API_TOKEN to enable)");
+}
 
 const server = serve(
   {

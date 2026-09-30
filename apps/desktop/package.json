@@ -1,0 +1,72 @@
+{
+  "name": "@tekia/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TEKIA Tender Watcher macOS desktop shell (Electron)",
+  "main": "dist-electron/main.js",
+  "type": "module",
+  "scripts": {
+    "compile": "tsc -p tsconfig.json && cp electron/preload.cjs dist-electron/preload.cjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "node ./scripts/dev.mjs",
+    "build": "pnpm compile && node ./scripts/build-renderer.mjs",
+    "package": "pnpm build && electron-builder --mac --arm64",
+    "package:dir": "pnpm build && electron-builder --mac --arm64 --dir"
+  },
+  "devDependencies": {
+    "electron": "^36.4.0",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.8.3"
+  },
+  "build": {
+    "appId": "gr.tekia.tenderwatcher",
+    "productName": "TEKIA Tender Watcher",
+    "copyright": "Copyright © TEKIA",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "renderer-dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64"]
+        },
+        {
+          "target": "dir",
+          "arch": ["arm64"]
+        }
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "TEKIA Tender Watcher",
+            "CFBundleURLSchemes": ["tekia-tender"]
+          }
+        ]
+      }
+    },
+    "dmg": {
+      "title": "TEKIA Tender Watcher",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "protocols": [
+      {
+        "name": "TEKIA Tender Watcher",
+        "schemes": ["tekia-tender"]
+      }
+    ]
+  }
+}

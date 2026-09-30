@@ -12,6 +12,10 @@ export type SlackOpportunity = {
   publicUrl: string;
   pdfUrl: string;
   reasons: string[];
+  /** ADAM / KIMDIS reference number — always include in alerts */
+  referenceNumber?: string;
+  /** Optional local operator dashboard base URL, e.g. http://localhost:5173 */
+  localDashboardUrl?: string | null;
   flags: {
     earlyStage: boolean;
     hasLinkedNotice: boolean;
@@ -143,8 +147,20 @@ export const formatSlackMessage = (item: SlackOpportunity): string => {
   lines.push("");
   lines.push(`*Recommendation:* ${recommendation(item)}`);
   lines.push("");
+
+  if (item.referenceNumber) {
+    lines.push(`ADAM: \`${item.referenceNumber}\``);
+  }
+
   lines.push(`<${item.publicUrl}|Open in KIMDIS>`);
   lines.push(`<${item.pdfUrl}|Open PDF>`);
+
+  if (item.localDashboardUrl && item.referenceNumber) {
+    const base = item.localDashboardUrl.replace(/\/$/, "");
+    lines.push(
+      `<${base}/tenders/${encodeURIComponent(item.referenceNumber)}|Open in local dashboard>`,
+    );
+  }
 
   return lines.join("\n");
 };

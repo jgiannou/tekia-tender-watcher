@@ -2,7 +2,9 @@
 
 Internal automation for TEKIA. Periodically queries the official Greek **KIMDIS / KHMDHS Open Data API**, scores relevant public procurement opportunities, deduplicates by ADAM, and sends short Slack alerts.
 
-This is **not** a SaaS product. No customer UI. Slack is the main notification channel; HTTP is only for health + manual admin actions.
+A **local-only operator dashboard** (`apps/dashboard`) reviews opportunities and records submissions. Slack is the alert layer; the dashboard is the review / action layer.
+
+**Hard security boundary:** the cloud watcher never sends email, never submits offers, and never contacts authorities. External sending (if added later) must stay local.
 
 ## What it does
 
@@ -12,6 +14,7 @@ This is **not** a SaaS product. No customer UI. Slack is the main notification c
 4. Applies deterministic CPV / keyword / budget / PDF text scoring
 5. Never Slack-alerts the same ADAM twice
 6. On first empty DB bootstrap: indexes existing records and sends **one** startup message (no spam)
+7. Exposes an authenticated Operator API for the local dashboard
 
 ## Hard web relevance gate
 
@@ -30,21 +33,22 @@ Statuses stored in SQLite: `RELEVANT` | `NEEDS_REVIEW` | `IRRELEVANT` | `EXPIRED
 ## Architecture
 
 ```
-node-cron → poll job → KIMDIS Open Data API
-                    → SQLite (dedupe + history)
-                    → optional PDF text extract
-                    → Slack Incoming Webhook
+CLOUD WATCHER (Coolify, 24/7)
+  node-cron → poll job → KIMDIS Open Data API
+                      → SQLite (dedupe + history + submissions + events)
+                      → optional PDF text extract
+                      → Slack Incoming Webhook
+  Hono HTTP:
+    GET  /health
+    POST /admin/*              (X-Admin-Token)
+    GET|PATCH|POST /api/operator/*  (X-Operator-Token, restrictive CORS)
 
-Hono HTTP:
-  GET  /health
-  POST /admin/run
-  POST /admin/test-slack
-  POST /admin/reevaluate
-  POST /admin/resend
-  (X-Admin-Token required on /admin/*)
+LOCAL DASHBOARD (Mac only — never deploy)
+  http://localhost:5173
+  Opportunities → Tender detail → Submitted → Settings / Vault
 ```
 
-Stack: Node.js 22, TypeScript, pnpm, Hono, better-sqlite3, node-cron, Zod, pdf-parse, Vitest.
+Stack: Node.js 22, TypeScript, pnpm, Hono, better-sqlite3, node-cron, Zod, pdf-parse, Vitest, React + Vite (local dashboard).
 
 ## KIMDIS API endpoints used
 
@@ -116,9 +120,125 @@ curl http://localhost:3000/health
 | `BOOTSTRAP_SEND_ALERTS` | `false` | If true, alert on first empty-DB indexing |
 | `SLACK_WEBHOOK_URL` | _(empty)_ | Slack Incoming Webhook URL |
 | `ADMIN_TOKEN` | _(required)_ | Protects `/admin/*` |
+| `OPERATOR_API_TOKEN` | _(empty)_ | Protects `/api/operator/*` (required for dashboard) |
+| `LOCAL_DASHBOARD_URL` | _(empty)_ | Optional Slack CTA base, e.g. `http://localhost:5173` |
+| `LOCAL_DASHBOARD_ORIGINS` | `http://localhost:5173` | Comma-separated CORS allow-list (no wildcards) |
 | `KIMDIS_BASE_URL` | official URL | Override only for tests |
 
 Secrets must never be committed. `.env` is gitignored.
+
+## Desktop App
+
+Primary operator experience is the native macOS app wrapping the **same** React dashboard.
+
+```
+apps/desktop/          Electron main + preload (secure IPC)
+apps/dashboard/        Shared React/Vite renderer (web + desktop)
+```
+
+### Development
+
+```bash
+# Cloud watcher must be reachable (local or Coolify)
+pnpm dev
+
+# Desktop app (starts Vite renderer + Electron)
+pnpm desktop:dev
+```
+
+Browser-only renderer (optional, for UI work without Electron):
+
+```bash
+pnpm dashboard:dev:web
+```
+
+### Build / package (Apple Silicon)
+
+```bash
+pnpm desktop:build
+pnpm desktop:package
+```
+
+Outputs (arm64):
+
+- `apps/desktop/release/mac-arm64/TEKIA Tender Watcher.app`
+- `apps/desktop/release/TEKIA Tender Watcher-*.dmg`
+
+### Install
+
+1. Open the DMG
+2. Drag **TEKIA Tender Watcher** into **Applications**
+3. Launch the app
+4. Open **Settings → Desktop Connection**
+5. Enter Watcher API URL + Operator API Token
+6. **Test Connection** → **Save**
+
+Token is stored with Electron `safeStorage` under:
+
+`~/Library/Application Support/TEKIA Tender Watcher/`
+
+The renderer never sees the raw token. API calls go Renderer → preload IPC → main → HTTPS cloud API.
+
+### Unsigned macOS warning
+
+This internal build is **not notarized**. First launch may show Gatekeeper:
+
+> “TEKIA Tender Watcher” can’t be opened because Apple cannot check it for malicious software.
+
+Open via **System Settings → Privacy & Security → Open Anyway**, or right-click → Open.
+
+### Deep links
+
+Protocol registered: `tekia-tender://tender/{referenceNumber}`  
+Opens Tender Detail when the app is running (or on launch). Slack CTA wiring can use this later.
+
+Bundle id: `gr.tekia.tenderwatcher`
+
+### Safety
+
+- Closing the desktop app does **not** stop cloud KIMDIS polling
+- Desktop has **no** automatic email/offer/portal submission
+- Approval + Send remain explicit human actions (Send still not configured)
+
+## Local operator dashboard (web)
+
+The dashboard React app remains available in the browser for development. Do not deploy it to Coolify.
+
+```bash
+# Terminal 1 — cloud watcher API (or point VITE_WATCHER_API_URL at Coolify)
+pnpm dev
+
+# Terminal 2 — local dashboard (browser)
+cp apps/dashboard/.env.example apps/dashboard/.env
+# set VITE_WATCHER_API_URL + VITE_OPERATOR_API_TOKEN (same token as OPERATOR_API_TOKEN)
+pnpm dashboard:dev:web
+```
+
+Open http://localhost:5173
+
+Routes:
+
+- `/opportunities` — default home + counters/filters
+- `/tenders/:referenceNumber` — review / drafts / approval / record submission
+- `/submitted` — submission history + PENDING/WON/LOST
+- `/settings` — company, Drive vault, documents, safe watcher config
+
+Operator API (token required):
+
+- `GET /api/operator/opportunities`
+- `GET /api/operator/tenders/:referenceNumber`
+- `PATCH /api/operator/tenders/:referenceNumber`
+- `PATCH /api/operator/tenders/:referenceNumber/status`
+- `POST /api/operator/tenders/:referenceNumber/events`
+- `POST /api/operator/tenders/:referenceNumber/approve`
+- `POST /api/operator/tenders/:referenceNumber/submission`
+- `GET /api/operator/submissions`
+- `PATCH /api/operator/submissions/:id/result`
+- `GET|PUT /api/operator/settings`
+- `GET /api/operator/config`
+
+Operational statuses: `NEW → REVIEW → READY → SUBMITTED → WON|LOST`.  
+`SUBMITTED` is only set via a real Submission record (or manual “Record Existing Submission”).
 
 ## Slack Incoming Webhook setup
 

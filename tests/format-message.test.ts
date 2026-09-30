@@ -22,6 +22,8 @@ describe("slack formatter", () => {
       pdfUrl:
         "https://cerpp.eprocurement.gov.gr/khmdhs-opendata/request/attachment/26REQ1",
       reasons: ["Strong web keyword in title"],
+      referenceNumber: "26REQ1",
+      localDashboardUrl: "http://localhost:5173",
       flags: {
         earlyStage: true,
         hasLinkedNotice: false,
@@ -38,6 +40,8 @@ describe("slack formatter", () => {
     expect(text).toContain("Explicit website scope");
     expect(text).toContain("CONTACT EARLY");
     expect(text).toContain("Open in KIMDIS");
+    expect(text).toContain("ADAM:");
+    expect(text).toContain("Open in local dashboard");
   });
 
   it("formats verified open PROC recommendation", () => {
