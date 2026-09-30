@@ -9,8 +9,6 @@ import { isConfigured, isDesktop } from "./api";
 export const App = () => {
   const navigate = useNavigate();
   const [desktopReady, setDesktopReady] = useState(!isDesktop());
-  const [desktopError, setDesktopError] = useState<string | null>(null);
-  const [needsConnection, setNeedsConnection] = useState(false);
 
   useEffect(() => {
     if (!isDesktop() || !window.tekia) return;
@@ -18,26 +16,11 @@ export const App = () => {
     let cancelled = false;
     window.tekia.connection
       .get()
-      .then((conn) => {
-        if (cancelled) return;
-        if (!conn.apiUrl || !conn.hasToken) {
-          setNeedsConnection(true);
-          setDesktopReady(true);
-          return;
-        }
-        return window.tekia!.connection.test().then((result) => {
-          if (cancelled) return;
-          if (result.status !== "connected") {
-            setDesktopError(result.message);
-            setNeedsConnection(result.status === "not_configured");
-          }
-          setDesktopReady(true);
-        });
+      .then(() => {
+        if (!cancelled) setDesktopReady(true);
       })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setDesktopError(err instanceof Error ? err.message : String(err));
-        setDesktopReady(true);
+      .catch(() => {
+        if (!cancelled) setDesktopReady(true);
       });
 
     const offTender = window.tekia.navigation.onOpenTender((ref) => {
@@ -96,43 +79,8 @@ export const App = () => {
         </div>
       ) : !desktopReady ? (
         <p className="muted">Starting desktop shell…</p>
-      ) : needsConnection ? (
-        <div className="stack">
-          <div className="alert-box" role="status">
-            Configure Watcher API URL and Operator API Token in Settings to
-            connect the desktop app to the cloud watcher.
-          </div>
-          <Routes>
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/settings" replace />} />
-          </Routes>
-        </div>
       ) : (
-        <>
-          {desktopError ? (
-            <div className="error" role="alert" style={{ marginBottom: 12 }}>
-              <div>Watcher API unavailable / authentication issue.</div>
-              <div className="muted" style={{ marginTop: 4 }}>
-                {desktopError}
-              </div>
-              <div className="actions">
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => window.location.reload()}
-                >
-                  Retry
-                </button>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => navigate("/settings")}
-                >
-                  Open Settings
-                </button>
-              </div>
-            </div>
-          ) : null}
+        <div className="page-scroll">
           <Routes>
             <Route path="/" element={<Navigate to="/opportunities" replace />} />
             <Route path="/opportunities" element={<OpportunitiesPage />} />
@@ -143,7 +91,7 @@ export const App = () => {
             <Route path="/submitted" element={<SubmittedPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
-        </>
+        </div>
       )}
     </div>
   );

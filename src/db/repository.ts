@@ -164,6 +164,19 @@ const parseDrafts = (raw: string | null): TenderDrafts => {
   }
 };
 
+const isActionableOpportunity = (row: TenderRow): boolean => {
+  const status = row.current_status ?? "NEW";
+  if (status === "SUBMITTED" || status === "WON" || status === "LOST") {
+    return false;
+  }
+  if (row.notified_at) return true;
+  if (row.relevance_status === "RELEVANT") return true;
+  if (row.relevance_status === "NEEDS_REVIEW" && (row.score ?? 0) > 0) {
+    return true;
+  }
+  return false;
+};
+
 const parseChecklist = (raw: string | null): DocumentChecklistItem[] => {
   if (!raw) return DEFAULT_DOCUMENT_CHECKLIST();
   try {
@@ -482,20 +495,7 @@ export const createRepository = (db: Database.Database) => {
     parseChecklist,
 
     listOpportunities: (filter: OpportunityFilter = "all"): TenderRow[] => {
-      const rows = listAll.all() as TenderRow[];
-      const actionable = rows.filter((row) => {
-        const status = row.current_status ?? "NEW";
-        if (status === "SUBMITTED" || status === "WON" || status === "LOST") {
-          return false;
-        }
-        // Surface relevant / reviewable watcher hits for operator action
-        if (row.notified_at) return true;
-        if (row.relevance_status === "RELEVANT") return true;
-        if (row.relevance_status === "NEEDS_REVIEW" && (row.score ?? 0) > 0) {
-          return true;
-        }
-        return false;
-      });
+      const actionable = (listAll.all() as TenderRow[]).filter(isActionableOpportunity);
 
       return actionable.filter((row) => {
         const status = (row.current_status ?? "NEW").toUpperCase();
@@ -522,7 +522,6 @@ export const createRepository = (db: Database.Database) => {
       submittedThisMonth: number;
       pendingResult: number;
     } => {
-      const rows = listAll.all() as TenderRow[];
       const now = new Date();
       const monthPrefix = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 
@@ -530,9 +529,14 @@ export const createRepository = (db: Database.Database) => {
         SubmissionRow & { tender_title?: string }
       >;
 
+      const actionable = (listAll.all() as TenderRow[]).filter(
+        isActionableOpportunity,
+      );
+
       return {
-        new: rows.filter((r) => (r.current_status ?? "NEW") === "NEW").length,
-        ready: rows.filter((r) => r.current_status === "READY").length,
+        new: actionable.filter((r) => (r.current_status ?? "NEW") === "NEW")
+          .length,
+        ready: actionable.filter((r) => r.current_status === "READY").length,
         submittedThisMonth: submissions.filter((s) =>
           s.submitted_at.startsWith(monthPrefix),
         ).length,

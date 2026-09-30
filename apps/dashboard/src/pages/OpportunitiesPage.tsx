@@ -43,7 +43,7 @@ export const OpportunitiesPage = () => {
   }, [filter]);
 
   return (
-    <div className="stack">
+    <div className="opportunities-layout">
       <div className="counters" aria-label="Opportunity counters">
         <div className="counter">
           <div className="label">New</div>
@@ -85,6 +85,7 @@ export const OpportunitiesPage = () => {
         {loading ? <p className="muted" style={{ padding: 16 }}>Loading…</p> : null}
 
         {!loading && data ? (
+          <div className="table-scroll">
           <table>
             <thead>
               <tr>
@@ -138,6 +139,7 @@ export const OpportunitiesPage = () => {
               )}
             </tbody>
           </table>
+          </div>
         ) : null}
       </section>
     </div>

@@ -326,4 +326,40 @@ describe("operator API + submission workflow", () => {
     const rows = repo.listOpportunities("all");
     expect(rows.some((r) => r.reference_number === "26REQ8")).toBe(true);
   });
+
+  it("New counter ignores indexed tenders that are not actionable", () => {
+    seedTender(repo, "26REQ-ACTION");
+    repo.upsertNewOrTouch({
+      referenceNumber: "26REQ-NOISE",
+      recordType: "REQ",
+      title: "Άσχετο",
+      organization: "Δήμος",
+      submissionDate: null,
+      signedDate: null,
+      finalSubmissionDate: null,
+      budgetWithoutVat: 100,
+      budgetWithVat: null,
+      cpvs: [],
+      score: 0,
+      stage: "IRRELEVANT",
+      targetedSupplier: false,
+      nonInvitedOffersRejected: false,
+      pdfTextStatus: "none",
+      officialPdfUrl: "https://example.com/pdf",
+      publicKimdisUrl: "https://example.com/public",
+      scoreReasons: [],
+      webRelevant: false,
+      webCategory: "UNKNOWN",
+      relevanceStatus: "IRRELEVANT",
+      ignoreReason: "not web",
+      reviewReason: null,
+      rawJson: {},
+      nowIso: "2026-09-29T10:00:00.000Z",
+    });
+
+    const counters = repo.getOpportunityCounters();
+    const listed = repo.listOpportunities("all");
+    expect(listed.map((row) => row.reference_number)).toEqual(["26REQ-ACTION"]);
+    expect(counters.new).toBe(1);
+  });
 });
