@@ -31,7 +31,36 @@ const main = () => {
   const db = openDatabase(config.databasePath);
   const repo = createRepository(db);
   const result = reevaluateStoredTenders(repo, config);
-  console.log(JSON.stringify(result, null, 2));
+
+  console.log("\n=== Reprocess summary (no Slack resent) ===");
+  console.log(`Total:          ${result.total}`);
+  console.log(`Relevant:       ${result.relevant}`);
+  console.log(`Needs Review:   ${result.needsReview}`);
+  console.log(`Ignored:        ${result.irrelevant}`);
+  console.log(`Expired:        ${result.expired}`);
+  console.log(`Targeted:       ${result.targeted}`);
+  console.log(`Slack eligible: ${result.alertCandidates}`);
+
+  console.log("\n--- Previously notified, now suppressed ---");
+  if (result.previouslyNotifiedNowSuppressed.length === 0) {
+    console.log("(none)");
+  } else {
+    for (const row of result.previouslyNotifiedNowSuppressed) {
+      console.log(
+        `- ${row.adam} | ${row.organization ?? ""} | ${row.title} | ${row.newStatus} | ${row.reason ?? ""}`,
+      );
+    }
+  }
+
+  console.log("\n--- Spotlight ---");
+  for (const row of result.spotlight) {
+    console.log(
+      `- ${row.match}: status=${row.status} score=${row.score} category=${row.category} slack=${row.slackEligible} reason=${row.reason ?? "-"}`,
+    );
+    if (row.title) console.log(`  ${row.organization ?? ""} — ${row.title}`);
+  }
+
+  console.log("\n" + JSON.stringify(result, null, 2));
   db.close();
 };
 

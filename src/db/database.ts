@@ -59,6 +59,7 @@ export const openDatabase = (databasePath: string): Database.Database => {
   addColumnIfMissing(db, "tenders", "web_category", "TEXT");
   addColumnIfMissing(db, "tenders", "relevance_status", "TEXT");
   addColumnIfMissing(db, "tenders", "ignore_reason", "TEXT");
+  addColumnIfMissing(db, "tenders", "review_reason", "TEXT");
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tenders_notified_at ON tenders(notified_at);

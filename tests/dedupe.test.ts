@@ -47,6 +47,7 @@ describe("dedupe", () => {
       webCategory: "WEBSITE",
       relevanceStatus: "RELEVANT",
       ignoreReason: null,
+      reviewReason: null,
       rawJson: { referenceNumber: adam },
       nowIso: now,
     });
@@ -81,6 +82,7 @@ describe("dedupe", () => {
       webCategory: "WEBSITE",
       relevanceStatus: "RELEVANT",
       ignoreReason: null,
+      reviewReason: null,
       rawJson: { referenceNumber: adam },
       nowIso: new Date().toISOString(),
     });

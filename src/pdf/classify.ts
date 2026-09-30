@@ -18,8 +18,19 @@ const ADVANCED_PHRASES = [
   "αποφασίζει την ανάθεση",
 ] as const;
 
-const NON_INVITED_PHRASE =
-  "δεν λαμβάνονται υπόψη προσφορές οικονομικών φορέων που δεν προσκλήθηκαν";
+/** Single-hit phrases that strongly indicate award / advanced stage. */
+const STRONG_AWARD_PHRASES = [
+  "ανατέθηκε",
+  "ανάθεση στην",
+  "αποφασίζει την ανάθεση",
+  "πλέον συμφέρουσα",
+] as const;
+
+const NON_INVITED_PHRASES = [
+  "δεν λαμβάνονται υπόψη προσφορές οικονομικών φορέων που δεν προσκλήθηκαν",
+  "δεν γίνονται δεκτές προσφορές οικονομικών φορέων που δεν προσκλήθηκαν",
+  "προσφορές οικονομικών φορέων που δεν προσκλήθηκαν δεν λαμβάνονται υπόψη",
+] as const;
 
 const normalize = (text: string): string =>
   text
@@ -27,8 +38,10 @@ const normalize = (text: string): string =>
     .replace(/\p{M}/gu, "")
     .toLowerCase();
 
-const extractTargetAfterPros = (rawText: string): string | null => {
-  const match = rawText.match(/(?:ΠΡΟΣ|Προς)\s*[:：]\s*([^\n\r]{3,120})/u);
+const extractTargetAfterLabel = (rawText: string): string | null => {
+  const match = rawText.match(
+    /(?:ΠΡΟΣ|Προς|Αποδέκτης|Παραλήπτης)\s*[:：]\s*([^\n\r]{3,120})/u,
+  );
   if (!match?.[1]) return null;
 
   const candidate = match[1]
@@ -38,7 +51,6 @@ const extractTargetAfterPros = (rawText: string): string | null => {
 
   if (candidate.length < 3) return null;
 
-  // Ignore generic recipients.
   const generic = /γενικ[ήη]|κοιν[όο]|ενδιαφερομεν|οικονομικ[οό]υς φορε/iu;
   if (generic.test(candidate)) return null;
 
@@ -65,13 +77,19 @@ export const classifyPdfText = (text: string): PdfClassification => {
     }
   }
 
-  const nonInvitedOffersRejected = normalized.includes(normalize(NON_INVITED_PHRASE));
-  const targetedSupplierName = extractTargetAfterPros(text);
+  const strongAward = STRONG_AWARD_PHRASES.some((phrase) =>
+    normalized.includes(normalize(phrase)),
+  );
+
+  const nonInvitedOffersRejected = NON_INVITED_PHRASES.some((phrase) =>
+    normalized.includes(normalize(phrase)),
+  );
+  const targetedSupplierName = extractTargetAfterLabel(text);
   const targetedSupplier =
     Boolean(targetedSupplierName) || nonInvitedOffersRejected;
 
   const stage =
-    advancedPhraseHits >= 2 ? "ALREADY_ADVANCED" : "EARLY";
+    strongAward || advancedPhraseHits >= 2 ? "ALREADY_ADVANCED" : "EARLY";
 
   return {
     stage,

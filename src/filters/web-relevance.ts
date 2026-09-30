@@ -1,6 +1,7 @@
 /**
  * Hard web-relevance gate.
  * CPVs alone are NEVER enough — especially broad ones like 72261000-2.
+ * Slack must stay clean: only genuine website / web-application scope.
  */
 
 export type WebCategory =
@@ -11,7 +12,12 @@ export type WebCategory =
   | "WEBSITE_SUPPORT"
   | "UNKNOWN";
 
-export type RelevanceStatus = "RELEVANT" | "NEEDS_REVIEW" | "IRRELEVANT";
+export type RelevanceStatus =
+  | "RELEVANT"
+  | "NEEDS_REVIEW"
+  | "IRRELEVANT"
+  | "EXPIRED"
+  | "TARGETED";
 
 export type WebRelevanceInput = {
   title: string;
@@ -25,18 +31,22 @@ export type WebRelevanceResult = {
   status: RelevanceStatus;
   category: WebCategory;
   ignoreReason: string | null;
+  reviewReason: string | null;
   strongWebSignals: string[];
   exclusionSignals: string[];
   weakOnlySignals: string[];
+  marketingSignals: string[];
+  mixedMarketing: boolean;
   highConfidenceCpv: boolean;
 };
 
-/** High-confidence website/internet CPVs — still need title/desc confirmation when possible. */
+/** High-confidence website/internet CPVs — still need title/desc confirmation. */
 export const HIGH_CONFIDENCE_WEB_CPVS = [
-  "72413000-8", // website design services
+  "72413000-8",
   "72415000-2",
   "72416000-9",
-  "72420000-0", // internet development
+  "72420000-0",
+  "72212224-5",
 ] as const;
 
 /** Broad CPVs that MUST NOT pass relevance alone. */
@@ -53,25 +63,19 @@ export const STRONG_WEB_SIGNALS = [
   // Greek
   "ιστοσελίδα",
   "ιστότοπος",
-  "ιστοχωροσ",
   "ιστοχώρος",
   "δικτυακός τόπος",
   "διαδικτυακή πύλη",
-  "διαδικτυακη πυλη",
   "διαδικτυακή εφαρμογή",
-  "διαδικτυακη εφαρμογη",
   "web εφαρμογή",
-  "web εφαρμογη",
   "web app",
   "web portal",
   "portal",
   "ψηφιακή πλατφόρμα",
-  "ψηφιακη πλατφορμα",
   "διαδικτυακή πλατφόρμα",
-  "διαδικτυακη πλατφορμα",
+  "διαδικτυακό πληροφοριακό σύστημα",
   "web-based",
   "φυλλομετρητή",
-  "φυλλομετρητη",
   "browser",
   "cms",
   "wordpress",
@@ -82,20 +86,14 @@ export const STRONG_WEB_SIGNALS = [
   "backend",
   "rest api",
   "web service",
-  "διαδικτυακό πληροφοριακό σύστημα",
-  "διαδικτυακο πληροφοριακο συστημα",
   "αναβάθμιση ιστοσελίδας",
-  "αναβαθμιση ιστοσελιδας",
   "επανασχεδιασμός ιστοσελίδας",
-  "επανασχεδιασμος ιστοσελιδας",
   "δημιουργία ιστοσελίδας",
-  "δημιουργια ιστοσελιδας",
+  "κατασκευή ιστοσελίδας",
   "συντήρηση ιστοσελίδας",
-  "συντηρηση ιστοσελιδας",
   "υποστήριξη ιστοσελίδας",
-  "υποστηριξη ιστοσελιδας",
   "τεχνική υποστήριξη διαδικτυακής",
-  "τεχνικη υποστηριξη διαδικτυακης",
+  "μετανάστευση ιστοσελίδας",
   // English
   "website",
   "web application",
@@ -109,18 +107,12 @@ export const STRONG_WEB_SIGNALS = [
 /** Weak signals — NOT enough alone. */
 export const WEAK_SIGNALS = [
   "λογισμικό",
-  "λογισμικο",
   "εφαρμογή",
-  "εφαρμογη",
   "πληροφοριακό σύστημα",
-  "πληροφοριακο συστημα",
   "υποστήριξη",
-  "υποστηριξη",
   "συντήρηση",
-  "συντηρηση",
   "hosting",
   "φιλοξενία",
-  "φιλοξενια",
   "cloud",
   "api",
   "software",
@@ -130,56 +122,78 @@ export const WEAK_SIGNALS = [
   "support",
 ] as const;
 
+export const MARKETING_SOCIAL_SIGNALS = [
+  "μέσα κοινωνικής δικτύωσης",
+  "social media",
+  "επικοινωνία δράσεων",
+  "επικοινωνιακή προβολή",
+  "διαφημιστική προβολή",
+  "διαφήμιση",
+  "παραγωγή περιεχομένου",
+  "διαχείριση περιεχομένου",
+  "προώθηση",
+  "καμπάνια",
+  "δημοσιότητα",
+  "επικοινωνιακές υπηρεσίες",
+  "ψηφιακό μάρκετινγκ",
+  "διαχείριση social media",
+  "communications",
+  "marketing",
+  "advertising",
+  "campaign",
+  "content production",
+  "publicity",
+] as const;
+
+/** Substantial technical web scope — required to keep mixed marketing as Relevant. */
+export const SUBSTANTIAL_TECH_WEB_SIGNALS = [
+  "ανάπτυξη",
+  "κατασκευή",
+  "αναβάθμιση",
+  "επανασχεδιασμός",
+  "τεχνική υποστήριξη",
+  "cms",
+  "wordpress",
+  "laravel",
+  "wcag",
+  "migration",
+  "μετανάστευση",
+  "web application",
+  "web εφαρμογή",
+  "διαδικτυακή εφαρμογή",
+  "portal",
+  "frontend",
+  "backend",
+  "rest api",
+  "web service",
+  "συντήρηση ιστοσελ",
+  "υποστήριξη ιστοσελ",
+] as const;
+
 export const HARD_EXCLUSION_SIGNALS = [
-  // Greek
   "επισκευή η/υ",
-  "επισκευη η/υ",
   "επισκευής η/υ",
-  "επισκευης η/υ",
   "συντήρηση η/υ",
-  "συντηρηση η/υ",
   "ηλεκτρονικό πρωτόκολλο",
-  "ηλεκτρονικο πρωτοκολλο",
   "ηλεκτρονικού πρωτοκόλλου",
-  "ηλεκτρονικου πρωτοκολλου",
   "μηχανογραφικό σύστημα",
-  "μηχανογραφικο συστημα",
   "λογισμικό μισθοδοσίας",
-  "λογισμικο μισθοδοσιας",
   "λογισμικό λογιστηρίου",
-  "λογισμικο λογιστηριου",
   "erp",
   "ιατρικό λογισμικό",
-  "ιατρικο λογισμικο",
   "νοσοκομειακό λογισμικό",
-  "νοσοκομειακο λογισμικο",
   "άδειες λογισμικού",
-  "αδειες λογισμικου",
   "antivirus",
   "microsoft office",
   "εξοπλισμός πληροφορικής",
-  "εξοπλισμος πληροφορικης",
   "εκτυπωτές",
-  "εκτυπωτες",
   "δικτυακός εξοπλισμός",
-  "δικτυακος εξοπλισμος",
   "τηλεπικοινωνίες",
-  "τηλεπικοινωνιες",
   "τηλεπικοινωνιακός εξοπλισμός",
   "cctv",
   "κάμερες ασφαλείας",
-  "καμερες ασφαλειας",
-  "social media",
-  "διαχείριση social media",
-  "διαχειριση social media",
-  "ψηφιακό μάρκετινγκ",
-  "ψηφιακο μαρκετινγκ",
-  "παραγωγή περιεχομένου",
-  "παραγωγη περιεχομενου",
-  "διαφημιστική προβολή",
   "μισθοδοσία",
   "λογιστήριο",
-  // English
   "pc repair",
   "computer repair",
   "hardware maintenance",
@@ -189,41 +203,33 @@ export const HARD_EXCLUSION_SIGNALS = [
   "network equipment",
   "server equipment",
   "licenses",
+  "desktop application",
+  "εφαρμογή γραφείου",
 ] as const;
 
 const GENERIC_SOFTWARE_MAINTENANCE = [
   "συντήρηση εφαρμογών λογισμικού",
-  "συντηρηση εφαρμογων λογισμικου",
   "συντήρηση λογισμικού",
-  "συντηρηση λογισμικου",
   "υποστήριξη λογισμικού",
-  "υποστηριξη λογισμικου",
   "επισκευής, συντήρησης και συναφών υπηρεσιών η/υ",
-  "επισκευης, συντηρησης και συναφων υπηρεσιων η/υ",
   "επισκευή, συντήρηση και συναφείς υπηρεσίες η/υ",
 ] as const;
 
 const HOSTING_ONLY_PATTERNS = [
   "φιλοξενία πληροφοριακών συστημάτων",
-  "φιλοξενια πληροφοριακων συστηματων",
   "υπηρεσίες φιλοξενίας πληροφοριακών",
-  "υπηρεσιες φιλοξενιας πληροφοριακων",
   "email hosting",
   "φιλοξενία email",
-  "φιλοξενια email",
   "mail server",
 ] as const;
 
 const INFO_SYSTEM_GENERIC = [
   "πληροφοριακό σύστημα",
-  "πληροφοριακο συστημα",
   "ανάπτυξη πληροφοριακού συστήματος",
-  "αναπτυξη πληροφοριακου συστηματος",
 ] as const;
 
 const WEB_INFO_SYSTEM_CONFIRM = [
   "διαδικτυακό",
-  "διαδικτυακο",
   "web",
   "website",
   "portal",
@@ -232,6 +238,14 @@ const WEB_INFO_SYSTEM_CONFIRM = [
   "saas",
   "φυλλομετρη",
   "ιστοσελ",
+] as const;
+
+const WEBSITE_NOUN_SIGNALS = [
+  "ιστοσελίδα",
+  "ιστότοπος",
+  "ιστοχώρος",
+  "δικτυακός τόπος",
+  "website",
 ] as const;
 
 export const normalizeText = (text: string): string =>
@@ -245,7 +259,6 @@ export const normalizeText = (text: string): string =>
 /** Soften common Greek case endings so ιστοσελίδας ≈ ιστοσελίδα. */
 export const softenGreekInflection = (text: string): string => {
   const normalized = normalizeText(text);
-  // Avoid \\b — JS word boundaries are ASCII-only and break on Greek letters.
   return normalized
     .replace(/(^|[^\p{L}])([\p{L}]+?)ης(?=[^\p{L}]|$)/gu, "$1$2η")
     .replace(/(^|[^\p{L}])([\p{L}]+?)ας(?=[^\p{L}]|$)/gu, "$1$2α")
@@ -322,19 +335,6 @@ const detectCategory = (
   return "UNKNOWN";
 };
 
-const categoryLabelReason = (category: WebCategory): string | null => {
-  switch (category) {
-    case "WEBSITE":
-    case "WEB_APPLICATION":
-    case "WEB_PLATFORM":
-    case "WEB_API_INTEGRATION":
-    case "WEBSITE_SUPPORT":
-      return null;
-    default:
-      return "Could not confidently classify web category";
-  }
-};
-
 export const isWebRelevant = (
   input: WebRelevanceInput,
 ): WebRelevanceResult => {
@@ -347,24 +347,33 @@ export const isWebRelevant = (
   const strongWebSignals = findSignals(combined, STRONG_WEB_SIGNALS);
   const exclusionSignals = findSignals(combined, HARD_EXCLUSION_SIGNALS);
   const weakOnlySignals = findSignals(combined, WEAK_SIGNALS);
+  const marketingSignals = findSignals(combined, MARKETING_SOCIAL_SIGNALS);
+  const substantialTech = findSignals(combined, SUBSTANTIAL_TECH_WEB_SIGNALS);
+  const websiteNouns = findSignals(combined, WEBSITE_NOUN_SIGNALS);
   const highConfidenceCpv = hasHighConfidenceWebCpv(cpvs);
 
-  // Generic software maintenance without web scope
+  const base = {
+    strongWebSignals,
+    exclusionSignals,
+    weakOnlySignals,
+    marketingSignals,
+    mixedMarketing: false,
+    highConfidenceCpv,
+    reviewReason: null as string | null,
+  };
+
   const genericMaintenance = findSignals(combined, GENERIC_SOFTWARE_MAINTENANCE);
   if (genericMaintenance.length > 0 && strongWebSignals.length === 0) {
     return {
+      ...base,
       isWebRelevant: false,
       status: "IRRELEVANT",
       category: "UNKNOWN",
       ignoreReason: "Generic software maintenance — no web scope detected",
-      strongWebSignals,
       exclusionSignals: [...exclusionSignals, ...genericMaintenance],
-      weakOnlySignals,
-      highConfidenceCpv,
     };
   }
 
-  // Hosting-only without web scope
   const hostingOnly = findSignals(combined, HOSTING_ONLY_PATTERNS);
   const hostingWithWeb =
     /φιλοξεν/.test(combined) &&
@@ -373,38 +382,31 @@ export const isWebRelevant = (
     );
   if (hostingOnly.length > 0 && !hostingWithWeb && strongWebSignals.length === 0) {
     return {
+      ...base,
       isWebRelevant: false,
       status: "IRRELEVANT",
       category: "UNKNOWN",
       ignoreReason: "Hosting-only project",
-      strongWebSignals,
       exclusionSignals: [...exclusionSignals, ...hostingOnly],
-      weakOnlySignals,
-      highConfidenceCpv,
     };
   }
 
-  // Strong exclusions without strong web signals
   if (exclusionSignals.length > 0 && strongWebSignals.length === 0) {
     const hardware =
       /η\/υ|εξοπλισ|hardware|εκτυπω|pc repair|computer repair|δικτυακος εξοπλισ/.test(
         combined,
       );
     return {
+      ...base,
       isWebRelevant: false,
       status: "IRRELEVANT",
       category: "UNKNOWN",
       ignoreReason: hardware
         ? "Hardware / IT support"
         : `Excluded scope — ${exclusionSignals[0]}`,
-      strongWebSignals,
-      exclusionSignals,
-      weakOnlySignals,
-      highConfidenceCpv,
     };
   }
 
-  // Generic "πληροφοριακό σύστημα" needs web confirmation
   const genericInfoSystem = findSignals(title, INFO_SYSTEM_GENERIC);
   if (genericInfoSystem.length > 0 && strongWebSignals.length === 0) {
     const confirmed = WEB_INFO_SYSTEM_CONFIRM.some((token) =>
@@ -412,37 +414,32 @@ export const isWebRelevant = (
     );
     if (!confirmed) {
       return {
+        ...base,
         isWebRelevant: false,
         status: "NEEDS_REVIEW",
         category: "UNKNOWN",
-        ignoreReason:
-          "Generic information system — no browser/web confirmation",
-        strongWebSignals,
-        exclusionSignals,
-        weakOnlySignals,
-        highConfidenceCpv,
+        ignoreReason: null,
+        reviewReason:
+          "Generic information system — web scope not confirmed",
       };
     }
   }
 
-  // High-confidence CPV alone is not enough without any textual web signal
-  // unless PDF/title/desc has strong web text. CPV can tip NEEDS_REVIEW → still no Slack.
   if (strongWebSignals.length === 0) {
     if (highConfidenceCpv) {
       return {
+        ...base,
         isWebRelevant: false,
         status: "NEEDS_REVIEW",
         category: "UNKNOWN",
-        ignoreReason:
+        ignoreReason: null,
+        reviewReason:
           "Web CPV present but title/description/PDF lack clear web scope",
-        strongWebSignals,
-        exclusionSignals,
-        weakOnlySignals,
-        highConfidenceCpv,
       };
     }
 
     return {
+      ...base,
       isWebRelevant: false,
       status: "IRRELEVANT",
       category: "UNKNOWN",
@@ -450,36 +447,54 @@ export const isWebRelevant = (
         weakOnlySignals.length > 0
           ? "Weak IT/software terms only — no strong web signal"
           : "No strong web relevance signals",
-      strongWebSignals,
-      exclusionSignals,
-      weakOnlySignals,
-      highConfidenceCpv,
     };
   }
+
+  // Mixed marketing / social + weak website mention → Needs Review (no Slack)
+  const mixedMarketingNoise =
+    marketingSignals.length > 0 &&
+    websiteNouns.length > 0 &&
+    substantialTech.length === 0;
+
+  if (mixedMarketingNoise) {
+    return {
+      ...base,
+      isWebRelevant: false,
+      status: "NEEDS_REVIEW",
+      category: "UNKNOWN",
+      ignoreReason: null,
+      reviewReason:
+        "Mixed marketing / social + website mention — technical web scope unclear",
+      mixedMarketing: true,
+    };
+  }
+
+  const mixedMarketing =
+    marketingSignals.length > 0 &&
+    websiteNouns.length > 0 &&
+    substantialTech.length > 0;
 
   const category = detectCategory(combined, strongWebSignals);
   if (category === "UNKNOWN") {
     return {
+      ...base,
       isWebRelevant: false,
       status: "NEEDS_REVIEW",
       category: "UNKNOWN",
-      ignoreReason: categoryLabelReason(category),
-      strongWebSignals,
-      exclusionSignals,
-      weakOnlySignals,
-      highConfidenceCpv,
+      ignoreReason: null,
+      reviewReason: "Could not confidently classify web category",
+      mixedMarketing,
     };
   }
 
   return {
+    ...base,
     isWebRelevant: true,
     status: "RELEVANT",
     category,
     ignoreReason: null,
-    strongWebSignals,
-    exclusionSignals,
-    weakOnlySignals,
-    highConfidenceCpv,
+    reviewReason: null,
+    mixedMarketing,
   };
 };
 

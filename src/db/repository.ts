@@ -30,6 +30,7 @@ export type TenderRow = {
   web_category: WebCategory | string | null;
   relevance_status: RelevanceStatus | string | null;
   ignore_reason: string | null;
+  review_reason: string | null;
 };
 
 export type UpsertTenderInput = {
@@ -55,6 +56,7 @@ export type UpsertTenderInput = {
   webCategory: WebCategory | string;
   relevanceStatus: RelevanceStatus | string;
   ignoreReason: string | null;
+  reviewReason: string | null;
   rawJson: unknown;
   nowIso: string;
 };
@@ -91,7 +93,7 @@ export const createRepository = (db: Database.Database) => {
       budget_without_vat, budget_with_vat, cpvs, score, stage,
       targeted_supplier, non_invited_offers_rejected, pdf_text_status,
       official_pdf_url, public_kimdis_url, score_reasons,
-      web_relevant, web_category, relevance_status, ignore_reason,
+      web_relevant, web_category, relevance_status, ignore_reason, review_reason,
       first_seen_at, last_seen_at, notified_at, raw_json
     ) VALUES (
       @reference_number, @record_type, @title, @organization,
@@ -99,7 +101,7 @@ export const createRepository = (db: Database.Database) => {
       @budget_without_vat, @budget_with_vat, @cpvs, @score, @stage,
       @targeted_supplier, @non_invited_offers_rejected, @pdf_text_status,
       @official_pdf_url, @public_kimdis_url, @score_reasons,
-      @web_relevant, @web_category, @relevance_status, @ignore_reason,
+      @web_relevant, @web_category, @relevance_status, @ignore_reason, @review_reason,
       @first_seen_at, @last_seen_at, NULL, @raw_json
     )
   `);
@@ -120,6 +122,9 @@ export const createRepository = (db: Database.Database) => {
       web_category = @web_category,
       relevance_status = @relevance_status,
       ignore_reason = @ignore_reason,
+      review_reason = @review_reason,
+      targeted_supplier = @targeted_supplier,
+      non_invited_offers_rejected = @non_invited_offers_rejected,
       last_seen_at = @last_seen_at
     WHERE reference_number = @reference_number
   `);
@@ -187,6 +192,7 @@ export const createRepository = (db: Database.Database) => {
         web_category: input.webCategory,
         relevance_status: input.relevanceStatus,
         ignore_reason: input.ignoreReason,
+        review_reason: input.reviewReason,
         first_seen_at: input.nowIso,
         last_seen_at: input.nowIso,
         raw_json: JSON.stringify(input.rawJson),
@@ -204,6 +210,9 @@ export const createRepository = (db: Database.Database) => {
       webCategory: string;
       relevanceStatus: string;
       ignoreReason: string | null;
+      reviewReason: string | null;
+      targetedSupplier?: boolean;
+      nonInvitedOffersRejected?: boolean;
       nowIso: string;
     }): void => {
       updateRelevance.run({
@@ -215,6 +224,9 @@ export const createRepository = (db: Database.Database) => {
         web_category: input.webCategory,
         relevance_status: input.relevanceStatus,
         ignore_reason: input.ignoreReason,
+        review_reason: input.reviewReason,
+        targeted_supplier: input.targetedSupplier ? 1 : 0,
+        non_invited_offers_rejected: input.nonInvitedOffersRejected ? 1 : 0,
         last_seen_at: input.nowIso,
       });
     },

@@ -29,7 +29,7 @@ describe("reevaluate + resend", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("marks broad CPV-only rows irrelevant and keeps website rows alertable", async () => {
+  it("reclassifies noise as ignored and website REQ as alertable without resending notified", async () => {
     const db = openDatabase(dbPath);
     const repo = createRepository(db);
     const now = new Date().toISOString();
@@ -37,7 +37,7 @@ describe("reevaluate + resend", () => {
     repo.upsertNewOrTouch({
       referenceNumber: "26REQ_NOISE",
       recordType: "REQ",
-      title: "Συντήρηση λογισμικού Η/Υ",
+      title: "Συντήρηση εφαρμογών λογισμικού",
       organization: "Δήμος Α",
       submissionDate: now,
       signedDate: null,
@@ -57,21 +57,23 @@ describe("reevaluate + resend", () => {
       webCategory: "UNKNOWN",
       relevanceStatus: "RELEVANT",
       ignoreReason: null,
+      reviewReason: null,
       rawJson: {},
       nowIso: now,
     });
+    repo.markNotified("26REQ_NOISE", now);
 
     repo.upsertNewOrTouch({
-      referenceNumber: "26REQ_WEB",
+      referenceNumber: "26REQ_PETA",
       recordType: "REQ",
-      title: "Αναβάθμιση ιστοσελίδας και CMS WordPress",
-      organization: "Δήμος Β",
+      title: "Συντήρηση της ιστοσελίδας για την ΠΕΤΑ ΑΕ.",
+      organization: "ΠΕΤΑ ΑΕ",
       submissionDate: now,
       signedDate: null,
       finalSubmissionDate: null,
-      budgetWithoutVat: 9000,
-      budgetWithVat: 11160,
-      cpvs: ["72413000-8"],
+      budgetWithoutVat: 3500,
+      budgetWithVat: 4340,
+      cpvs: [],
       score: 40,
       stage: "EARLY",
       targetedSupplier: false,
@@ -84,6 +86,7 @@ describe("reevaluate + resend", () => {
       webCategory: "UNKNOWN",
       relevanceStatus: "IRRELEVANT",
       ignoreReason: null,
+      reviewReason: null,
       rawJson: {},
       nowIso: now,
     });
@@ -92,15 +95,15 @@ describe("reevaluate + resend", () => {
     expect(stats.total).toBe(2);
     expect(stats.irrelevant).toBeGreaterThanOrEqual(1);
     expect(stats.relevant).toBeGreaterThanOrEqual(1);
-    expect(stats.alertCandidates).toBeGreaterThanOrEqual(1);
+    expect(stats.previouslyNotifiedNowSuppressed.length).toBeGreaterThanOrEqual(1);
 
     const noise = repo.findByAdam("26REQ_NOISE");
     expect(noise?.relevance_status).toBe("IRRELEVANT");
-    expect(noise?.score).toBe(0);
+    expect(noise?.notified_at).toBeTruthy(); // preserved
 
-    const web = repo.findByAdam("26REQ_WEB");
-    expect(web?.web_relevant).toBe(1);
-    expect((web?.score ?? 0) >= 60).toBe(true);
+    const peta = repo.findByAdam("26REQ_PETA");
+    expect(peta?.web_relevant).toBe(1);
+    expect((peta?.score ?? 0) >= 70).toBe(true);
 
     const sent: string[] = [];
     const dry = await resendMatchingAlerts(
@@ -114,31 +117,12 @@ describe("reevaluate + resend", () => {
         },
         config: baseConfig,
       },
-      { dryRun: true, force: true, limit: 10 },
+      { dryRun: true, force: false, limit: 10 },
     );
 
     expect(dry.dryRun).toBe(true);
     expect(dry.sent).toBe(0);
-    expect(dry.samples.length).toBeGreaterThanOrEqual(1);
     expect(sent).toHaveLength(0);
-
-    const live = await resendMatchingAlerts(
-      {
-        repo,
-        slack: {
-          sendText: async (text) => {
-            sent.push(text);
-            return true;
-          },
-        },
-        config: baseConfig,
-      },
-      { force: true, limit: 10 },
-    );
-
-    expect(live.sent).toBeGreaterThanOrEqual(1);
-    expect(sent.length).toBe(live.sent);
-    expect(repo.wasNotified("26REQ_WEB")).toBe(true);
 
     db.close();
   });

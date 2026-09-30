@@ -20,6 +20,7 @@ export const HIGH_CONFIDENCE_WEB_CPVS = [
   "72415000-2",
   "72416000-9",
   "72420000-0",
+  "72212224-5",
 ] as const;
 
 /** Broad IT CPVs — never enough alone for relevance. */

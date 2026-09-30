@@ -19,6 +19,8 @@ export type SlackOpportunity = {
     nonInvitedOffersRejected: boolean;
     alreadyAdvanced: boolean;
     pdfNeedsManualReview: boolean;
+    pdfVerified?: boolean;
+    budgetInRange?: boolean;
   };
   targetedSupplierName?: string | null;
 };
@@ -43,30 +45,37 @@ const formatDateTime = (value: string | null | undefined): string => {
   });
 };
 
-const headline = (score: number): string => {
-  if (score >= 80) return `🔥 *NEW KIMDIS LEAD — ${score}/100*`;
-  return `🟢 *NEW KIMDIS MATCH — ${score}/100*`;
+const headline = (item: SlackOpportunity): string => {
+  if (item.recordType === "PROC") {
+    if (item.score >= 80) return `🔥 *VERIFIED OPEN PROC — ${item.score}/100*`;
+    return `🟢 *VERIFIED OPEN PROC — ${item.score}/100*`;
+  }
+  if (item.score >= 80) return `🔥 *NEW KIMDIS LEAD — ${item.score}/100*`;
+  return `🟢 *NEW KIMDIS MATCH — ${item.score}/100*`;
 };
 
 const recommendation = (item: SlackOpportunity): string => {
   if (item.flags.alreadyAdvanced || item.flags.nonInvitedOffersRejected) {
     return "LOW PRIORITY — likely too late";
   }
-  if (item.flags.targetedSupplier && item.score < 85) {
-    return "REVIEW carefully — targeted invitation";
+  if (item.flags.targetedSupplier) {
+    return "SKIP — targeted invitation";
   }
-  if (item.score >= 80 && item.flags.earlyStage) {
-    return "CONTACT NOW";
+  if (item.recordType === "PROC") {
+    return "REVIEW / PREPARE OFFER";
+  }
+  if (item.flags.earlyStage && item.score >= 70) {
+    return "CONTACT EARLY";
   }
   if (item.score >= 80) {
-    return "HIGH PRIORITY — review today";
+    return "CONTACT EARLY";
   }
   return "Worth a look";
 };
 
 export const formatSlackMessage = (item: SlackOpportunity): string => {
   const lines: string[] = [
-    headline(item.score),
+    headline(item),
     "",
     `*${item.organization} — ${item.title}*`,
     "",
@@ -88,12 +97,28 @@ export const formatSlackMessage = (item: SlackOpportunity): string => {
 
   lines.push("");
 
-  if (item.flags.earlyStage) lines.push("✅ Early stage");
-  lines.push("✅ Clear web scope");
-  if (!item.flags.hasLinkedNotice) {
-    lines.push("✅ No linked invitation found");
+  if (item.recordType === "REQ") {
+    lines.push("✅ Explicit website scope");
+    if (item.flags.earlyStage) lines.push("✅ Early stage");
+    if (!item.flags.hasLinkedNotice) {
+      lines.push("✅ No linked invitation");
+    } else {
+      lines.push("⚠️ Linked notice already exists");
+    }
+    if (item.flags.budgetInRange) {
+      lines.push("✅ Budget in target range");
+    }
   } else {
-    lines.push("⚠️ Linked notice already exists");
+    if (item.flags.pdfVerified) lines.push("✅ PDF verified");
+    if (!item.flags.targetedSupplier) {
+      lines.push("✅ No named supplier detected");
+    }
+    if (!item.flags.nonInvitedOffersRejected) {
+      lines.push("✅ Non-invited offers not excluded");
+    }
+    if (item.finalSubmissionDate) {
+      lines.push("✅ Deadline open");
+    }
   }
 
   if (item.flags.pdfNeedsManualReview) {
@@ -104,8 +129,6 @@ export const formatSlackMessage = (item: SlackOpportunity): string => {
     lines.push("⚠️ Targeted invitation");
     if (item.targetedSupplierName) {
       lines.push(`⚠️ Specific supplier detected: ${item.targetedSupplierName}`);
-    } else {
-      lines.push("⚠️ Specific supplier detected");
     }
   }
 

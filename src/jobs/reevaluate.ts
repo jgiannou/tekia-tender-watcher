@@ -2,8 +2,13 @@ import type { Config } from "../config.js";
 import type { Repository, TenderRow } from "../db/repository.js";
 import { scoreOpportunity } from "../filters/scorer.js";
 import {
+  evaluateSlackEligibility,
+  isDeadlineInPast,
+} from "../filters/slack-eligibility.js";
+import {
   isWebRelevant,
   webCategorySlackLabel,
+  type RelevanceStatus,
   type WebCategory,
 } from "../filters/web-relevance.js";
 import type { RecordType } from "../kimdis/types.js";
@@ -15,7 +20,28 @@ export type ReevaluateStats = {
   relevant: number;
   needsReview: number;
   irrelevant: number;
+  expired: number;
+  targeted: number;
   alertCandidates: number;
+  previouslyNotifiedNowSuppressed: Array<{
+    adam: string;
+    title: string;
+    organization: string | null;
+    oldScore: number | null;
+    newStatus: string;
+    reason: string | null;
+  }>;
+  spotlight: Array<{
+    match: string;
+    adam: string;
+    organization: string | null;
+    title: string;
+    score: number;
+    status: string;
+    category: string;
+    slackEligible: boolean;
+    reason: string | null;
+  }>;
 };
 
 export type ResendOptions = {
@@ -45,9 +71,7 @@ const parseCpvs = (raw: string | null): string[] => {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.map(String).filter(Boolean)
-      : [];
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
   } catch {
     return [];
   }
@@ -63,33 +87,168 @@ const parseReasons = (raw: string | null): string[] => {
   }
 };
 
-const stageLabel = (
-  recordType: RecordType,
-  stage: string,
-): string => {
+const stageLabel = (recordType: RecordType, stage: string): string => {
   if (stage === "ALREADY_ADVANCED") return "Already advanced";
+  if (stage === "TARGETED") return "Targeted invitation";
+  if (stage === "EXPIRED") return "Expired";
   if (recordType === "REQ") return "Πρωτογενές Αίτημα";
   if (recordType === "PROC") return "Πρόσκληση / Διακήρυξη";
   return recordType;
 };
 
-const shouldAlert = (
+const spotlightMatchers = [
+  { key: "ΠΕΤΑ ΑΕ", test: (r: TenderRow) => /πετα/i.test(r.organization ?? "") || /πετα/i.test(r.title ?? "") },
+  {
+    key: "Δήμος Παλαιού Φαλήρου",
+    test: (r: TenderRow) => /παλαιου φαληρ|παλαιού φαλήρ/i.test(`${r.organization ?? ""} ${r.title ?? ""}`),
+  },
+  {
+    key: "Ελληνική Αρχή Γεωλογικών",
+    test: (r: TenderRow) =>
+      /γεωλογικ|μεταλλευτικ/i.test(`${r.organization ?? ""} ${r.title ?? ""}`) ||
+      /κοινωνικησ δικτυωσ|κοινωνικής δικτύωσ/i.test(r.title ?? ""),
+  },
+];
+
+const classifyRow = (
   row: TenderRow,
-  threshold: number,
-  targetedAlertScore: number,
-): boolean => {
-  if (!row.web_relevant) return false;
-  const category = (row.web_category as WebCategory) ?? "UNKNOWN";
-  if (category === "UNKNOWN") return false;
-  const score = row.score ?? 0;
-  if (score < threshold) return false;
-  if (Boolean(row.targeted_supplier) && score < targetedAlertScore) return false;
-  return true;
+  config: Pick<
+    Config,
+    "MIN_BUDGET" | "MAX_BUDGET" | "ALERT_SCORE_THRESHOLD" | "TARGETED_ALERT_SCORE"
+  >,
+): {
+  score: number;
+  stage: string;
+  reasons: string[];
+  webRelevant: boolean;
+  webCategory: WebCategory;
+  relevanceStatus: RelevanceStatus;
+  ignoreReason: string | null;
+  reviewReason: string | null;
+  targetedSupplier: boolean;
+  nonInvitedOffersRejected: boolean;
+  slackEligible: boolean;
+  slackBlockReason: string | null;
+} => {
+  const cpvs = parseCpvs(row.cpvs);
+  const targetedSupplier = Boolean(row.targeted_supplier);
+  const nonInvitedOffersRejected = Boolean(row.non_invited_offers_rejected);
+  const pdfStatus = row.pdf_text_status ?? "none";
+  const alreadyAdvanced = (row.stage ?? "") === "ALREADY_ADVANCED";
+
+  const gate = isWebRelevant({
+    title: row.title ?? "",
+    description: "",
+    cpvs,
+  });
+
+  let relevanceStatus: RelevanceStatus = gate.status;
+  let ignoreReason = gate.ignoreReason;
+  let reviewReason = gate.reviewReason;
+  let stage = row.stage ?? "UNKNOWN";
+  let score = 0;
+  let reasons: string[] = [gate.ignoreReason ?? gate.reviewReason ?? "Not web relevant"];
+
+  if (row.record_type === "PROC" && gate.isWebRelevant) {
+    if (pdfStatus !== "extracted") {
+      relevanceStatus = "NEEDS_REVIEW";
+      reviewReason = "PROC PDF unreadable — recipient cannot be verified";
+      ignoreReason = null;
+      stage = "NEEDS_REVIEW";
+      reasons = [reviewReason];
+    } else if (targetedSupplier || nonInvitedOffersRejected) {
+      relevanceStatus = "TARGETED";
+      ignoreReason = nonInvitedOffersRejected
+        ? "Non-invited offers explicitly rejected"
+        : "Targeted invitation to specific supplier";
+      reviewReason = null;
+      stage = "TARGETED";
+      reasons = [ignoreReason];
+    } else if (isDeadlineInPast(row.final_submission_date)) {
+      relevanceStatus = "EXPIRED";
+      ignoreReason = "Deadline already expired";
+      reviewReason = null;
+      stage = "EXPIRED";
+      reasons = [ignoreReason];
+    } else if (alreadyAdvanced) {
+      relevanceStatus = "IRRELEVANT";
+      ignoreReason = "Already advanced / award language in PDF";
+      reviewReason = null;
+      reasons = [ignoreReason];
+    }
+  }
+
+  if (
+    relevanceStatus === "RELEVANT" &&
+    gate.isWebRelevant &&
+    gate.category !== "UNKNOWN"
+  ) {
+    const scored = scoreOpportunity({
+      recordType: row.record_type,
+      title: row.title ?? "",
+      description: "",
+      cpvs,
+      budgetWithoutVat: row.budget_without_vat,
+      minBudget: config.MIN_BUDGET,
+      maxBudget: config.MAX_BUDGET,
+      hasNoticeRef: false,
+      isPrimaryRequest: row.record_type === "REQ",
+      webCategory: gate.category,
+      mixedMarketing: gate.mixedMarketing,
+      pdf: {
+        alreadyAdvanced,
+        targetedSupplier,
+        nonInvitedOffersRejected,
+      },
+    });
+    score = scored.score;
+    reasons = scored.reasons;
+    if (row.record_type === "REQ") stage = "EARLY";
+  } else if (relevanceStatus === "NEEDS_REVIEW") {
+    score = 0;
+    stage = stage === "UNKNOWN" ? "NEEDS_REVIEW" : stage;
+  } else if (relevanceStatus === "IRRELEVANT") {
+    score = 0;
+    stage = "IRRELEVANT";
+  }
+
+  const eligibility = evaluateSlackEligibility({
+    recordType: row.record_type,
+    isWebRelevant: gate.isWebRelevant && relevanceStatus === "RELEVANT",
+    category: gate.category,
+    relevanceStatus,
+    score,
+    threshold: config.ALERT_SCORE_THRESHOLD,
+    hasNoticeRef: false,
+    alreadyAdvanced,
+    targetedSupplier,
+    nonInvitedOffersRejected,
+    pdfTextStatus: pdfStatus,
+    finalSubmissionDate: row.final_submission_date,
+  });
+
+  return {
+    score,
+    stage,
+    reasons,
+    webRelevant: gate.isWebRelevant && relevanceStatus === "RELEVANT",
+    webCategory: gate.category,
+    relevanceStatus,
+    ignoreReason,
+    reviewReason,
+    targetedSupplier,
+    nonInvitedOffersRejected,
+    slackEligible: eligibility.eligible,
+    slackBlockReason: eligibility.reason,
+  };
 };
 
 export const reevaluateStoredTenders = (
   repo: Repository,
-  config: Pick<Config, "MIN_BUDGET" | "MAX_BUDGET" | "ALERT_SCORE_THRESHOLD" | "TARGETED_ALERT_SCORE">,
+  config: Pick<
+    Config,
+    "MIN_BUDGET" | "MAX_BUDGET" | "ALERT_SCORE_THRESHOLD" | "TARGETED_ALERT_SCORE"
+  >,
 ): ReevaluateStats => {
   const rows = repo.listAll();
   const nowIso = new Date().toISOString();
@@ -97,74 +256,93 @@ export const reevaluateStoredTenders = (
   let relevant = 0;
   let needsReview = 0;
   let irrelevant = 0;
+  let expired = 0;
+  let targeted = 0;
   let alertCandidates = 0;
+  const previouslyNotifiedNowSuppressed: ReevaluateStats["previouslyNotifiedNowSuppressed"] =
+    [];
+  const classified = new Map<string, ReturnType<typeof classifyRow>>();
 
   for (const row of rows) {
-    const cpvs = parseCpvs(row.cpvs);
-    const gate = isWebRelevant({
-      title: row.title ?? "",
-      description: "",
-      cpvs,
-    });
-
-    let score = 0;
-    let reasons: string[] = [gate.ignoreReason ?? "Not web relevant"];
-    let stage = row.stage ?? "UNKNOWN";
-
-    if (!gate.isWebRelevant) {
-      score = 0;
-      stage = gate.status === "NEEDS_REVIEW" ? "NEEDS_REVIEW" : "IRRELEVANT";
-      if (gate.status === "NEEDS_REVIEW") needsReview += 1;
-      else irrelevant += 1;
-    } else {
-      const scored = scoreOpportunity({
-        recordType: row.record_type,
-        title: row.title ?? "",
-        description: "",
-        cpvs,
-        budgetWithoutVat: row.budget_without_vat,
-        minBudget: config.MIN_BUDGET,
-        maxBudget: config.MAX_BUDGET,
-        hasNoticeRef: false,
-        isPrimaryRequest: row.record_type === "REQ",
-        webCategory: gate.category,
-        pdf: {
-          alreadyAdvanced: stage === "ALREADY_ADVANCED",
-          targetedSupplier: Boolean(row.targeted_supplier),
-          nonInvitedOffersRejected: Boolean(row.non_invited_offers_rejected),
-        },
-      });
-      score = scored.score;
-      reasons = scored.reasons;
-      relevant += 1;
-    }
+    const result = classifyRow(row, config);
+    classified.set(row.reference_number, result);
 
     repo.updateRelevanceFields({
       referenceNumber: row.reference_number,
-      score,
-      stage,
-      scoreReasons: reasons,
-      webRelevant: gate.isWebRelevant,
-      webCategory: gate.category,
-      relevanceStatus: gate.status,
-      ignoreReason: gate.ignoreReason,
+      score: result.score,
+      stage: result.stage,
+      scoreReasons: result.reasons,
+      webRelevant: result.webRelevant,
+      webCategory: result.webCategory,
+      relevanceStatus: result.relevanceStatus,
+      ignoreReason: result.ignoreReason,
+      reviewReason: result.reviewReason,
+      targetedSupplier: result.targetedSupplier,
+      nonInvitedOffersRejected: result.nonInvitedOffersRejected,
       nowIso,
     });
 
-    const updated: TenderRow = {
-      ...row,
-      score,
-      stage,
-      score_reasons: JSON.stringify(reasons),
-      web_relevant: gate.isWebRelevant ? 1 : 0,
-      web_category: gate.category,
-      relevance_status: gate.status,
-      ignore_reason: gate.ignoreReason,
-    };
-
-    if (shouldAlert(updated, config.ALERT_SCORE_THRESHOLD, config.TARGETED_ALERT_SCORE)) {
-      alertCandidates += 1;
+    switch (result.relevanceStatus) {
+      case "RELEVANT":
+        relevant += 1;
+        break;
+      case "NEEDS_REVIEW":
+        needsReview += 1;
+        break;
+      case "EXPIRED":
+        expired += 1;
+        break;
+      case "TARGETED":
+        targeted += 1;
+        break;
+      default:
+        irrelevant += 1;
+        break;
     }
+
+    if (result.slackEligible) alertCandidates += 1;
+
+    if (row.notified_at && !result.slackEligible) {
+      previouslyNotifiedNowSuppressed.push({
+        adam: row.reference_number,
+        title: row.title ?? "",
+        organization: row.organization,
+        oldScore: row.score,
+        newStatus: result.relevanceStatus,
+        reason: result.slackBlockReason ?? result.reviewReason ?? result.ignoreReason,
+      });
+    }
+  }
+
+  const spotlight: ReevaluateStats["spotlight"] = [];
+  for (const matcher of spotlightMatchers) {
+    const row = rows.find((r) => matcher.test(r));
+    if (!row) {
+      spotlight.push({
+        match: matcher.key,
+        adam: "(not in DB)",
+        organization: null,
+        title: "",
+        score: 0,
+        status: "MISSING",
+        category: "UNKNOWN",
+        slackEligible: false,
+        reason: "Record not found in local/current database",
+      });
+      continue;
+    }
+    const result = classified.get(row.reference_number)!;
+    spotlight.push({
+      match: matcher.key,
+      adam: row.reference_number,
+      organization: row.organization,
+      title: row.title ?? "",
+      score: result.score,
+      status: result.relevanceStatus,
+      category: result.webCategory,
+      slackEligible: result.slackEligible,
+      reason: result.slackBlockReason ?? result.reviewReason ?? result.ignoreReason,
+    });
   }
 
   return {
@@ -172,8 +350,33 @@ export const reevaluateStoredTenders = (
     relevant,
     needsReview,
     irrelevant,
+    expired,
+    targeted,
     alertCandidates,
+    previouslyNotifiedNowSuppressed: previouslyNotifiedNowSuppressed.slice(0, 50),
+    spotlight,
   };
+};
+
+const shouldAlertRow = (
+  row: TenderRow,
+  config: Pick<Config, "ALERT_SCORE_THRESHOLD" | "TARGETED_ALERT_SCORE">,
+): boolean => {
+  const eligibility = evaluateSlackEligibility({
+    recordType: row.record_type,
+    isWebRelevant: Boolean(row.web_relevant),
+    category: (row.web_category as WebCategory) ?? "UNKNOWN",
+    relevanceStatus: (row.relevance_status as RelevanceStatus) ?? "IRRELEVANT",
+    score: row.score ?? 0,
+    threshold: config.ALERT_SCORE_THRESHOLD,
+    hasNoticeRef: false,
+    alreadyAdvanced: (row.stage ?? "") === "ALREADY_ADVANCED",
+    targetedSupplier: Boolean(row.targeted_supplier),
+    nonInvitedOffersRejected: Boolean(row.non_invited_offers_rejected),
+    pdfTextStatus: row.pdf_text_status ?? "none",
+    finalSubmissionDate: row.final_submission_date,
+  });
+  return eligibility.eligible;
 };
 
 const buildSlackText = (row: TenderRow): string => {
@@ -203,7 +406,9 @@ const buildSlackText = (row: TenderRow): string => {
       targetedSupplier: Boolean(row.targeted_supplier),
       nonInvitedOffersRejected: Boolean(row.non_invited_offers_rejected),
       alreadyAdvanced: stage === "ALREADY_ADVANCED",
-      pdfNeedsManualReview: pdfStatus === "unreadable" || pdfStatus === "error",
+      pdfNeedsManualReview: false,
+      pdfVerified: row.record_type === "PROC" && pdfStatus === "extracted",
+      budgetInRange: true,
     },
   });
 };
@@ -229,9 +434,7 @@ export const resendMatchingAlerts = async (
   const reevaluate = reevaluateStoredTenders(deps.repo, deps.config);
   const rows = deps.repo
     .listAll()
-    .filter((row) =>
-      shouldAlert(row, deps.config.ALERT_SCORE_THRESHOLD, deps.config.TARGETED_ALERT_SCORE),
-    )
+    .filter((row) => shouldAlertRow(row, deps.config))
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
   let sent = 0;

@@ -25,7 +25,7 @@ Rules:
 4. Hosting-only / generic software maintenance / Η/Υ repair / electronic protocol → `IRRELEVANT`, no Slack
 5. Slack only if `isWebRelevant` **and** a concrete web category **and** `score >= ALERT_SCORE_THRESHOLD`
 
-Statuses stored in SQLite: `RELEVANT` | `NEEDS_REVIEW` | `IRRELEVANT`.
+Statuses stored in SQLite: `RELEVANT` | `NEEDS_REVIEW` | `IRRELEVANT` | `EXPIRED` | `TARGETED`.
 
 ## Architecture
 

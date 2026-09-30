@@ -81,11 +81,17 @@ export const HARDWARE_KEYWORDS = [
 export const SOCIAL_MEDIA_KEYWORDS = [
   "social media",
   "διαχείριση social media",
+  "μέσα κοινωνικής δικτύωσης",
   "παραγωγή περιεχομένου",
   "διαφημιστική προβολή",
+  "επικοινωνία δράσεων",
+  "επικοινωνιακή προβολή",
   "facebook",
   "instagram",
   "tiktok",
+  "marketing",
+  "advertising",
+  "campaign",
 ] as const;
 
 const normalizeText = (text: string): string =>
