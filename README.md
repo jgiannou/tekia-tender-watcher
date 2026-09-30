@@ -226,7 +226,7 @@ Edit (gitignored):
 ```env
 GOOGLE_OAUTH_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
 GOOGLE_OAUTH_CLIENT_SECRET=xxxxxxxx
-GOOGLE_DRIVE_SCOPE=https://www.googleapis.com/auth/drive.file openid email profile
+GOOGLE_DRIVE_SCOPE=https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file openid email profile
 ```
 
 Do **not** put the TEKIA/Tenders folder ID in `.env`. Select it in the app UI.
@@ -251,8 +251,14 @@ Alternative (also gitignored): `apps/desktop/google-oauth.local.json`
 
 ### Scope note
 
-Initial scope is `drive.file` (narrow). Accessing a **pre-existing** TEKIA/Tenders tree by pasted folder ID may return **403**.  
-If that happens, the app **does not** silently escalate. It shows a scope warning. Broader read scope (`drive.readonly`) requires an explicit operator decision.
+Operator-approved scopes (2026-09-30):
+
+- `https://www.googleapis.com/auth/drive.readonly` — read the existing TEKIA/Tenders vault
+- `https://www.googleapis.com/auth/drive.file` — create tender workspaces and copy templates
+
+After changing scopes: **Disconnect → Connect** again so Google issues a new consent/token.
+
+Do **not** request full `https://www.googleapis.com/auth/drive` unless explicitly required.
 
 ### Tokens
 

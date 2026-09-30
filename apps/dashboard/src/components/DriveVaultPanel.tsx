@@ -186,7 +186,7 @@ export const DriveVaultPanel = () => {
         <div className="meta-item">
           <span className="k">Scope</span>
           <span className="v">
-            <code style={{ fontSize: 12 }}>{status?.scope ?? "drive.file"}</code>
+            <code style={{ fontSize: 12 }}>{status?.scope ?? "drive.readonly + drive.file"}</code>
           </span>
         </div>
         <div className="meta-item">

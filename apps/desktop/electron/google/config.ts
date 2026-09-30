@@ -10,7 +10,8 @@ export type GoogleOAuthConfig = {
   source: string;
 };
 
-const DEFAULT_SCOPE = "https://www.googleapis.com/auth/drive.file openid email profile";
+const DEFAULT_SCOPE =
+  "https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file openid email profile";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

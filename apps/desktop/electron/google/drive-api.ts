@@ -59,7 +59,7 @@ const driveFetch = async <T>(
       throw new DriveApiError(
         403,
         reason,
-        `${message} — scope may be insufficient for this existing folder (drive.file).`,
+        `${message} — Drive API permission/scope issue.`,
       );
     }
     if (response.status === 404) {

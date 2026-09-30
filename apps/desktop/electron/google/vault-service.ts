@@ -127,8 +127,7 @@ export const getDriveStatus = async (
       lastError = error instanceof Error ? error.message : String(error);
       if (error instanceof DriveApiError && error.status === 403) {
         scopeWarning =
-          "drive.file could not list the selected existing folder hierarchy. " +
-          "Select the folder with Google Picker after connect, or operator must approve a broader scope (drive.readonly) before we change it.";
+          "Drive returned 403 while reading the vault. Disconnect → Connect again so Google re-consents to drive.readonly + drive.file. Confirm the OAuth consent screen includes both scopes.";
       }
       return { ...base, lastError, scopeWarning };
     }
@@ -261,10 +260,7 @@ export const setVaultRootFromInput = async (
     lastError = error instanceof Error ? error.message : String(error);
     if (error instanceof DriveApiError && error.status === 403) {
       scopeWarning =
-        "Existing folder access failed with drive.file. " +
-        "If this persists after selecting the folder via an app-owned open/pick flow, " +
-        "broader scope drive.readonly is required for reading the pre-existing TEKIA/Tenders tree. " +
-        "We have NOT silently escalated the scope.";
+        "Existing folder access returned 403. Disconnect Google Drive, Connect again (new consent for drive.readonly), then re-select TEKIA/Tenders.";
     }
     throw error;
   }
