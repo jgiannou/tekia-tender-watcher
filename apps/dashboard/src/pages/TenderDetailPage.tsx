@@ -70,6 +70,21 @@ export const TenderDetailPage = () => {
   const [showRecordForm, setShowRecordForm] = useState(false);
   const [editingDraft, setEditingDraft] = useState<DraftKey | null>(null);
   const [editingScope, setEditingScope] = useState(false);
+  const [contactForm, setContactForm] = useState({
+    name: "",
+    department: "",
+    email: "",
+    phone: "",
+  });
+  const [scopeDraft, setScopeDraft] = useState("");
+  const [submissionForm, setSubmissionForm] = useState({
+    method: "UNKNOWN",
+    email: "",
+    portal: "",
+    instructions: "",
+  });
+  const [formRevision, setFormRevision] = useState(0);
+  const [savingDetails, setSavingDetails] = useState(false);
   const [vaultChecklist, setVaultChecklist] = useState<VaultChecklistItem[] | null>(
     null,
   );
@@ -103,6 +118,24 @@ export const TenderDetailPage = () => {
   });
   const [driveDocuments, setDriveDocuments] = useState<DriveDoc[]>([]);
 
+  const syncFormsFromTender = (detail: TenderDetail) => {
+    setContactForm({
+      name: detail.contact.name ?? "",
+      department: detail.contact.department ?? "",
+      email: detail.contact.email ?? "",
+      phone: detail.contact.phone ?? "",
+    });
+    setScopeDraft(detail.scopeSummary ?? "");
+    setSubmissionForm({
+      method: detail.submissionInfo.method || "UNKNOWN",
+      email: detail.submissionInfo.email ?? "",
+      portal: detail.submissionInfo.portal ?? "",
+      instructions: detail.submissionInfo.instructions ?? "",
+    });
+    setEditingScope(false);
+    setFormRevision((n) => n + 1);
+  };
+
   const load = async (markReviewed = false) => {
     setLoading(true);
     try {
@@ -116,6 +149,7 @@ export const TenderDetailPage = () => {
         detail = updated.tender;
       }
       setTender(detail);
+      syncFormsFromTender(detail);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -316,23 +350,26 @@ export const TenderDetailPage = () => {
 
   const handleSaveContact = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!tender) return;
-    const form = new FormData(event.currentTarget);
+    if (!tender || savingDetails) return;
+    setSavingDetails(true);
+    setError(null);
     try {
       const result = await api.patchTender(referenceNumber, {
-        contact_name: String(form.get("contact_name") || "") || null,
-        contact_department: String(form.get("contact_department") || "") || null,
-        contact_email: String(form.get("contact_email") || "") || null,
-        contact_phone: String(form.get("contact_phone") || "") || null,
-        submission_method: String(form.get("submission_method") || "UNKNOWN"),
-        submission_email: String(form.get("submission_email") || "") || null,
-        submission_portal: String(form.get("submission_portal") || "") || null,
-        submission_instructions:
-          String(form.get("submission_instructions") || "") || null,
-        scope_summary: String(form.get("scope_summary") || "") || null,
+        contact_name: contactForm.name.trim() || null,
+        contact_department: contactForm.department.trim() || null,
+        contact_email: contactForm.email.trim() || null,
+        contact_phone: contactForm.phone.trim() || null,
+        submission_method: submissionForm.method || "UNKNOWN",
+        submission_email: submissionForm.email.trim() || null,
+        submission_portal: submissionForm.portal.trim() || null,
+        submission_instructions: submissionForm.instructions.trim() || null,
+        scope_summary: scopeDraft.trim() || null,
       });
+      if (!result?.tender) {
+        throw new Error("Η αποθήκευση δεν επέστρεψε ενημερωμένα στοιχεία");
+      }
       setTender(result.tender);
-      setEditingScope(false);
+      syncFormsFromTender(result.tender);
       setMessage(
         result.approvalInvalidated
           ? "Αποθηκεύτηκε. Η έγκριση ακυρώθηκε λόγω ουσιαστικών αλλαγών."
@@ -340,6 +377,37 @@ export const TenderDetailPage = () => {
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingDetails(false);
+    }
+  };
+
+  const handleSaveSubmissionOnly = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!tender || savingDetails) return;
+    setSavingDetails(true);
+    setError(null);
+    try {
+      const result = await api.patchTender(referenceNumber, {
+        submission_method: submissionForm.method || "UNKNOWN",
+        submission_email: submissionForm.email.trim() || null,
+        submission_portal: submissionForm.portal.trim() || null,
+        submission_instructions: submissionForm.instructions.trim() || null,
+      });
+      if (!result?.tender) {
+        throw new Error("Η αποθήκευση δεν επέστρεψε ενημερωμένα στοιχεία");
+      }
+      setTender(result.tender);
+      syncFormsFromTender(result.tender);
+      setMessage(
+        result.approvalInvalidated
+          ? "Αποθηκεύτηκε. Η έγκριση ακυρώθηκε λόγω ουσιαστικών αλλαγών."
+          : "Αποθηκεύτηκε.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingDetails(false);
     }
   };
 
@@ -1216,7 +1284,11 @@ export const TenderDetailPage = () => {
       ) : null}
 
       {/* 4. Contact */}
-      <form className="card form-grid" onSubmit={(e) => void handleSaveContact(e)}>
+      <form
+        key={`details-${tender.referenceNumber}-${formRevision}`}
+        className="card form-grid"
+        onSubmit={(e) => void handleSaveContact(e)}
+      >
         <h3>{UI.contactSection}</h3>
         <p className="muted" style={{ marginTop: 0 }}>
           Στοιχεία του φορέα — όχι τα στοιχεία αποστολέα της TEKIA.
@@ -1226,37 +1298,56 @@ export const TenderDetailPage = () => {
             {UI.contactPerson}
             <input
               name="contact_name"
-              defaultValue={tender.contact.name ?? ""}
+              value={contactForm.name}
+              onChange={(e) =>
+                setContactForm((prev) => ({ ...prev, name: e.target.value }))
+              }
               placeholder={extractionEmptyLabel}
+              autoComplete="off"
             />
           </label>
           <label>
             {UI.department}
             <input
               name="contact_department"
-              defaultValue={tender.contact.department ?? ""}
+              value={contactForm.department}
+              onChange={(e) =>
+                setContactForm((prev) => ({
+                  ...prev,
+                  department: e.target.value,
+                }))
+              }
               placeholder={extractionEmptyLabel}
+              autoComplete="off"
             />
           </label>
           <label>
             {UI.contactEmail}
             <input
               name="contact_email"
-              defaultValue={tender.contact.email ?? ""}
+              value={contactForm.email}
+              onChange={(e) =>
+                setContactForm((prev) => ({ ...prev, email: e.target.value }))
+              }
               placeholder={extractionEmptyLabel}
+              autoComplete="off"
             />
           </label>
           <label>
             {UI.contactPhone}
             <input
               name="contact_phone"
-              defaultValue={tender.contact.phone ?? ""}
+              value={contactForm.phone}
+              onChange={(e) =>
+                setContactForm((prev) => ({ ...prev, phone: e.target.value }))
+              }
               placeholder={extractionEmptyLabel}
+              autoComplete="off"
             />
           </label>
         </div>
         <p className="muted" style={{ margin: 0 }}>
-          Εξαγωγή: {displayOrMissing(tender.contact.name)} /{" "}
+          Αποθηκευμένα: {displayOrMissing(tender.contact.name)} /{" "}
           {displayOrMissing(tender.contact.email)} /{" "}
           {displayOrMissing(tender.contact.phone)}
         </p>
@@ -1266,9 +1357,7 @@ export const TenderDetailPage = () => {
         {!editingScope ? (
           <div>
             <p style={{ marginTop: 0 }}>
-              {tender.scopeSummary?.trim()
-                ? tender.scopeSummary
-                : UI.scopeEmpty}
+              {scopeDraft.trim() ? scopeDraft : UI.scopeEmpty}
             </p>
             <button
               type="button"
@@ -1277,24 +1366,20 @@ export const TenderDetailPage = () => {
             >
               {UI.edit}
             </button>
-            <input
-              type="hidden"
-              name="scope_summary"
-              value={tender.scopeSummary ?? ""}
-            />
           </div>
         ) : (
           <label>
             {UI.scopeSummary}
             <textarea
               name="scope_summary"
-              defaultValue={tender.scopeSummary ?? ""}
+              value={scopeDraft}
+              onChange={(e) => setScopeDraft(e.target.value)}
               placeholder={UI.scopeEmpty}
             />
           </label>
         )}
 
-        {/* Formal submission — open for PROC, collapsed for REQ */}
+        {/* Formal submission — open for PROC */}
         {phase.isFormalStage || Boolean(tender.submission) ? (
           <>
             <h3>{UI.formalSubmission}</h3>
@@ -1306,7 +1391,13 @@ export const TenderDetailPage = () => {
                 {UI.submissionMethod}
                 <select
                   name="submission_method"
-                  defaultValue={tender.submissionInfo.method || "UNKNOWN"}
+                  value={submissionForm.method}
+                  onChange={(e) =>
+                    setSubmissionForm((prev) => ({
+                      ...prev,
+                      method: e.target.value,
+                    }))
+                  }
                 >
                   {["EMAIL", "PORTAL", "ESIDIS", "PHYSICAL", "OTHER", "UNKNOWN"].map(
                     (method) => (
@@ -1321,53 +1412,52 @@ export const TenderDetailPage = () => {
                 {UI.submissionEmail}
                 <input
                   name="submission_email"
-                  defaultValue={tender.submissionInfo.email ?? ""}
+                  value={submissionForm.email}
+                  onChange={(e) =>
+                    setSubmissionForm((prev) => ({
+                      ...prev,
+                      email: e.target.value,
+                    }))
+                  }
                 />
               </label>
               <label>
                 {UI.portalOther}
                 <input
                   name="submission_portal"
-                  defaultValue={tender.submissionInfo.portal ?? ""}
+                  value={submissionForm.portal}
+                  onChange={(e) =>
+                    setSubmissionForm((prev) => ({
+                      ...prev,
+                      portal: e.target.value,
+                    }))
+                  }
                 />
               </label>
               <label>
                 {UI.instructions}
                 <textarea
                   name="submission_instructions"
-                  defaultValue={tender.submissionInfo.instructions ?? ""}
+                  value={submissionForm.instructions}
+                  onChange={(e) =>
+                    setSubmissionForm((prev) => ({
+                      ...prev,
+                      instructions: e.target.value,
+                    }))
+                  }
                 />
               </label>
             </div>
           </>
-        ) : (
-          <>
-            <input
-              type="hidden"
-              name="submission_method"
-              value={tender.submissionInfo.method || "UNKNOWN"}
-            />
-            <input
-              type="hidden"
-              name="submission_email"
-              value={tender.submissionInfo.email ?? ""}
-            />
-            <input
-              type="hidden"
-              name="submission_portal"
-              value={tender.submissionInfo.portal ?? ""}
-            />
-            <input
-              type="hidden"
-              name="submission_instructions"
-              value={tender.submissionInfo.instructions ?? ""}
-            />
-          </>
-        )}
+        ) : null}
 
         <div className="actions">
-          <button type="submit" className="btn primary">
-            {UI.save}
+          <button
+            type="submit"
+            className="btn primary"
+            disabled={savingDetails}
+          >
+            {savingDetails ? "Αποθήκευση…" : UI.save}
           </button>
         </div>
       </form>
@@ -1558,38 +1648,22 @@ export const TenderDetailPage = () => {
             <strong>{UI.formalSubmission}</strong>
           </summary>
           <p className="muted">{UI.formalSubmissionHelper}</p>
-          <form className="form-grid" onSubmit={(e) => void handleSaveContact(e)}>
-            <input
-              type="hidden"
-              name="contact_name"
-              value={tender.contact.name ?? ""}
-            />
-            <input
-              type="hidden"
-              name="contact_department"
-              value={tender.contact.department ?? ""}
-            />
-            <input
-              type="hidden"
-              name="contact_email"
-              value={tender.contact.email ?? ""}
-            />
-            <input
-              type="hidden"
-              name="contact_phone"
-              value={tender.contact.phone ?? ""}
-            />
-            <input
-              type="hidden"
-              name="scope_summary"
-              value={tender.scopeSummary ?? ""}
-            />
+          <form
+            className="form-grid"
+            onSubmit={(e) => void handleSaveSubmissionOnly(e)}
+          >
             <div className="grid-2">
               <label>
                 {UI.submissionMethod}
                 <select
                   name="submission_method"
-                  defaultValue={tender.submissionInfo.method || "UNKNOWN"}
+                  value={submissionForm.method}
+                  onChange={(e) =>
+                    setSubmissionForm((prev) => ({
+                      ...prev,
+                      method: e.target.value,
+                    }))
+                  }
                 >
                   {["EMAIL", "PORTAL", "ESIDIS", "PHYSICAL", "OTHER", "UNKNOWN"].map(
                     (method) => (
@@ -1604,27 +1678,49 @@ export const TenderDetailPage = () => {
                 {UI.submissionEmail}
                 <input
                   name="submission_email"
-                  defaultValue={tender.submissionInfo.email ?? ""}
+                  value={submissionForm.email}
+                  onChange={(e) =>
+                    setSubmissionForm((prev) => ({
+                      ...prev,
+                      email: e.target.value,
+                    }))
+                  }
                 />
               </label>
               <label>
                 {UI.portalOther}
                 <input
                   name="submission_portal"
-                  defaultValue={tender.submissionInfo.portal ?? ""}
+                  value={submissionForm.portal}
+                  onChange={(e) =>
+                    setSubmissionForm((prev) => ({
+                      ...prev,
+                      portal: e.target.value,
+                    }))
+                  }
                 />
               </label>
               <label>
                 {UI.instructions}
                 <textarea
                   name="submission_instructions"
-                  defaultValue={tender.submissionInfo.instructions ?? ""}
+                  value={submissionForm.instructions}
+                  onChange={(e) =>
+                    setSubmissionForm((prev) => ({
+                      ...prev,
+                      instructions: e.target.value,
+                    }))
+                  }
                 />
               </label>
             </div>
             <div className="actions">
-              <button type="submit" className="btn primary">
-                {UI.save}
+              <button
+                type="submit"
+                className="btn primary"
+                disabled={savingDetails}
+              >
+                {savingDetails ? "Αποθήκευση…" : UI.save}
               </button>
             </div>
           </form>

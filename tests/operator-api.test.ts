@@ -236,6 +236,49 @@ describe("operator API + submission workflow", () => {
     expect(body.error).toBe("already_submitted");
   });
 
+  it("persists tender contact details across PATCH and GET", async () => {
+    seedTender(repo, "26REQ_CONTACT");
+
+    const patched = await request("/api/operator/tenders/26REQ_CONTACT", {
+      method: "PATCH",
+      body: JSON.stringify({
+        contact_name: "Μαρία Παπαδοπούλου",
+        contact_department: "Τμήμα Προμηθειών",
+        contact_email: "maria@dimos.gr",
+        contact_phone: "2101234567",
+        scope_summary: "Συντήρηση ιστοσελίδας δήμου",
+      }),
+    });
+    expect(patched.status).toBe(200);
+    const patchedBody = await patched.json();
+    expect(patchedBody.tender.contact).toEqual({
+      name: "Μαρία Παπαδοπούλου",
+      department: "Τμήμα Προμηθειών",
+      email: "maria@dimos.gr",
+      phone: "2101234567",
+    });
+    expect(patchedBody.tender.scopeSummary).toBe("Συντήρηση ιστοσελίδας δήμου");
+
+    const reloaded = await request("/api/operator/tenders/26REQ_CONTACT");
+    expect(reloaded.status).toBe(200);
+    const reloadedBody = await reloaded.json();
+    expect(reloadedBody.contact.email).toBe("maria@dimos.gr");
+    expect(reloadedBody.contact.name).toBe("Μαρία Παπαδοπούλου");
+    expect(reloadedBody.scopeSummary).toBe("Συντήρηση ιστοσελίδας δήμου");
+
+    // Partial patch must not wipe other contact fields
+    const partial = await request("/api/operator/tenders/26REQ_CONTACT", {
+      method: "PATCH",
+      body: JSON.stringify({
+        submission_email: "offers@dimos.gr",
+      }),
+    });
+    expect(partial.status).toBe(200);
+    const partialBody = await partial.json();
+    expect(partialBody.tender.contact.email).toBe("maria@dimos.gr");
+    expect(partialBody.tender.submissionInfo.email).toBe("offers@dimos.gr");
+  });
+
   it("invalidates approval when material draft fields change", async () => {
     seedTender(repo, "26REQ6");
     repo.updateOperationalStatus("26REQ6", "READY");
