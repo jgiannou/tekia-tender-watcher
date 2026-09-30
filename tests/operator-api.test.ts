@@ -134,6 +134,16 @@ describe("operator API + submission workflow", () => {
     expect(body.pollIntervalMinutes).toBeTypeOf("number");
   });
 
+  it("accepts X-Admin-Token when X-Operator-Token is wrong", async () => {
+    const res = await app.request("/api/operator/config", {
+      headers: {
+        "X-Operator-Token": "wrong-overwritten-by-proxy",
+        "X-Admin-Token": "admin-token-test-fallback-value",
+      },
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("filters opportunities by operational status", async () => {
     seedTender(repo, "26REQ1");
     seedTender(repo, "26REQ2");

@@ -274,14 +274,18 @@ export const createOperatorRoutes = (deps: {
       );
     }
 
-    const headerToken = (
-      c.req.header("X-Operator-Token") ??
-      c.req.header("X-Admin-Token") ??
-      c.req.header("Authorization")?.replace(/^Bearer\s+/i, "") ??
-      ""
-    ).trim();
+    // Check all auth headers. Some proxies strip/overwrite X-Operator-Token;
+    // empty values must not block fallback to X-Admin-Token / Bearer.
+    const candidates = [
+      c.req.header("X-Operator-Token"),
+      c.req.header("X-Admin-Token"),
+      c.req.header("Authorization")?.replace(/^Bearer\s+/i, ""),
+    ]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
 
-    if (!headerToken || !acceptedTokens.has(headerToken)) {
+    const ok = candidates.some((token) => acceptedTokens.has(token));
+    if (!ok) {
       return c.json(
         {
           error: "unauthorized",

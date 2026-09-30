@@ -53,7 +53,11 @@ export const requestCloudApi = async <T = unknown>(
       method: init.method ?? "GET",
       headers: {
         "Content-Type": "application/json",
+        // Send multiple auth headers: some reverse proxies strip/overwrite
+        // X-Operator-Token while X-Admin-Token passes through.
         "X-Operator-Token": token,
+        "X-Admin-Token": token,
+        Authorization: `Bearer ${token}`,
         ...(init.headers ?? {}),
       },
       body: init.body ?? undefined,
