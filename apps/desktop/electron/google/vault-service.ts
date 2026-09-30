@@ -1,14 +1,32 @@
 import { randomUUID } from "node:crypto";
+import { requestCloudApi } from "../cloud-api.js";
+import { getLocalCompanySettings } from "../company-settings-store.js";
+import { buildTradingNameStatus } from "./company-profile-merge.js";
 import { loadGoogleOAuthConfig } from "./config.js";
 import {
-  copyFileToFolder,
+  cloneGoogleDocToFolder,
   DriveApiError,
   ensureChildFolder,
   getDriveFile,
   listChildFiles,
   listChildFolders,
+  trashDriveFile,
 } from "./drive-api.js";
+import {
+  buildCompanyProfileReplacements,
+  companyProfileReplaceRequests,
+  findUnresolvedPlaceholders as findCompanyProfileUnresolved,
+  GENERATED_COMPANY_PROFILE_NAME,
+} from "./company-profile-merge.js";
+import { batchReplaceAllText, getDocumentText } from "./docs-api.js";
 import { getValidAccessToken, startGoogleOAuthLogin } from "./oauth.js";
+import {
+  assertMergeTargetIsCopy,
+  buildMergeReplacements,
+  buildReplaceAllTextRequests,
+  canMarkDocumentReady,
+  findUnresolvedPlaceholders,
+} from "./template-merge.js";
 import {
   buildVaultDiscovery,
   COMPANY_DOC_KEY_TO_TYPE,
@@ -16,20 +34,26 @@ import {
   resolveDocumentValidity,
   selectMasterTemplate,
   TEMPLATE_KEY_TO_TYPE,
+  TENDER_TEMPLATE_KEYS,
   validateDriveVault,
   type CompanyDocKey,
   type TemplateKey,
+  type TemplateSelection,
 } from "./vault-structure.js";
 import {
   addTenderDocument,
   disconnectGoogleDrive,
+  findTenderDocument,
   getVaultPublicState,
   hasGoogleTokens,
   listTenderDocuments,
   saveDiscoveredVault,
+  setCompanyProfileFile,
   setRootFolder,
   setTemplateMaster,
+  updateTenderDocument,
   upsertDocumentMeta,
+  type TenderDocumentRecord,
   type VaultDocumentMeta,
 } from "./vault-store.js";
 
@@ -60,6 +84,8 @@ export type DrivePublicStatus = {
       validUntil: string | null;
     }>;
   }>;
+  /** Selected MASTER Google Doc under Templates / Company Profile */
+  companyProfileSelection: TemplateSelection | null;
   missing: string[];
   lastError: string | null;
   scopeWarning: string | null;
@@ -70,6 +96,7 @@ const TEMPLATE_LABELS: Record<TemplateKey, string> = {
   technicalOffer: "Technical Offer",
   economicOffer: "Economic Offer",
   declarations: "Declarations",
+  companyProfile: "Company Profile",
 };
 
 const COMPANY_LABELS: Record<CompanyDocKey, string> = {
@@ -111,6 +138,7 @@ export const getDriveStatus = async (
     health: validateDriveVault(state.discovered),
     templates: [],
     companyDocuments: [],
+    companyProfileSelection: null,
     missing: state.discovered?.missing ?? [],
     lastError,
     scopeWarning,
@@ -137,6 +165,7 @@ export const getDriveStatus = async (
   const accessToken = await getValidAccessToken(config);
   const templates: DrivePublicStatus["templates"] = [];
   const companyDocuments: DrivePublicStatus["companyDocuments"] = [];
+  let companyProfileSelection: TemplateSelection | null = null;
 
   for (const key of Object.keys(TEMPLATE_LABELS) as TemplateKey[]) {
     const folder = latest.discovered?.templates[key];
@@ -146,24 +175,34 @@ export const getDriveStatus = async (
         folderName: TEMPLATE_LABELS[key],
         selection: { status: "MISSING" },
       });
+      if (key === "companyProfile") {
+        companyProfileSelection = { status: "MISSING" };
+      }
       continue;
     }
     try {
       const files = await listChildFiles(accessToken, folder.id);
+      const selection = selectMasterTemplate(
+        files,
+        latest.templateMasterIds[key] ?? null,
+      );
       templates.push({
         key,
         folderName: TEMPLATE_LABELS[key],
-        selection: selectMasterTemplate(
-          files,
-          latest.templateMasterIds[key] ?? null,
-        ),
+        selection,
       });
+      if (key === "companyProfile") {
+        companyProfileSelection = selection;
+      }
     } catch (error) {
       templates.push({
         key,
         folderName: TEMPLATE_LABELS[key],
         selection: { status: "MISSING" },
       });
+      if (key === "companyProfile") {
+        companyProfileSelection = { status: "MISSING" };
+      }
       lastError = error instanceof Error ? error.message : String(error);
     }
   }
@@ -215,6 +254,7 @@ export const getDriveStatus = async (
     health: validateDriveVault(latest.discovered),
     templates,
     companyDocuments,
+    companyProfileSelection,
     missing: latest.discovered?.missing ?? [],
     lastError,
     scopeWarning,
@@ -311,6 +351,11 @@ export const chooseTemplateMaster = (
   fileId: string,
 ): void => {
   setTemplateMaster(key, fileId);
+};
+
+export const chooseCompanyProfileDoc = (fileId: string): void => {
+  // Preferred master under Templates / Company Profile
+  setTemplateMaster("companyProfile", fileId);
 };
 
 export const saveVaultDocumentMeta = (
@@ -422,9 +467,7 @@ export const preparePackageReadiness = async (
     };
   });
 
-  const generatedDocuments = (
-    Object.keys(TEMPLATE_LABELS) as TemplateKey[]
-  ).map((key) => {
+  const generatedDocuments = TENDER_TEMPLATE_KEYS.map((key) => {
     const type = TEMPLATE_KEY_TO_TYPE[key];
     const existing = tenderDocs.find((d) => d.type === type);
     const template = status.templates.find((t) => t.key === key);
@@ -511,13 +554,25 @@ export const createTenderWorkspace = async (
 
 export const copyTemplateForTender = async (input: {
   referenceNumber: string;
-  templateKey: TemplateKey;
+  templateKey: Exclude<TemplateKey, "companyProfile">;
+  /** Explicit operator values for economic / declaration / optional technical fills */
+  operatorValues?: Record<string, string>;
 }): Promise<{
+  documentId: string;
   driveFileId: string;
   driveUrl: string;
   name: string;
+  masterFileId: string;
   masterUntouched: true;
+  status: "DRAFT" | "READY";
+  unresolvedPlaceholders: string[];
+  replacedKeys: string[];
 }> => {
+  if ((input.templateKey as TemplateKey) === "companyProfile") {
+    throw new Error(
+      "Company Profile uses Sync Company Profile (master → Company Documents copy), not tender draft copy",
+    );
+  }
   const config = requireConfig();
   const status = await getDriveStatus({ refresh: false });
   const template = status.templates.find((t) => t.key === input.templateKey);
@@ -528,33 +583,302 @@ export const copyTemplateForTender = async (input: {
   const workspace = await createTenderWorkspace(input.referenceNumber);
   const accessToken = await getValidAccessToken(config);
   const masterId = template.selection.file.id;
-  const copied = await copyFileToFolder(
+  const cloned = await cloneGoogleDocToFolder(
     accessToken,
     masterId,
     workspace.draftFolderId,
     `${input.referenceNumber} – ${TEMPLATE_LABELS[input.templateKey]}`,
   );
+  const copied = cloned;
 
   // Safety: master id must differ from copy id
   if (copied.id === masterId) {
     throw new Error("Copy failed — refusing to modify master template");
   }
 
-  addTenderDocument({
+  assertMergeTargetIsCopy(masterId, copied.id);
+
+  const docType = TEMPLATE_KEY_TO_TYPE[input.templateKey];
+  const mergeCtx = await loadMergeContext(
+    input.referenceNumber,
+    input.operatorValues,
+  );
+  const plan = buildMergeReplacements(docType, mergeCtx);
+  const requests = buildReplaceAllTextRequests(plan.replacements);
+
+  // Docs API merge — COPY ONLY (never masterId)
+  await batchReplaceAllText(accessToken, copied.id, requests);
+
+  const textAfter = await getDocumentText(accessToken, copied.id);
+  const unresolved = findUnresolvedPlaceholders(textAfter);
+  const now = new Date().toISOString();
+
+  const record: TenderDocumentRecord = {
     id: randomUUID(),
     tenderReferenceNumber: input.referenceNumber,
-    type: TEMPLATE_KEY_TO_TYPE[input.templateKey],
+    type: docType,
     driveFileId: copied.id,
     driveUrl: copied.webViewLink,
+    masterFileId: masterId,
     status: "DRAFT",
-    createdAt: new Date().toISOString(),
-  });
+    unresolvedPlaceholders: unresolved,
+    createdAt: now,
+    updatedAt: now,
+  };
+  addTenderDocument(record);
 
   return {
+    documentId: record.id,
     driveFileId: copied.id,
     driveUrl: copied.webViewLink,
     name: copied.name,
+    masterFileId: masterId,
     masterUntouched: true,
+    status: "DRAFT",
+    unresolvedPlaceholders: unresolved,
+    replacedKeys: Object.keys(plan.replacements),
+  };
+};
+
+type CloudTender = {
+  referenceNumber: string;
+  title: string | null;
+  organization: string | null;
+  scopeSummary: string | null;
+  contact?: { name: string | null; email: string | null; phone: string | null };
+};
+
+const loadMergeContext = async (
+  referenceNumber: string,
+  operatorValues?: Record<string, string>,
+) => {
+  let tender: CloudTender | null = null;
+  const localCompany = getLocalCompanySettings().company;
+
+  try {
+    tender = await requestCloudApi<CloudTender>(
+      `/api/operator/tenders/${encodeURIComponent(referenceNumber)}`,
+    );
+  } catch {
+    tender = null;
+  }
+
+  const today = new Date().toLocaleDateString("el-GR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+  return {
+    organization: tender?.organization ?? null,
+    tenderTitle: tender?.title ?? null,
+    adam: tender?.referenceNumber ?? referenceNumber,
+    protocolNumber: operatorValues?.PROTOCOL_NUMBER ?? null,
+    // Company Settings only — never invent; never use tender authority contact here
+    contactName: localCompany.contact_name || null,
+    contactEmail: localCompany.email || null,
+    contactPhone: localCompany.phone || null,
+    legalRepresentative: localCompany.contact_name || null,
+    legalName: localCompany.legal_name || null,
+    brandName: localCompany.brand_name || null,
+    tradingName: localCompany.trading_name || null,
+    tradingNameStatus: buildTradingNameStatus(
+      localCompany.trading_name,
+      localCompany.distinctive_title_confirmed,
+    ),
+    date: today,
+    scopeSummary: tender?.scopeSummary ?? null,
+    operatorValues: operatorValues ?? {},
+  };
+};
+
+export const markTenderDocumentReady = (
+  documentId: string,
+): TenderDocumentRecord => {
+  const existing = findTenderDocument(documentId);
+  if (!existing) {
+    throw new Error("Tender document not found");
+  }
+  if (!canMarkDocumentReady(existing.unresolvedPlaceholders ?? [])) {
+    throw new Error(
+      `Cannot mark READY — unresolved placeholders: ${(existing.unresolvedPlaceholders ?? []).join(", ")}`,
+    );
+  }
+  const updated = updateTenderDocument(documentId, { status: "READY" });
+  if (!updated) throw new Error("Failed to update document status");
+  return updated;
+};
+
+export const getTenderDriveDocuments = (
+  referenceNumber: string,
+): TenderDocumentRecord[] => listTenderDocuments(referenceNumber);
+
+/**
+ * Re-merge operator values into an existing COPY (e.g. after filling economic fields).
+ * Never targets masterFileId.
+ */
+export const remergeOperatorValuesIntoCopy = async (input: {
+  documentId: string;
+  operatorValues: Record<string, string>;
+}): Promise<TenderDocumentRecord> => {
+  const existing = findTenderDocument(input.documentId);
+  if (!existing) throw new Error("Tender document not found");
+
+  assertMergeTargetIsCopy(existing.masterFileId, existing.driveFileId);
+
+  const config = requireConfig();
+  const accessToken = await getValidAccessToken(config);
+  const mergeCtx = await loadMergeContext(
+    existing.tenderReferenceNumber,
+    input.operatorValues,
+  );
+  const plan = buildMergeReplacements(existing.type, mergeCtx);
+  const requests = buildReplaceAllTextRequests(plan.replacements);
+  await batchReplaceAllText(accessToken, existing.driveFileId, requests);
+
+  const textAfter = await getDocumentText(accessToken, existing.driveFileId);
+  const unresolved = findUnresolvedPlaceholders(textAfter);
+  const updated = updateTenderDocument(existing.id, {
+    unresolvedPlaceholders: unresolved,
+    status: "DRAFT",
+  });
+  if (!updated) throw new Error("Failed to update tender document");
+  return updated;
+};
+
+/**
+ * Controlled Sync:
+ * Templates/Company Profile (master) → copy → Company Documents/Company Profile (current)
+ * → Docs ReplaceAllText on the COPY only.
+ * Master never modified. Explicit Sync only (never on Save).
+ * Uses local Electron Company Settings (survives rebuilds).
+ *
+ * Previous files under Company Documents are trashed best-effort only.
+ * drive.file cannot trash docs the app did not create — Sync still succeeds
+ * with a new app-owned copy; operator may delete old files manually.
+ */
+export const syncCompanyProfileFromSettings = async (): Promise<{
+  fileId: string;
+  fileName: string;
+  driveUrl: string;
+  masterFileId: string;
+  masterUntouched: true;
+  replacedKeys: string[];
+  skippedUnknown: string[];
+  unresolvedPlaceholders: string[];
+  mapping: Array<{ settingsKey: string; placeholder: string; applied: boolean }>;
+  cleanupWarnings: string[];
+}> => {
+  const config = requireConfig();
+  const status = await getDriveStatus({ refresh: false });
+  const selection = status.companyProfileSelection;
+
+  if (!selection || selection.status === "MISSING") {
+    throw new Error(
+      "Company Profile master not found under Templates / Company Profile",
+    );
+  }
+  if (selection.status === "NEEDS_CONFIGURATION") {
+    throw new Error(
+      "Multiple Company Profile masters found — select the master in Settings → Templates → Company Profile",
+    );
+  }
+
+  const master = selection.file;
+  const state = getVaultPublicState();
+  const destFolder = state.discovered?.companyDocs.companyProfile;
+  if (!destFolder) {
+    throw new Error(
+      "Company Documents / Company Profile folder missing — create it in the vault",
+    );
+  }
+
+  const accessToken = await getValidAccessToken(config);
+  const existing = await listChildFiles(accessToken, destFolder.id);
+
+  if (existing.some((f) => f.id === master.id)) {
+    throw new Error(
+      "Refusing sync: Company Profile master must live under Templates/, not Company Documents/",
+    );
+  }
+
+  // Create new app-owned clone FIRST (writable under drive.file), then merge.
+  // Native copy may 403 on pre-existing vault docs — export/import fallback handles that.
+  let copied: {
+    id: string;
+    name: string;
+    webViewLink: string;
+    method: "copy" | "export_import";
+  };
+  try {
+    copied = await cloneGoogleDocToFolder(
+      accessToken,
+      master.id,
+      destFolder.id,
+      GENERATED_COMPANY_PROFILE_NAME,
+    );
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Cannot create writable Company Profile from master “${master.name}”: ${msg}. The master stays readable; Sync needs an app-owned clone (copy or export/import).`,
+    );
+  }
+
+  if (copied.id === master.id) {
+    throw new Error("Clone failed — refusing to modify Company Profile master");
+  }
+
+  const settings = getLocalCompanySettings();
+  const plan = buildCompanyProfileReplacements({
+    ...settings.company,
+    legal_form: settings.company.legal_form ?? "",
+    website: settings.company.website ?? "",
+  });
+  const requests = companyProfileReplaceRequests(plan.replacements);
+
+  // Docs merge — COPY ONLY (app-created file)
+  await batchReplaceAllText(accessToken, copied.id, requests);
+
+  const textAfter = await getDocumentText(accessToken, copied.id);
+  const unresolved = findCompanyProfileUnresolved(textAfter);
+
+  // Best-effort cleanup of previous copies (never master, never new copy)
+  const cleanupWarnings: string[] = [];
+  const previousIds = new Set(
+    [
+      state.companyProfileFileId,
+      ...existing.map((f) => f.id),
+    ].filter((id): id is string => Boolean(id) && id !== copied.id && id !== master.id),
+  );
+
+  for (const fileId of previousIds) {
+    const label =
+      existing.find((f) => f.id === fileId)?.name ??
+      (fileId === state.companyProfileFileId ? "previous synced profile" : fileId);
+    try {
+      await trashDriveFile(accessToken, fileId);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      cleanupWarnings.push(
+        `Could not remove “${label}” (Drive write permission). Delete it manually in Drive if it is an old filled copy. New synced file was still created.`,
+      );
+      lastError = msg;
+    }
+  }
+
+  setCompanyProfileFile(copied.id);
+
+  return {
+    fileId: copied.id,
+    fileName: copied.name,
+    driveUrl: copied.webViewLink,
+    masterFileId: master.id,
+    masterUntouched: true,
+    replacedKeys: Object.keys(plan.replacements),
+    skippedUnknown: plan.skippedUnknown,
+    unresolvedPlaceholders: unresolved,
+    mapping: plan.mapping,
+    cleanupWarnings,
   };
 };
 

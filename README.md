@@ -210,12 +210,15 @@ Do **not** put Google credentials in Coolify / cloud watcher / `VITE_*` variable
 1. Open [Google Cloud Console](https://console.cloud.google.com/)
 2. Create or select project: **TEKIA Tender Watcher**
 3. **APIs & Services → Library → Google Drive API → Enable**
-4. **Google Auth Platform / APIs & Services → OAuth consent screen**  
+4. **APIs & Services → Library → Google Docs API → Enable**  
+   Required for placeholder merge (`documents.batchUpdate` / ReplaceAllText) into **tender copies only**. Masters are never edited.
+5. **Google Auth Platform / APIs & Services → OAuth consent screen**  
    Configure for internal/testing users as needed
-5. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
+6. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
    - Application type: **Desktop app**
    - Name: **TEKIA Tender Watcher Desktop**
-6. Copy **Client ID** (and Client Secret if shown — Desktop secrets are not server-confidential)
+   - Reuse this same OAuth client for Drive + Docs (do **not** create a second client)
+7. Copy **Client ID** (and Client Secret if shown — Desktop secrets are not server-confidential)
 
 ### Local desktop configuration
 
@@ -254,11 +257,52 @@ Alternative (also gitignored): `apps/desktop/google-oauth.local.json`
 Operator-approved scopes (2026-09-30):
 
 - `https://www.googleapis.com/auth/drive.readonly` — read the existing TEKIA/Tenders vault
-- `https://www.googleapis.com/auth/drive.file` — create tender workspaces and copy templates
+- `https://www.googleapis.com/auth/drive.file` — create tender workspaces, copy templates, and write Docs merges into **app-created copies**
+
+Google Docs API uses the same OAuth client and the existing `drive.file` (+ `drive.readonly`) scopes. **No extra OAuth scope** is required for ReplaceAllText on files available to the app.
 
 After changing scopes: **Disconnect → Connect** again so Google issues a new consent/token.
 
 Do **not** request full `https://www.googleapis.com/auth/drive` unless explicitly required.
+
+### Template copy → merge flow
+
+1. Select master Google Doc in Settings (never modified)
+2. Tender Detail → Generate → Drive `files.copy` into `Submissions/{ADAM}/draft/`
+3. Docs API `batchUpdate` / ReplaceAllText on the **copy only**
+4. Known tender/company fields auto-fill; economic pricing and declaration text require explicit operator input
+5. Unresolved `{{...}}` keep status **DRAFT** and block **Mark READY**
+6. Generation never sends or submits externally — human review remains mandatory
+
+### Company Profile sync (controlled)
+
+Architecture:
+
+```
+Templates/Company Profile/   ← MASTER (placeholders; never edited by Sync)
+        ↓ files.copy
+Company Documents/Company Profile/TEKIA – Tender Company Profile
+        ↓ Docs ReplaceAllText on the COPY only
+FILLED CURRENT PROFILE (Vault checklist uses this)
+```
+
+Company Settings save to the cloud watcher DB only. Desktop **Sync Company Profile** regenerates the current profile from the master each time (idempotent).
+
+| Company Settings / source | Placeholder |
+|---|---|
+| `legal_name` | `{{LEGAL_NAME}}` |
+| `trading_name` + `distinctive_title_confirmed` | `{{TRADING_NAME_STATUS}}` (never claims confirmed title if flag is false) |
+| `legal_form` | `{{LEGAL_FORM}}` |
+| `vat_number` | `{{VAT_NUMBER}}` |
+| `tax_office` | `{{TAX_OFFICE}}` |
+| `gemi_number` | `{{GEMI_NUMBER}}` |
+| `address` | `{{ADDRESS}}` |
+| `email` | `{{CONTACT_EMAIL}}` |
+| `phone` | `{{CONTACT_PHONE}}` |
+| `website` | `{{WEBSITE}}` |
+| *(manual — not from settings)* | `{{PORTFOLIO_REFERENCES}}`, `{{TECH_STACK}}`, `{{PUBLIC_SECTOR_NOTES}}` |
+
+Blank settings leave placeholders intact. Manual fields stay unresolved until maintained in the master / later features. Never invents values. Does not send externally.
 
 ### Tokens
 

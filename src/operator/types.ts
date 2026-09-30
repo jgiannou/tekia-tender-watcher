@@ -110,6 +110,11 @@ export type CompanySettings = {
   tax_office: string;
   gemi_number: string;
   distinctive_title_confirmed: boolean;
+  legal_form: string;
+  website: string;
+  portfolio_references: string;
+  tech_stack: string;
+  public_sector_notes: string;
 };
 
 export type DriveSettings = {
@@ -145,6 +150,11 @@ export const DEFAULT_OPERATOR_SETTINGS = (): OperatorSettings => ({
     tax_office: "",
     gemi_number: "",
     distinctive_title_confirmed: false,
+    legal_form: "",
+    website: "",
+    portfolio_references: "",
+    tech_stack: "",
+    public_sector_notes: "",
   },
   drive: {
     company_documents_folder_url: "",

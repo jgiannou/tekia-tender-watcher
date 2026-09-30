@@ -40,16 +40,30 @@ const drive = {
   refresh: () => ipcRenderer.invoke("tekia:drive-refresh"),
   chooseTemplate: (key, fileId) =>
     ipcRenderer.invoke("tekia:drive-choose-template", { key, fileId }),
+  chooseCompanyProfile: (fileId) =>
+    ipcRenderer.invoke("tekia:drive-choose-company-profile", fileId),
+  syncCompanyProfile: () =>
+    ipcRenderer.invoke("tekia:drive-sync-company-profile"),
   saveDocMeta: (meta) => ipcRenderer.invoke("tekia:drive-save-doc-meta", meta),
   checklist: () => ipcRenderer.invoke("tekia:drive-checklist"),
   packageReadiness: (referenceNumber) =>
     ipcRenderer.invoke("tekia:drive-package-readiness", referenceNumber),
   createWorkspace: (referenceNumber) =>
     ipcRenderer.invoke("tekia:drive-create-workspace", referenceNumber),
-  copyTemplate: (referenceNumber, templateKey) =>
+  copyTemplate: (referenceNumber, templateKey, operatorValues) =>
     ipcRenderer.invoke("tekia:drive-copy-template", {
       referenceNumber,
       templateKey,
+      operatorValues: operatorValues ?? {},
+    }),
+  tenderDocuments: (referenceNumber) =>
+    ipcRenderer.invoke("tekia:drive-tender-documents", referenceNumber),
+  markDocumentReady: (documentId) =>
+    ipcRenderer.invoke("tekia:drive-mark-document-ready", documentId),
+  remergeDocument: (documentId, operatorValues) =>
+    ipcRenderer.invoke("tekia:drive-remerge-document", {
+      documentId,
+      operatorValues,
     }),
 };
 
@@ -62,6 +76,11 @@ const tekia = {
     get: () => ipcRenderer.invoke("tekia:connection-get"),
     save: (input) => ipcRenderer.invoke("tekia:connection-save", input),
     test: (input) => ipcRenderer.invoke("tekia:connection-test", input ?? {}),
+  },
+  companySettings: {
+    get: () => ipcRenderer.invoke("tekia:company-settings-get"),
+    save: (company) =>
+      ipcRenderer.invoke("tekia:company-settings-save", company),
   },
   shell: {
     openExternal: (url) => ipcRenderer.invoke("tekia:open-external", url),

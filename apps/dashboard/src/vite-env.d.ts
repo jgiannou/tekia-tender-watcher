@@ -16,6 +16,8 @@ type TekiaDriveBridge = {
   setRoot: (folderUrlOrId: string) => Promise<unknown>;
   refresh: () => Promise<unknown>;
   chooseTemplate: (key: string, fileId: string) => Promise<unknown>;
+  chooseCompanyProfile: (fileId: string) => Promise<unknown>;
+  syncCompanyProfile: () => Promise<unknown>;
   saveDocMeta: (meta: unknown) => Promise<unknown>;
   checklist: () => Promise<unknown>;
   packageReadiness: (referenceNumber: string) => Promise<unknown>;
@@ -23,6 +25,13 @@ type TekiaDriveBridge = {
   copyTemplate: (
     referenceNumber: string,
     templateKey: string,
+    operatorValues?: Record<string, string>,
+  ) => Promise<unknown>;
+  tenderDocuments: (referenceNumber: string) => Promise<unknown>;
+  markDocumentReady: (documentId: string) => Promise<unknown>;
+  remergeDocument: (
+    documentId: string,
+    operatorValues: Record<string, string>,
   ) => Promise<unknown>;
 };
 
@@ -55,6 +64,21 @@ type TekiaDesktopBridge = {
       apiUrl?: string;
       token?: string;
     }) => Promise<{ status: string; message: string }>;
+  };
+  companySettings: {
+    get: () => Promise<{
+      company: Record<string, unknown>;
+      updatedAt: string;
+      source: "local";
+      hasLocalData: boolean;
+    }>;
+    save: (company: Record<string, unknown>) => Promise<{
+      company: Record<string, unknown>;
+      updatedAt: string;
+      source: "local";
+      cloudSynced: boolean;
+      cloudError: string | null;
+    }>;
   };
   shell: {
     openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>;

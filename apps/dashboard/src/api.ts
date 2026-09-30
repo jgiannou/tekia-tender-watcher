@@ -226,6 +226,11 @@ export type OperatorSettings = {
     tax_office: string;
     gemi_number: string;
     distinctive_title_confirmed: boolean;
+    legal_form: string;
+    website: string;
+    portfolio_references: string;
+    tech_stack: string;
+    public_sector_notes: string;
   };
   drive: {
     company_documents_folder_url: string;

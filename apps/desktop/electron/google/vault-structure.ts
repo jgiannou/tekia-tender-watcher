@@ -22,6 +22,7 @@ export const TEMPLATE_FOLDERS = [
   "Technical Offer",
   "Economic Offer",
   "Declarations",
+  "Company Profile",
 ] as const;
 
 export type VaultTopKey = "companyDocuments" | "templates" | "submissions";
@@ -35,7 +36,16 @@ export type TemplateKey =
   | "earlyOutreach"
   | "technicalOffer"
   | "economicOffer"
-  | "declarations";
+  | "declarations"
+  | "companyProfile";
+
+/** Tender offer templates only — excludes Company Profile master. */
+export const TENDER_TEMPLATE_KEYS: Array<Exclude<TemplateKey, "companyProfile">> = [
+  "earlyOutreach",
+  "technicalOffer",
+  "economicOffer",
+  "declarations",
+];
 
 export const TOP_FOLDER_NAME_TO_KEY: Record<string, VaultTopKey> = {
   "company documents": "companyDocuments",
@@ -56,6 +66,7 @@ export const TEMPLATE_NAME_TO_KEY: Record<string, TemplateKey> = {
   "technical offer": "technicalOffer",
   "economic offer": "economicOffer",
   declarations: "declarations",
+  "company profile": "companyProfile",
 };
 
 export const COMPANY_DOC_KEY_TO_TYPE: Record<
@@ -70,7 +81,7 @@ export const COMPANY_DOC_KEY_TO_TYPE: Record<
 };
 
 export const TEMPLATE_KEY_TO_TYPE: Record<
-  TemplateKey,
+  Exclude<TemplateKey, "companyProfile">,
   "OUTREACH" | "TECHNICAL_OFFER" | "ECONOMIC_OFFER" | "DECLARATION"
 > = {
   earlyOutreach: "OUTREACH",

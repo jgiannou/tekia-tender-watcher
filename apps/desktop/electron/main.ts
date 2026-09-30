@@ -13,6 +13,12 @@ import { fileURLToPath } from "node:url";
 import { CloudApiError, requestCloudApi, testConnection } from "./cloud-api.js";
 import { assertDesktopCannotAutoSend } from "./no-auto-send.js";
 import {
+  getLocalCompanySettings,
+  hasLocalCompanySettings,
+  saveLocalCompanySettings,
+  type LocalCompanySettings,
+} from "./company-settings-store.js";
+import {
   getConnectionPublic,
   saveConnection,
 } from "./secure-store.js";
@@ -23,6 +29,7 @@ import {
   trackWindowState,
 } from "./window-state.js";
 import {
+  chooseCompanyProfileDoc,
   chooseTemplateMaster,
   connectGoogleDrive,
   copyTemplateForTender,
@@ -30,9 +37,13 @@ import {
   disconnectDrive,
   getChecklistFromVault,
   getDriveStatus,
+  getTenderDriveDocuments,
+  markTenderDocumentReady,
   preparePackageReadiness,
+  remergeOperatorValuesIntoCopy,
   saveVaultDocumentMeta,
   setVaultRootFromInput,
+  syncCompanyProfileFromSettings,
 } from "./google/vault-service.js";
 import type { VaultDocumentMeta } from "./google/vault-store.js";
 
@@ -283,6 +294,55 @@ const registerIpc = (): void => {
     ) => testConnection(input),
   );
 
+  ipcMain.handle("tekia:company-settings-get", () => {
+    const local = getLocalCompanySettings();
+    return {
+      company: local.company,
+      updatedAt: local.updatedAt,
+      source: "local" as const,
+      hasLocalData: hasLocalCompanySettings(),
+    };
+  });
+
+  ipcMain.handle(
+    "tekia:company-settings-save",
+    async (_event, company: LocalCompanySettings) => {
+      if (!company || typeof company !== "object") {
+        throw new Error("company settings payload required");
+      }
+      const saved = saveLocalCompanySettings(company);
+
+      // Best-effort mirror to cloud watcher (local remains source of truth)
+      let cloudSynced = false;
+      let cloudError: string | null = null;
+      try {
+        const current = await requestCloudApi<{
+          company: LocalCompanySettings;
+          drive: Record<string, string>;
+          documents: unknown[];
+        }>("/api/operator/settings");
+        await requestCloudApi("/api/operator/settings", {
+          method: "PUT",
+          body: JSON.stringify({
+            ...current,
+            company: saved.company,
+          }),
+        });
+        cloudSynced = true;
+      } catch (error) {
+        cloudError = error instanceof Error ? error.message : String(error);
+      }
+
+      return {
+        company: saved.company,
+        updatedAt: saved.updatedAt,
+        source: "local" as const,
+        cloudSynced,
+        cloudError,
+      };
+    },
+  );
+
   ipcMain.handle(
     "tekia:api-request",
     async (
@@ -387,6 +447,26 @@ const registerIpc = (): void => {
   );
 
   ipcMain.handle(
+    "tekia:drive-choose-company-profile",
+    (_event, fileId: string) => {
+      try {
+        chooseCompanyProfileDoc(String(fileId ?? ""));
+        return { ok: true };
+      } catch (error) {
+        return driveError(error);
+      }
+    },
+  );
+
+  ipcMain.handle("tekia:drive-sync-company-profile", async () => {
+    try {
+      return await syncCompanyProfileFromSettings();
+    } catch (error) {
+      return driveError(error);
+    }
+  });
+
+  ipcMain.handle(
     "tekia:drive-save-doc-meta",
     (
       _event,
@@ -448,10 +528,47 @@ const registerIpc = (): void => {
           | "technicalOffer"
           | "economicOffer"
           | "declarations";
+        operatorValues?: Record<string, string>;
       },
     ) => {
       try {
         return await copyTemplateForTender(payload);
+      } catch (error) {
+        return driveError(error);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "tekia:drive-tender-documents",
+    (_event, referenceNumber: string) => {
+      try {
+        return getTenderDriveDocuments(String(referenceNumber ?? ""));
+      } catch (error) {
+        return driveError(error);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "tekia:drive-mark-document-ready",
+    (_event, documentId: string) => {
+      try {
+        return markTenderDocumentReady(String(documentId ?? ""));
+      } catch (error) {
+        return driveError(error);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "tekia:drive-remerge-document",
+    async (
+      _event,
+      payload: { documentId: string; operatorValues: Record<string, string> },
+    ) => {
+      try {
+        return await remergeOperatorValuesIntoCopy(payload);
       } catch (error) {
         return driveError(error);
       }

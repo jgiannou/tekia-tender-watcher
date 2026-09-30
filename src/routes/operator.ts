@@ -102,6 +102,11 @@ const settingsSchema = z.object({
     tax_office: z.string(),
     gemi_number: z.string(),
     distinctive_title_confirmed: z.boolean(),
+    legal_form: z.string().default(""),
+    website: z.string().default(""),
+    portfolio_references: z.string().default(""),
+    tech_stack: z.string().default(""),
+    public_sector_notes: z.string().default(""),
   }),
   drive: z.object({
     company_documents_folder_url: z.string(),

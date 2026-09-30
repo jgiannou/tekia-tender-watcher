@@ -32,8 +32,12 @@ export type TenderDocumentRecord = {
   type: "OUTREACH" | "TECHNICAL_OFFER" | "ECONOMIC_OFFER" | "DECLARATION";
   driveFileId: string;
   driveUrl: string;
+  /** Master template ID — never pass to Docs batchUpdate */
+  masterFileId: string;
   status: "DRAFT" | "READY" | "SUBMITTED";
+  unresolvedPlaceholders: string[];
   createdAt: string;
+  updatedAt: string;
 };
 
 export type DriveVaultState = {
@@ -43,6 +47,8 @@ export type DriveVaultState = {
   discovered: DiscoveredVault | null;
   discoveredAt: string | null;
   templateMasterIds: Partial<Record<TemplateKey, string>>;
+  /** Preferred Google Doc under Company Documents / Company Profile */
+  companyProfileFileId: string | null;
   documentMeta: VaultDocumentMeta[];
   tenderDocuments: TenderDocumentRecord[];
 };
@@ -54,6 +60,7 @@ type StoredDriveVault = {
   discovered: DiscoveredVault | null;
   discoveredAt: string | null;
   templateMasterIds: Partial<Record<TemplateKey, string>>;
+  companyProfileFileId: string | null;
   documentMeta: VaultDocumentMeta[];
   tenderDocuments: TenderDocumentRecord[];
   tokensEncryptedBase64?: string;
@@ -108,6 +115,7 @@ const emptyState = (): StoredDriveVault => ({
   discovered: null,
   discoveredAt: null,
   templateMasterIds: {},
+  companyProfileFileId: null,
   documentMeta: [],
   tenderDocuments: [],
 });
@@ -126,6 +134,7 @@ export const getVaultPublicState = (): DriveVaultState => {
     discovered: stored.discovered,
     discoveredAt: stored.discoveredAt,
     templateMasterIds: stored.templateMasterIds,
+    companyProfileFileId: stored.companyProfileFileId ?? null,
     documentMeta: stored.documentMeta,
     tenderDocuments: stored.tenderDocuments,
   };
@@ -198,6 +207,12 @@ export const setTemplateMaster = (key: TemplateKey, fileId: string): void => {
   writeStored(stored);
 };
 
+export const setCompanyProfileFile = (fileId: string): void => {
+  const stored = readStored();
+  stored.companyProfileFileId = fileId;
+  writeStored(stored);
+};
+
 export const upsertDocumentMeta = (meta: VaultDocumentMeta): void => {
   const stored = readStored();
   const next = stored.documentMeta.filter((m) => m.driveFileId !== meta.driveFileId);
@@ -212,12 +227,47 @@ export const addTenderDocument = (record: TenderDocumentRecord): void => {
   writeStored(stored);
 };
 
+export const updateTenderDocument = (
+  id: string,
+  patch: Partial<TenderDocumentRecord>,
+): TenderDocumentRecord | null => {
+  const stored = readStored();
+  const idx = stored.tenderDocuments.findIndex((row) => row.id === id);
+  if (idx < 0) return null;
+  const next = {
+    ...stored.tenderDocuments[idx],
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  };
+  stored.tenderDocuments[idx] = next;
+  writeStored(stored);
+  return next;
+};
+
 export const listTenderDocuments = (
   referenceNumber: string,
 ): TenderDocumentRecord[] =>
-  getVaultPublicState().tenderDocuments.filter(
-    (row) => row.tenderReferenceNumber === referenceNumber,
-  );
+  getVaultPublicState()
+    .tenderDocuments.filter(
+      (row) => row.tenderReferenceNumber === referenceNumber,
+    )
+    .map((row) => ({
+      ...row,
+      unresolvedPlaceholders: row.unresolvedPlaceholders ?? [],
+      masterFileId: row.masterFileId ?? "",
+    }));
+
+export const findTenderDocument = (
+  id: string,
+): TenderDocumentRecord | undefined => {
+  const row = getVaultPublicState().tenderDocuments.find((r) => r.id === id);
+  if (!row) return undefined;
+  return {
+    ...row,
+    unresolvedPlaceholders: row.unresolvedPlaceholders ?? [],
+    masterFileId: row.masterFileId ?? "",
+  };
+};
 
 export const disconnectGoogleDrive = (): void => {
   clearGoogleAuth();

@@ -1,4 +1,5 @@
 import {
+  GOOGLE_DOC_MIME,
   GOOGLE_FOLDER_MIME,
   type DriveFolderRef,
 } from "./vault-structure.js";
@@ -171,6 +172,7 @@ export const ensureChildFolder = async (
 /**
  * Copy a Drive file into a destination folder.
  * Always returns a NEW file — master template is never modified.
+ * May 403 under drive.file when the source was not created/opened by this app.
  */
 export const copyFileToFolder = async (
   accessToken: string,
@@ -199,4 +201,134 @@ export const copyFileToFolder = async (
       copied.webViewLink ??
       `https://drive.google.com/file/d/${copied.id}/view`,
   };
+};
+
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+/** Export Google Doc as DOCX using drive.readonly — no write needed on source. */
+export const exportGoogleDocAsDocx = async (
+  accessToken: string,
+  fileId: string,
+): Promise<ArrayBuffer> => {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=${encodeURIComponent(DOCX_MIME)}&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!response.ok) {
+    const json = (await response.json().catch(() => ({}))) as {
+      error?: { message?: string };
+    };
+    throw new DriveApiError(
+      response.status,
+      "export_failed",
+      json.error?.message ??
+        `Failed to export Google Doc for cloning (HTTP ${response.status})`,
+    );
+  }
+  return response.arrayBuffer();
+};
+
+/** Upload DOCX as a NEW app-owned Google Doc (writable under drive.file). */
+export const uploadDocxAsGoogleDoc = async (
+  accessToken: string,
+  destinationFolderId: string,
+  newName: string,
+  docxBytes: ArrayBuffer,
+): Promise<{ id: string; name: string; webViewLink: string }> => {
+  const metadata = {
+    name: newName,
+    parents: [destinationFolderId],
+    mimeType: GOOGLE_DOC_MIME,
+  };
+  const boundary = `tekia_${Date.now().toString(16)}`;
+  const preamble = Buffer.from(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${DOCX_MIME}\r\n\r\n`,
+    "utf8",
+  );
+  const epilogue = Buffer.from(`\r\n--${boundary}--`, "utf8");
+  const body = Buffer.concat([preamble, Buffer.from(docxBytes), epilogue]);
+
+  const response = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,webViewLink",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    },
+  );
+
+  const json = (await response.json().catch(() => ({}))) as DriveFileResource & {
+    error?: { message?: string };
+  };
+  if (!response.ok || !json.id || !json.name) {
+    throw new DriveApiError(
+      response.status || 500,
+      "upload_failed",
+      json.error?.message ?? "Failed to upload cloned Google Doc",
+    );
+  }
+  return {
+    id: json.id,
+    name: json.name,
+    webViewLink:
+      json.webViewLink ?? `https://drive.google.com/file/d/${json.id}/view`,
+  };
+};
+
+/**
+ * Clone Google Doc without modifying the source.
+ * Prefer files.copy; on 403 (drive.file cannot touch pre-existing vault docs),
+ * fall back to export (readonly) → upload NEW Google Doc (app-owned).
+ */
+export const cloneGoogleDocToFolder = async (
+  accessToken: string,
+  sourceFileId: string,
+  destinationFolderId: string,
+  newName: string,
+): Promise<{
+  id: string;
+  name: string;
+  webViewLink: string;
+  method: "copy" | "export_import";
+}> => {
+  try {
+    const copied = await copyFileToFolder(
+      accessToken,
+      sourceFileId,
+      destinationFolderId,
+      newName,
+    );
+    return { ...copied, method: "copy" };
+  } catch (error) {
+    if (!(error instanceof DriveApiError) || error.status !== 403) {
+      throw error;
+    }
+    const docx = await exportGoogleDocAsDocx(accessToken, sourceFileId);
+    const uploaded = await uploadDocxAsGoogleDoc(
+      accessToken,
+      destinationFolderId,
+      newName,
+      docx,
+    );
+    return { ...uploaded, method: "export_import" };
+  }
+};
+
+/** Soft-delete a Drive file (trash). Best-effort for app-owned files only. */
+export const trashDriveFile = async (
+  accessToken: string,
+  fileId: string,
+): Promise<void> => {
+  await driveFetch(
+    accessToken,
+    `/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ trashed: true }),
+    },
+  );
 };

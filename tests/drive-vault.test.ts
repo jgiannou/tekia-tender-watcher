@@ -31,6 +31,7 @@ describe("drive vault discovery", () => {
         { id: "tech", name: "Technical Offer" },
         { id: "econ", name: "Economic Offer" },
         { id: "dec", name: "Declarations" },
+        { id: "cpt", name: "Company Profile" },
       ],
     });
 
@@ -38,6 +39,8 @@ describe("drive vault discovery", () => {
     expect(discovered.top.companyDocuments?.id).toBe("cd");
     expect(discovered.companyDocs.gemi?.id).toBe("gemi");
     expect(discovered.templates.technicalOffer?.id).toBe("tech");
+    expect(discovered.templates.companyProfile?.id).toBe("cpt");
+    expect(discovered.companyDocs.companyProfile?.id).toBe("cp");
 
     const health = validateDriveVault(discovered);
     expect(health.root.ok).toBe(true);
@@ -65,6 +68,7 @@ describe("drive vault discovery", () => {
         { id: "tech", name: "Technical Offer" },
         { id: "econ", name: "Economic Offer" },
         { id: "dec", name: "Declarations" },
+        { id: "cpt", name: "Company Profile" },
       ],
     });
 

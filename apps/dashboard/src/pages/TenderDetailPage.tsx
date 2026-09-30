@@ -7,7 +7,15 @@ import {
   type DraftPackage,
   type TenderDetail,
 } from "../api";
+import { TenderPhaseCard } from "../components/TenderPhaseCard";
 import { formatDateTime, formatEuro, formatTime, statusClass } from "../lib/format";
+import {
+  EARLY_PHASE_DOC_KEYS,
+  extractionEmptyLabel,
+  formatRecordTypeLabel,
+  formatWebCategoryLabel,
+  getTenderPhase,
+} from "../lib/tender-phase";
 
 const draftKeys = ["outreach", "technical", "economic", "declarations"] as const;
 type DraftKey = (typeof draftKeys)[number];
@@ -51,6 +59,44 @@ export const TenderDetailPage = () => {
   const [packageReadiness, setPackageReadiness] = useState<PackageReadiness | null>(
     null,
   );
+  const [economicValues, setEconomicValues] = useState<Record<string, string>>({
+    NET_AMOUNT: "",
+    VAT_PERCENT: "",
+    VAT_AMOUNT: "",
+    GROSS_AMOUNT: "",
+    PRICE_BREAKDOWN: "",
+    VALIDITY_PERIOD: "",
+    DELIVERY_TIME: "",
+    PAYMENT_TERMS: "",
+    NOTES: "",
+  });
+  const [declarationValues, setDeclarationValues] = useState<Record<string, string>>({
+    CAPACITY: "",
+    DECLARATION_TEXT: "",
+    PROTOCOL_NUMBER: "",
+  });
+  const [technicalValues, setTechnicalValues] = useState<Record<string, string>>({
+    SCOPE_SUMMARY: "",
+    TECHNICAL_APPROACH: "",
+    DELIVERABLES: "",
+    TIMELINE: "",
+    SUPPORT_TERMS: "",
+    COMPLIANCE_NOTES: "",
+    NOTES: "",
+  });
+  const [showLaterStage, setShowLaterStage] = useState(false);
+  const [showFormalSubmission, setShowFormalSubmission] = useState(false);
+  const [driveDocuments, setDriveDocuments] = useState<
+    Array<{
+      id: string;
+      type: string;
+      driveUrl: string;
+      status: string;
+      unresolvedPlaceholders: string[];
+      masterFileId: string;
+      driveFileId: string;
+    }>
+  >([]);
 
   const load = async (markReviewed = false) => {
     setLoading(true);
@@ -126,6 +172,35 @@ export const TenderDetailPage = () => {
     }
   };
 
+  const refreshDriveDocuments = async () => {
+    if (!isDesktop() || !window.tekia?.drive?.tenderDocuments) return;
+    const rows = (await window.tekia.drive.tenderDocuments(
+      referenceNumber,
+    )) as Array<{
+      id: string;
+      type: string;
+      driveUrl: string;
+      status: string;
+      unresolvedPlaceholders?: string[];
+      masterFileId: string;
+      driveFileId: string;
+    }>;
+    if (rows && typeof rows === "object" && "__tekiaError" in (rows as object)) {
+      return;
+    }
+    setDriveDocuments(
+      (rows ?? []).map((r) => ({
+        ...r,
+        unresolvedPlaceholders: r.unresolvedPlaceholders ?? [],
+      })),
+    );
+  };
+
+  useEffect(() => {
+    void refreshDriveDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [referenceNumber]);
+
   const handleCopyTemplate = async (
     templateKey:
       | "earlyOutreach"
@@ -134,25 +209,92 @@ export const TenderDetailPage = () => {
       | "declarations",
   ) => {
     if (!isDesktop() || !window.tekia?.drive) return;
+
+    if (templateKey === "economicOffer") {
+      const missing = Object.entries(economicValues).filter(
+        ([key, value]) => key !== "NOTES" && !value.trim(),
+      );
+      if (missing.length > 0) {
+        setError(
+          `Economic Offer requires explicit operator values before merge: ${missing
+            .map(([k]) => k)
+            .join(", ")}`,
+        );
+        return;
+      }
+    }
+
+    if (templateKey === "declarations") {
+      if (!declarationValues.DECLARATION_TEXT.trim()) {
+        setError(
+          "Declaration requires explicit DECLARATION_TEXT from the tender / operator — never invented.",
+        );
+        return;
+      }
+    }
+
+    const operatorValues =
+      templateKey === "economicOffer"
+        ? economicValues
+        : templateKey === "declarations"
+          ? declarationValues
+          : templateKey === "technicalOffer"
+            ? technicalValues
+            : undefined;
+
     try {
       const result = (await window.tekia.drive.copyTemplate(
         referenceNumber,
         templateKey,
+        operatorValues,
       )) as {
         name?: string;
         driveUrl?: string;
         masterUntouched?: boolean;
+        masterFileId?: string;
+        driveFileId?: string;
+        unresolvedPlaceholders?: string[];
+        replacedKeys?: string[];
         __tekiaError?: boolean;
         message?: string;
       };
       if (result?.__tekiaError) {
-        setError(result.message ?? "Template copy failed");
+        setError(result.message ?? "Template copy/merge failed");
         return;
       }
+      if (result.masterFileId && result.driveFileId && result.masterFileId === result.driveFileId) {
+        setError("Safety failure: master and copy IDs matched — merge aborted");
+        return;
+      }
+      const unresolved = result.unresolvedPlaceholders ?? [];
       setMessage(
-        `Created tender copy “${result.name}” (master untouched). Nothing sent.`,
+        `Created tender copy “${result.name}” (master untouched). Replaced: ${(result.replacedKeys ?? []).join(", ") || "none"}. ${
+          unresolved.length
+            ? `Unresolved: ${unresolved.join(", ")} — stays DRAFT.`
+            : "No unresolved placeholders."
+        } Nothing sent.`,
       );
       if (result.driveUrl) void openExternalUrl(result.driveUrl);
+      await refreshDriveDocuments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleMarkDriveDocReady = async (documentId: string) => {
+    if (!window.tekia?.drive?.markDocumentReady) return;
+    try {
+      const result = (await window.tekia.drive.markDocumentReady(documentId)) as {
+        __tekiaError?: boolean;
+        message?: string;
+        status?: string;
+      };
+      if (result?.__tekiaError) {
+        setError(result.message ?? "Cannot mark READY");
+        return;
+      }
+      setMessage(`Document marked ${result.status}. Still not sent.`);
+      await refreshDriveDocuments();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -308,8 +450,234 @@ export const TenderDetailPage = () => {
   if (error && !tender) return <div className="error">{error}</div>;
   if (!tender) return <div className="error">Tender not found</div>;
 
+  const phase = getTenderPhase(tender);
+  const category = formatWebCategoryLabel(tender.webCategory);
   const displayOrMissing = (value: string | null | undefined) =>
-    value?.trim() ? value : "Not detected";
+    value?.trim() ? value : extractionEmptyLabel;
+  const showFormalSubmissionFields =
+    phase.isFormalStage || showFormalSubmission || Boolean(tender.submission);
+
+  const earlyDraftKeys: DraftKey[] = ["outreach"];
+  const laterDraftKeys: DraftKey[] = ["technical", "economic", "declarations"];
+  const visibleDraftKeys: DraftKey[] = phase.isEarlyStage
+    ? earlyDraftKeys
+    : phase.isTerminal || tender.currentStatus === "SUBMITTED"
+      ? draftKeys.slice()
+      : draftKeys.slice();
+
+  const renderDraftRow = (key: DraftKey) => {
+    const draft = tender.drafts[key];
+    return (
+      <div key={key} className="draft-row">
+        <div>
+          <strong>{draftLabels[key]}</strong>
+          <div className="muted">{draft.status}</div>
+        </div>
+        <div className="actions" style={{ marginTop: 0 }}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void handlePrepareDraft(key)}
+          >
+            {draft.status === "NOT_STARTED" ? "Prepare" : "Open Draft"}
+          </button>
+          {draft.status !== "READY" ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const result = await api.patchTender(referenceNumber, {
+                      drafts: {
+                        [key]: {
+                          ...draft,
+                          status: "READY",
+                          updatedAt: new Date().toISOString(),
+                        },
+                      },
+                    });
+                    setTender(result.tender);
+                    setMessage(
+                      result.approvalInvalidated
+                        ? "Draft marked ready. Approval invalidated. Nothing was sent."
+                        : `${draftLabels[key]} marked READY (not sent).`,
+                    );
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : String(err));
+                  }
+                })();
+              }}
+            >
+              Mark Ready
+            </button>
+          ) : null}
+        </div>
+        {editingDraft === key ? (
+          <form
+            className="form-grid"
+            style={{ width: "100%", marginTop: 10 }}
+            onSubmit={(e) => void handleSaveDraft(e, key)}
+          >
+            <label>
+              Status
+              <select name="status" defaultValue={draft.status}>
+                <option value="DRAFT">DRAFT</option>
+                <option value="READY">READY</option>
+                <option value="NOT_STARTED">NOT_STARTED</option>
+              </select>
+            </label>
+            <label>
+              Subject
+              <input name="subject" defaultValue={draft.subject ?? ""} />
+            </label>
+            <label>
+              Body / content
+              <textarea name="body" defaultValue={draft.body ?? ""} />
+            </label>
+            <label>
+              Notes
+              <textarea name="notes" defaultValue={draft.notes ?? ""} />
+            </label>
+            {key === "economic" ? (
+              <label>
+                Amount without VAT
+                <input
+                  name="amountWithoutVat"
+                  type="number"
+                  defaultValue={draft.amountWithoutVat ?? ""}
+                />
+              </label>
+            ) : null}
+            <div className="actions">
+              <button type="submit" className="btn primary">
+                Save draft
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setEditingDraft(null)}
+              >
+                Close
+              </button>
+            </div>
+          </form>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderFormalOfferControls = () => (
+    <>
+      <h4>Technical Offer</h4>
+      <p className="muted">
+        Creates a Drive copy from the master template and fills known fields.
+        Leave narrative fields blank to keep placeholders for review.
+      </p>
+      <div className="form-grid">
+        {Object.keys(technicalValues).map((key) => (
+          <label key={key}>
+            {`{{${key}}}`}
+            <textarea
+              value={technicalValues[key]}
+              onChange={(e) =>
+                setTechnicalValues((prev) => ({
+                  ...prev,
+                  [key]: e.target.value,
+                }))
+              }
+            />
+          </label>
+        ))}
+      </div>
+      <div className="actions">
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void handleCopyTemplate("technicalOffer")}
+        >
+          Generate Technical Offer
+        </button>
+      </div>
+
+      <h4>Economic Offer</h4>
+      <p className="muted">
+        Never invent pricing. Explicit operator values required before generate.
+        Creates a Drive copy and fills known fields.
+      </p>
+      <div className="grid-2">
+        {Object.keys(economicValues).map((key) => (
+          <label key={key}>
+            {`{{${key}}}`}
+            <input
+              value={economicValues[key]}
+              onChange={(e) =>
+                setEconomicValues((prev) => ({ ...prev, [key]: e.target.value }))
+              }
+            />
+          </label>
+        ))}
+      </div>
+      <div className="actions">
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void handleCopyTemplate("economicOffer")}
+        >
+          Generate Economic Offer
+        </button>
+      </div>
+
+      <h4>Declaration</h4>
+      <div className="form-grid">
+        <label>
+          {`{{CAPACITY}}`}
+          <input
+            value={declarationValues.CAPACITY}
+            onChange={(e) =>
+              setDeclarationValues((prev) => ({
+                ...prev,
+                CAPACITY: e.target.value,
+              }))
+            }
+          />
+        </label>
+        <label>
+          {`{{PROTOCOL_NUMBER}}`} (optional)
+          <input
+            value={declarationValues.PROTOCOL_NUMBER}
+            onChange={(e) =>
+              setDeclarationValues((prev) => ({
+                ...prev,
+                PROTOCOL_NUMBER: e.target.value,
+              }))
+            }
+          />
+        </label>
+        <label>
+          {`{{DECLARATION_TEXT}}`} (required — from tender / operator)
+          <textarea
+            value={declarationValues.DECLARATION_TEXT}
+            onChange={(e) =>
+              setDeclarationValues((prev) => ({
+                ...prev,
+                DECLARATION_TEXT: e.target.value,
+              }))
+            }
+          />
+        </label>
+      </div>
+      <div className="actions">
+        <button
+          type="button"
+          className="btn"
+          onClick={() => void handleCopyTemplate("declarations")}
+        >
+          Generate Declaration
+        </button>
+      </div>
+    </>
+  );
 
   return (
     <div className="stack">
@@ -336,11 +704,18 @@ export const TenderDetailPage = () => {
           </div>
           <div className="meta-item">
             <span className="k">Type</span>
-            <span className="v">{tender.recordType}</span>
+            <span className="v">{formatRecordTypeLabel(tender.recordType)}</span>
           </div>
           <div className="meta-item">
             <span className="k">Category</span>
-            <span className="v">{tender.webCategory ?? "—"}</span>
+            <span className="v">
+              {category.label}
+              {category.raw ? (
+                <span className="muted" style={{ display: "block", fontSize: 12 }}>
+                  {category.raw}
+                </span>
+              ) : null}
+            </span>
           </div>
           <div className="meta-item">
             <span className="k">Score</span>
@@ -382,19 +757,97 @@ export const TenderDetailPage = () => {
             <span className="k">Official PDF</span>
             <span className="v">
               {tender.officialPdfUrl ? (
-                <button
-                  type="button"
-                  className="btn ghost"
-                  onClick={() => void openExternalUrl(tender.officialPdfUrl!)}
-                >
-                  Open Official PDF
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => void openExternalUrl(tender.officialPdfUrl!)}
+                  >
+                    Open Official PDF
+                  </button>
+                  <span className="muted" style={{ display: "block", fontSize: 12 }}>
+                    Always verify requirements in the official document.
+                  </span>
+                </>
               ) : (
                 "—"
               )}
             </span>
           </div>
         </div>
+      </section>
+
+      <TenderPhaseCard phase={phase} />
+
+      <section className="card">
+        <h3>What should I do now?</h3>
+        {phase.isEarlyStage ? (
+          <>
+            <p className="alert-box" style={{ marginTop: 0 }}>
+              No formal offer submission is requested at this stage. Early Outreach ≠
+              Offer Submission.
+            </p>
+            <div className="actions">
+              {isDesktop() ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() => void handleCopyTemplate("earlyOutreach")}
+                  >
+                    Prepare Early Outreach
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => void handleCreateWorkspace()}
+                  >
+                    Create Tender Workspace
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => void handlePrepareDraft("outreach")}
+                >
+                  Prepare Early Outreach
+                </button>
+              )}
+              {tender.officialPdfUrl ? (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void openExternalUrl(tender.officialPdfUrl!)}
+                >
+                  Open Official PDF
+                </button>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+        {phase.isFormalStage ? (
+          <div className="actions">
+            {isDesktop() ? (
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => void handlePreparePackage()}
+              >
+                Prepare Offer Package
+              </button>
+            ) : (
+              <p className="muted">
+                Prepare Offer Package is available in the desktop app.
+              </p>
+            )}
+          </div>
+        ) : null}
+        {tender.currentStatus === "SUBMITTED" || phase.isTerminal ? (
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Generation is no longer the primary task — monitor result / follow-up.
+          </p>
+        ) : null}
       </section>
 
       {tender.recordType === "PROC" ? (
@@ -470,7 +923,7 @@ export const TenderDetailPage = () => {
 
       <div className="grid-2">
         <section className="card">
-          <h3>Why this tender matters</h3>
+          <h3>Why TEKIA matched this opportunity</h3>
           <ul className="trace-list">
             {tender.decisionTrace.map((item) => (
               <li key={item.text} className={`tone-${item.tone}`}>
@@ -479,6 +932,18 @@ export const TenderDetailPage = () => {
               </li>
             ))}
           </ul>
+          {(tender.scoreReasons ?? []).length > 0 ? (
+            <div style={{ marginTop: 12 }}>
+              <p className="muted" style={{ marginBottom: 6 }}>
+                Internal scoring reasons (not scope text):
+              </p>
+              <ul className="checklist">
+                {tender.scoreReasons.map((reason) => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </section>
 
         <section className="card">
@@ -498,82 +963,134 @@ export const TenderDetailPage = () => {
       </div>
 
       <form className="card form-grid" onSubmit={(e) => void handleSaveContact(e)}>
-        <h3>Scope / Contact / Submission info</h3>
+        <h3>Scope summary</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Tender-facing scope only — never scoring reasons.
+        </p>
         <label>
           Scope summary
           <textarea
             name="scope_summary"
-            defaultValue={
-              tender.scopeSummary ??
-              [tender.title, ...(tender.scoreReasons ?? [])].filter(Boolean).join("\n")
-            }
+            defaultValue={tender.scopeSummary ?? ""}
+            placeholder="Leave empty if not extracted from the official document"
           />
         </label>
+
+        <h3>Tender contact</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Authority / tender contact — use for questions / early outreach. This is{" "}
+          <strong>not</strong> TEKIA Company Settings (sender / legal representative).
+        </p>
         <div className="grid-2">
           <label>
             Contact person
-            <input name="contact_name" defaultValue={tender.contact.name ?? ""} placeholder="Not detected" />
+            <input
+              name="contact_name"
+              defaultValue={tender.contact.name ?? ""}
+              placeholder={extractionEmptyLabel}
+            />
           </label>
           <label>
             Department
             <input
               name="contact_department"
               defaultValue={tender.contact.department ?? ""}
-              placeholder="Not detected"
+              placeholder={extractionEmptyLabel}
             />
           </label>
           <label>
-            Email
-            <input name="contact_email" defaultValue={tender.contact.email ?? ""} placeholder="Not detected" />
+            Contact email
+            <input
+              name="contact_email"
+              defaultValue={tender.contact.email ?? ""}
+              placeholder={extractionEmptyLabel}
+            />
           </label>
           <label>
-            Phone
-            <input name="contact_phone" defaultValue={tender.contact.phone ?? ""} placeholder="Not detected" />
+            Contact phone
+            <input
+              name="contact_phone"
+              defaultValue={tender.contact.phone ?? ""}
+              placeholder={extractionEmptyLabel}
+            />
           </label>
         </div>
         <p className="muted" style={{ margin: 0 }}>
-          Contact shown as: {displayOrMissing(tender.contact.name)} /{" "}
+          Extracted: {displayOrMissing(tender.contact.name)} /{" "}
           {displayOrMissing(tender.contact.email)} /{" "}
           {displayOrMissing(tender.contact.phone)}
         </p>
-        <div className="grid-2">
-          <label>
-            Probable submission method
-            <select
-              name="submission_method"
-              defaultValue={tender.submissionInfo.method || "UNKNOWN"}
-            >
-              {["EMAIL", "PORTAL", "ESIDIS", "PHYSICAL", "OTHER", "UNKNOWN"].map(
-                (method) => (
-                  <option key={method} value={method}>
-                    {method}
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
-          <label>
-            Submission email
+
+        <h3>Formal submission</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Complete only when the official invitation defines how offers must be
+          submitted.
+        </p>
+        {!showFormalSubmissionFields ? (
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setShowFormalSubmission(true)}
+          >
+            Show formal submission fields
+          </button>
+        ) : (
+          <div className="grid-2">
+            <label>
+              Submission method
+              <select
+                name="submission_method"
+                defaultValue={tender.submissionInfo.method || "UNKNOWN"}
+              >
+                {["EMAIL", "PORTAL", "ESIDIS", "PHYSICAL", "OTHER", "UNKNOWN"].map(
+                  (method) => (
+                    <option key={method} value={method}>
+                      {method}
+                    </option>
+                  ),
+                )}
+              </select>
+            </label>
+            <label>
+              Submission email
+              <input
+                name="submission_email"
+                defaultValue={tender.submissionInfo.email ?? ""}
+                title="Official recipient address for submitting an offer. This may differ from the contact email."
+              />
+              <span className="muted" style={{ fontSize: 12 }}>
+                Official recipient for submitting an offer — may differ from contact
+                email.
+              </span>
+            </label>
+            <label>
+              Portal / other
+              <input
+                name="submission_portal"
+                defaultValue={tender.submissionInfo.portal ?? ""}
+              />
+            </label>
+            <label>
+              Instructions
+              <textarea
+                name="submission_instructions"
+                defaultValue={tender.submissionInfo.instructions ?? ""}
+              />
+            </label>
+          </div>
+        )}
+        {!showFormalSubmissionFields ? (
+          <>
+            <input type="hidden" name="submission_method" value={tender.submissionInfo.method || "UNKNOWN"} />
+            <input type="hidden" name="submission_email" value={tender.submissionInfo.email ?? ""} />
+            <input type="hidden" name="submission_portal" value={tender.submissionInfo.portal ?? ""} />
             <input
-              name="submission_email"
-              defaultValue={tender.submissionInfo.email ?? ""}
-            />
-          </label>
-          <label>
-            Portal / other
-            <input
-              name="submission_portal"
-              defaultValue={tender.submissionInfo.portal ?? ""}
-            />
-          </label>
-          <label>
-            Notes / instructions
-            <textarea
+              type="hidden"
               name="submission_instructions"
-              defaultValue={tender.submissionInfo.instructions ?? ""}
+              value={tender.submissionInfo.instructions ?? ""}
             />
-          </label>
-        </div>
+          </>
+        ) : null}
         <div className="actions">
           <button type="submit" className="btn primary">
             Save details
@@ -582,109 +1099,288 @@ export const TenderDetailPage = () => {
       </form>
 
       <section className="card">
-        <h3>Document checklist</h3>
+        <h3>
+          {phase.isEarlyStage ? "Current phase documents" : "Document checklist"}
+        </h3>
+        {phase.isEarlyStage ? (
+          <p className="muted" style={{ marginTop: 0 }}>
+            Formal company clearances and offer docs are <strong>not required</strong>{" "}
+            for Primary Request / Early Outreach.
+          </p>
+        ) : null}
         {vaultChecklist && vaultChecklist.length > 0 ? (
-          <ul className="checklist">
-            {vaultChecklist.map((item) => (
-              <li key={item.key}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span>
-                    {item.status === "AVAILABLE"
-                      ? "✅"
-                      : item.status === "EXPIRED" ||
-                          item.status === "MISSING" ||
-                          item.status === "TO_GENERATE"
-                        ? "⚠"
-                        : "•"}{" "}
-                    {item.label}
-                    <span className="muted">
-                      {" "}
-                      — {item.status}
-                      {item.validUntil ? ` · until ${item.validUntil}` : ""}
-                      {item.note ? ` · ${item.note}` : ""}
-                    </span>
-                  </span>
-                  {item.driveUrl ? (
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      onClick={() => void openExternalUrl(item.driveUrl!)}
-                    >
-                      Open in Drive
-                    </button>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <ul className="checklist">
-            {tender.documentChecklist.map((item) => (
-              <li key={item.key}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span>
-                    {item.status === "AVAILABLE"
-                      ? "✅"
-                      : item.status === "REQUIRED" || item.status === "MISSING"
-                        ? "⚠"
-                        : "•"}{" "}
-                    {item.label}
-                  </span>
-                  <select
-                    aria-label={`${item.label} status`}
-                    value={item.status}
-                    onChange={(e) => void handleChecklistToggle(item.key, e.target.value)}
-                  >
-                    {[
-                      "AVAILABLE",
-                      "MISSING",
-                      "EXPIRED",
-                      "REQUIRED",
-                      "NOT_REQUIRED",
-                      "UNKNOWN",
-                    ].map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
+          <>
+            <ul className="checklist">
+              {vaultChecklist
+                .filter((item) =>
+                  phase.isEarlyStage
+                    ? EARLY_PHASE_DOC_KEYS.has(item.key) ||
+                      item.key.toLowerCase().includes("outreach") ||
+                      item.key.toLowerCase().includes("profile")
+                    : true,
+                )
+                .map((item) => (
+                  <li key={item.key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                      <span>
+                        {item.status === "AVAILABLE" ? "✅" : "•"} {item.label}
+                        <span className="muted">
+                          {" "}
+                          — {item.status}
+                          {item.validUntil ? ` · until ${item.validUntil}` : ""}
+                          {item.note ? ` · ${item.note}` : ""}
+                        </span>
+                      </span>
+                      {item.driveUrl ? (
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() => void openExternalUrl(item.driveUrl!)}
+                        >
+                          Open in Drive
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+            </ul>
+            {phase.isEarlyStage ? (
+              <details style={{ marginTop: 12 }}>
+                <summary className="muted">
+                  Documents that may be required later (not required at this stage)
+                </summary>
+                <ul className="checklist" style={{ marginTop: 8 }}>
+                  {vaultChecklist
+                    .filter(
+                      (item) =>
+                        !EARLY_PHASE_DOC_KEYS.has(item.key) &&
+                        !item.key.toLowerCase().includes("outreach") &&
+                        !item.key.toLowerCase().includes("profile"),
+                    )
+                    .map((item) => (
+                      <li key={item.key}>
+                        {item.label}
+                        <span className="muted"> — Not required at this stage</span>
+                      </li>
                     ))}
-                  </select>
-                </div>
-              </li>
-            ))}
-          </ul>
+                </ul>
+              </details>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <ul className="checklist">
+              {tender.documentChecklist
+                .filter((item) =>
+                  phase.isEarlyStage
+                    ? item.key.includes("outreach") ||
+                      item.key.includes("company_profile") ||
+                      item.key.includes("profile")
+                    : true,
+                )
+                .map((item) => (
+                  <li key={item.key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                      <span>
+                        {item.status === "AVAILABLE" ? "✅" : "•"} {item.label}
+                      </span>
+                      <select
+                        aria-label={`${item.label} status`}
+                        value={item.status}
+                        onChange={(e) =>
+                          void handleChecklistToggle(item.key, e.target.value)
+                        }
+                      >
+                        {[
+                          "AVAILABLE",
+                          "MISSING",
+                          "EXPIRED",
+                          "REQUIRED",
+                          "NOT_REQUIRED",
+                          "UNKNOWN",
+                        ].map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </li>
+                ))}
+            </ul>
+            {phase.isEarlyStage ? (
+              <details style={{ marginTop: 12 }}>
+                <summary className="muted">
+                  Documents that may be required later (not required at this stage)
+                </summary>
+                <ul className="checklist" style={{ marginTop: 8 }}>
+                  {tender.documentChecklist
+                    .filter(
+                      (item) =>
+                        !item.key.includes("outreach") &&
+                        !item.key.includes("company_profile") &&
+                        !item.key.includes("profile"),
+                    )
+                    .map((item) => (
+                      <li key={item.key}>
+                        {item.label}
+                        <span className="muted"> — Not required at this stage</span>
+                      </li>
+                    ))}
+                </ul>
+              </details>
+            ) : null}
+          </>
         )}
       </section>
 
-      {isDesktop() ? (
+      {isDesktop() && !phase.isTerminal ? (
         <section className="card">
-          <h3>Prepare Offer Package</h3>
-          <p className="muted">
-            Inspects Vault documents and templates. Does not send anything.
-          </p>
-          <div className="actions">
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => void handlePreparePackage()}
-            >
-              Prepare Offer Package
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void handleCreateWorkspace()}
-            >
-              Create Tender Workspace
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void handleCopyTemplate("technicalOffer")}
-            >
-              Copy Technical Offer → draft
-            </button>
-          </div>
-          {packageReadiness ? (
+          {phase.isEarlyStage ? (
+            <>
+              <h3>Early-stage actions</h3>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Early Outreach ≠ Offer Submission. Generate creates a Drive copy and
+                fills known fields — nothing is sent.
+              </p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => void handleCopyTemplate("earlyOutreach")}
+                >
+                  Generate Early Outreach
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void handleCreateWorkspace()}
+                >
+                  Create Tender Workspace
+                </button>
+              </div>
+              <details style={{ marginTop: 16 }}>
+                <summary>
+                  Formal offer — not required at Primary Request stage
+                </summary>
+                <p className="muted">
+                  Technical / Economic / Declaration become primary when a formal
+                  invitation (PROC) is detected. Available here only if needed early.
+                </p>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setShowLaterStage((v) => !v)}
+                  >
+                    {showLaterStage ? "Hide formal offer tools" : "Show formal offer tools"}
+                  </button>
+                </div>
+                {showLaterStage ? (
+                  <>
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => void handlePreparePackage()}
+                      >
+                        Prepare Offer Package
+                      </button>
+                    </div>
+                    {renderFormalOfferControls()}
+                  </>
+                ) : null}
+              </details>
+            </>
+          ) : null}
+
+          {phase.isFormalStage || (!phase.isEarlyStage && tender.currentStatus !== "SUBMITTED") ? (
+            <>
+              <h3>Formal offer package</h3>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Creates Drive copies from master templates and fills known fields.
+                Does not send anything.
+              </p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => void handlePreparePackage()}
+                >
+                  Prepare Offer Package
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void handleCreateWorkspace()}
+                >
+                  Create Tender Workspace
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void handleCopyTemplate("earlyOutreach")}
+                >
+                  Generate Early Outreach
+                </button>
+              </div>
+              {renderFormalOfferControls()}
+            </>
+          ) : null}
+
+          {tender.currentStatus === "SUBMITTED" ? (
+            <>
+              <h3>Drive documents</h3>
+              <p className="muted">Submission already recorded — generation is secondary.</p>
+            </>
+          ) : null}
+
+          {driveDocuments.length > 0 ? (
+            <div style={{ marginTop: 16 }}>
+              <h4>Generated Drive documents</h4>
+              <ul className="checklist">
+                {driveDocuments.map((doc) => (
+                  <li key={doc.id}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                        <span>
+                          {doc.type} — {doc.status}
+                        </span>
+                        <span className="actions" style={{ marginTop: 0 }}>
+                          <button
+                            type="button"
+                            className="btn ghost"
+                            onClick={() => void openExternalUrl(doc.driveUrl)}
+                          >
+                            Open in Drive
+                          </button>
+                          <button
+                            type="button"
+                            className="btn"
+                            disabled={
+                              doc.unresolvedPlaceholders.length > 0 ||
+                              doc.status === "READY"
+                            }
+                            onClick={() => void handleMarkDriveDocReady(doc.id)}
+                          >
+                            Mark READY
+                          </button>
+                        </span>
+                      </div>
+                      {doc.unresolvedPlaceholders.length > 0 ? (
+                        <div className="muted">
+                          Unresolved fields: {doc.unresolvedPlaceholders.join(", ")}
+                        </div>
+                      ) : (
+                        <div className="muted">No unresolved placeholders</div>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {packageReadiness && phase.isFormalStage ? (
             <div style={{ marginTop: 12 }}>
               <strong>PACKAGE READINESS — {packageReadiness.summary}</strong>
               <h4>Company Documents</h4>
@@ -706,7 +1402,9 @@ export const TenderDetailPage = () => {
                   </li>
                 ))}
               </ul>
-              <p className="muted">Readiness: {packageReadiness.ready ? "READY" : "NOT READY"}</p>
+              <p className="muted">
+                Readiness: {packageReadiness.ready ? "READY" : "NOT READY"} — not sent
+              </p>
             </div>
           ) : null}
         </section>
@@ -714,114 +1412,27 @@ export const TenderDetailPage = () => {
 
       <section className="card">
         <h3>Draft area</h3>
-        {draftKeys.map((key) => {
-          const draft = tender.drafts[key];
-          return (
-            <div key={key} className="draft-row">
-              <div>
-                <strong>{draftLabels[key]}</strong>
-                <div className="muted">{draft.status}</div>
+        {phase.isEarlyStage ? (
+          <>
+            {earlyDraftKeys.map((key) => renderDraftRow(key))}
+            <details style={{ marginTop: 12 }}>
+              <summary className="muted">Later-stage drafts</summary>
+              <div style={{ marginTop: 8 }}>
+                {laterDraftKeys.map((key) => renderDraftRow(key))}
               </div>
-              <div className="actions" style={{ marginTop: 0 }}>
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => void handlePrepareDraft(key)}
-                >
-                  {draft.status === "NOT_STARTED" ? "Prepare" : "Open Draft"}
-                </button>
-                {draft.status !== "READY" ? (
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => {
-                      void (async () => {
-                        try {
-                          const result = await api.patchTender(referenceNumber, {
-                            drafts: {
-                              [key]: {
-                                ...draft,
-                                status: "READY",
-                                updatedAt: new Date().toISOString(),
-                              },
-                            },
-                          });
-                          setTender(result.tender);
-                          setMessage(
-                            result.approvalInvalidated
-                              ? "Draft marked ready. Approval invalidated."
-                              : `${draftLabels[key]} marked READY.`,
-                          );
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : String(err));
-                        }
-                      })();
-                    }}
-                  >
-                    Mark Ready
-                  </button>
-                ) : null}
-              </div>
-              {editingDraft === key ? (
-                <form
-                  className="form-grid"
-                  style={{ width: "100%", marginTop: 10 }}
-                  onSubmit={(e) => void handleSaveDraft(e, key)}
-                >
-                  <label>
-                    Status
-                    <select name="status" defaultValue={draft.status}>
-                      <option value="DRAFT">DRAFT</option>
-                      <option value="READY">READY</option>
-                      <option value="NOT_STARTED">NOT_STARTED</option>
-                    </select>
-                  </label>
-                  <label>
-                    Subject
-                    <input name="subject" defaultValue={draft.subject ?? ""} />
-                  </label>
-                  <label>
-                    Body / content
-                    <textarea name="body" defaultValue={draft.body ?? ""} />
-                  </label>
-                  <label>
-                    Notes
-                    <textarea name="notes" defaultValue={draft.notes ?? ""} />
-                  </label>
-                  {key === "economic" ? (
-                    <label>
-                      Amount without VAT
-                      <input
-                        name="amountWithoutVat"
-                        type="number"
-                        defaultValue={draft.amountWithoutVat ?? ""}
-                      />
-                    </label>
-                  ) : null}
-                  <div className="actions">
-                    <button type="submit" className="btn primary">
-                      Save draft
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => setEditingDraft(null)}
-                    >
-                      Close
-                    </button>
-                  </div>
-                </form>
-              ) : null}
-            </div>
-          );
-        })}
+            </details>
+          </>
+        ) : (
+          visibleDraftKeys.map((key) => renderDraftRow(key))
+        )}
       </section>
 
       <section className="card">
         <h3>Approval & send gate</h3>
         <p className="muted">
-          Explicit approval is mandatory. Opening, marking READY, or editing a draft
-          is not approval. Cloud watcher never sends externally.
+          Generate, Mark Ready, and Approve do <strong>not</strong> send anything.
+          Explicit approval is mandatory before any future send. Cloud watcher never
+          sends externally.
         </p>
         <div className="actions">
           <button

@@ -43,6 +43,14 @@ type DriveStatus = {
   missing: string[];
   lastError: string | null;
   scopeWarning: string | null;
+  companyProfileSelection:
+    | { status: "READY"; file: { id: string; name: string; webViewLink: string } }
+    | { status: "MISSING" }
+    | {
+        status: "NEEDS_CONFIGURATION";
+        candidates: Array<{ id: string; name: string; webViewLink: string }>;
+      }
+    | null;
   __tekiaError?: boolean;
   message?: string;
 };
@@ -141,6 +149,44 @@ export const DriveVaultPanel = () => {
         setMessage("Vault root configured. Child folders discovered automatically.");
         setFolderInput("");
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSyncCompanyProfile = async () => {
+    if (!window.tekia?.drive?.syncCompanyProfile) return;
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const result = (await window.tekia.drive.syncCompanyProfile()) as {
+        fileName?: string;
+        driveUrl?: string;
+        replacedKeys?: string[];
+        skippedUnknown?: string[];
+        unresolvedPlaceholders?: string[];
+        cleanupWarnings?: string[];
+        __tekiaError?: boolean;
+        message?: string;
+      };
+      if (result?.__tekiaError) {
+        setError(result.message ?? "Company Profile sync failed");
+        return;
+      }
+      const unresolved = result.unresolvedPlaceholders ?? [];
+      const cleanup = result.cleanupWarnings ?? [];
+      setMessage(
+        `Synced Company Profile “${result.fileName}” from master (master untouched). Replaced: ${(result.replacedKeys ?? []).join(", ") || "none"}. Skipped/manual: ${(result.skippedUnknown ?? []).join(", ") || "none"}.${
+          unresolved.length
+            ? ` Unresolved in generated copy: ${unresolved.join(", ")}.`
+            : ""
+        }${cleanup.length ? ` Note: ${cleanup.join(" ")}` : ""} Nothing sent.`,
+      );
+      // Cleanup of old manually created Drive files is informational — not a Sync failure
+      if (result.driveUrl) void openExternalUrl(result.driveUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -280,6 +326,74 @@ export const DriveVaultPanel = () => {
               </li>
             ))}
           </ul>
+
+          <div className="card" style={{ margin: 0 }}>
+            <h4 style={{ marginTop: 0 }}>Company Profile sync</h4>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Controlled action only — does not run on Save. Flow:{" "}
+              <code>Templates/Company Profile</code> (master, never edited) → copy →{" "}
+              <code>Company Documents/Company Profile</code> → Docs merge on the copy.
+              Re-running Sync regenerates from the master (idempotent).
+            </p>
+            {status.companyProfileSelection?.status === "READY" ? (
+              <p>
+                Master: <strong>{status.companyProfileSelection.file.name}</strong>
+              </p>
+            ) : status.companyProfileSelection?.status === "NEEDS_CONFIGURATION" ? (
+              <label>
+                Select Company Profile master (Templates / Company Profile)
+                <select
+                  aria-label="Select Company Profile master template"
+                  defaultValue=""
+                  onChange={(e) => {
+                    const fileId = e.target.value;
+                    if (!fileId) return;
+                    void window.tekia!.drive
+                      .chooseCompanyProfile(fileId)
+                      .then(() => load(false));
+                  }}
+                >
+                  <option value="">Select master template…</option>
+                  {status.companyProfileSelection.candidates.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <p className="muted">
+                Create <code>Templates / Company Profile</code> and place the placeholder
+                master Google Doc there (e.g. TEKIA – Company Profile Template).
+              </p>
+            )}
+            <div className="actions">
+              <button
+                type="button"
+                className="btn primary"
+                disabled={
+                  busy || status.companyProfileSelection?.status !== "READY"
+                }
+                onClick={() => void handleSyncCompanyProfile()}
+                aria-label="Sync Company Profile from Company Settings"
+              >
+                Sync Company Profile
+              </button>
+              {status.companyProfileSelection?.status === "READY" ? (
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => {
+                    const selection = status.companyProfileSelection;
+                    if (selection?.status !== "READY") return;
+                    void openExternalUrl(selection.file.webViewLink);
+                  }}
+                >
+                  Open master in Drive
+                </button>
+              ) : null}
+            </div>
+          </div>
 
           <div className="stack" style={{ gap: 8 }}>
             {status.companyDocuments.map((folder) => (
