@@ -87,6 +87,7 @@ describe("operator API + submission workflow", () => {
     repo = createRepository(db);
     app = createOperatorRoutes({
       operatorToken: TOKEN,
+      adminToken: "admin-token-test-fallback-value",
       allowedOrigins: ["http://localhost:5173"],
       config: { ...baseConfig, databasePath: dbPath },
       repo,
@@ -121,6 +122,16 @@ describe("operator API + submission workflow", () => {
       token: "wrong",
     });
     expect(invalid.status).toBe(401);
+  });
+
+  it("accepts ADMIN_TOKEN as operator fallback", async () => {
+    seedTender(repo, "26REQ-ADMIN");
+    const res = await request("/api/operator/config", {
+      token: "admin-token-test-fallback-value",
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.pollIntervalMinutes).toBeTypeOf("number");
   });
 
   it("filters opportunities by operational status", async () => {

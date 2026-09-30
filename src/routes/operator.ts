@@ -230,11 +230,20 @@ const mergeDrafts = (
 
 export const createOperatorRoutes = (deps: {
   operatorToken: string | undefined;
+  adminToken: string;
   allowedOrigins: string[];
   config: Config;
   repo: Repository;
 }) => {
   const app = new Hono<OperatorEnv>();
+
+  // Prefer OPERATOR_API_TOKEN; fall back to ADMIN_TOKEN so desktop can connect
+  // even if Coolify OPERATOR_API_TOKEN is missing/mismatched.
+  const acceptedTokens = new Set(
+    [deps.operatorToken, deps.adminToken]
+      .filter((value): value is string => Boolean(value && value.trim()))
+      .map((value) => value.trim()),
+  );
 
   app.use(
     "/api/operator/*",
@@ -244,25 +253,43 @@ export const createOperatorRoutes = (deps: {
         return deps.allowedOrigins.includes(origin) ? origin : "";
       },
       allowMethods: ["GET", "POST", "PATCH", "PUT", "OPTIONS"],
-      allowHeaders: ["Content-Type", "Authorization", "X-Operator-Token"],
+      allowHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Operator-Token",
+        "X-Admin-Token",
+      ],
       maxAge: 600,
     }),
   );
 
   const requireOperator = createMiddleware(async (c, next) => {
-    if (!deps.operatorToken) {
+    if (acceptedTokens.size === 0) {
       return c.json(
-        { error: "operator_api_not_configured", message: "OPERATOR_API_TOKEN is not set" },
+        {
+          error: "operator_api_not_configured",
+          message: "OPERATOR_API_TOKEN or ADMIN_TOKEN is required",
+        },
         503,
       );
     }
 
-    const headerToken =
+    const headerToken = (
       c.req.header("X-Operator-Token") ??
-      c.req.header("Authorization")?.replace(/^Bearer\s+/i, "");
+      c.req.header("X-Admin-Token") ??
+      c.req.header("Authorization")?.replace(/^Bearer\s+/i, "") ??
+      ""
+    ).trim();
 
-    if (!headerToken || headerToken !== deps.operatorToken) {
-      return c.json({ error: "unauthorized" }, 401);
+    if (!headerToken || !acceptedTokens.has(headerToken)) {
+      return c.json(
+        {
+          error: "unauthorized",
+          message:
+            "Operator authentication failed. Use OPERATOR_API_TOKEN or ADMIN_TOKEN.",
+        },
+        401,
+      );
     }
 
     await next();

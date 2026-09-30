@@ -67,15 +67,20 @@ app.route("/", createAdminRoutes({
 }));
 app.route("/", createOperatorRoutes({
   operatorToken: config.OPERATOR_API_TOKEN,
+  adminToken: config.ADMIN_TOKEN,
   allowedOrigins: config.LOCAL_DASHBOARD_ORIGINS,
   config,
   repo,
 }));
 
 if (config.OPERATOR_API_TOKEN) {
-  console.log("operator API: enabled (token configured)");
+  console.log(
+    `operator API: enabled (OPERATOR_API_TOKEN len=${config.OPERATOR_API_TOKEN.length})`,
+  );
 } else {
-  console.log("operator API: disabled (set OPERATOR_API_TOKEN to enable)");
+  console.log(
+    `operator API: enabled via ADMIN_TOKEN fallback (set OPERATOR_API_TOKEN to dedicated token)`,
+  );
 }
 
 const server = serve(

@@ -33,7 +33,10 @@ const envSchema = z.object({
     .string()
     .optional()
     .or(z.literal(""))
-    .transform((v) => (v && v.length > 0 ? v : undefined)),
+    .transform((v) => {
+      const trimmed = typeof v === "string" ? v.trim() : "";
+      return trimmed.length > 0 ? trimmed : undefined;
+    }),
   LOCAL_DASHBOARD_URL: z
     .string()
     .url()
