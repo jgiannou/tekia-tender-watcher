@@ -90,9 +90,23 @@ export const loadConfig = (): Config => {
     throw new Error("MIN_BUDGET cannot be greater than MAX_BUDGET");
   }
 
-  const databasePath = config.DATABASE_PATH.startsWith("/")
+  // Production (Coolify): always persist under the mounted volume /data.
+  // Relative paths like ./data/tenders.db (copied from local .env) write to
+  // /app/data which is ephemeral and wipes on every redeploy.
+  let databasePath = config.DATABASE_PATH.startsWith("/")
     ? config.DATABASE_PATH
     : resolve(process.cwd(), config.DATABASE_PATH);
+
+  if (config.NODE_ENV === "production") {
+    const forced = "/data/tenders.db";
+    if (databasePath !== forced && !databasePath.startsWith("/data/")) {
+      console.warn(
+        `DATABASE_PATH=${databasePath} is outside /data in production — forcing ${forced} so Coolify volume persists data`,
+      );
+      databasePath = forced;
+    }
+  }
+
   mkdirSync(dirname(databasePath), { recursive: true });
 
   return {
