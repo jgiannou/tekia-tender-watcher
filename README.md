@@ -113,7 +113,7 @@ curl http://localhost:3000/health
 | `PORT` | `3000` | HTTP port |
 | `DATABASE_PATH` | `./data/tenders.db` | SQLite file path |
 | `POLL_INTERVAL_MINUTES` | `5` | Cron poll interval |
-| `LOOKBACK_HOURS` | `24` | Recent window queried each cycle |
+| `LOOKBACK_HOURS` | `168` | Recent window queried each cycle (default: 7 days) |
 | `MIN_BUDGET` | `1500` | Preferred min budget (ex VAT) |
 | `MAX_BUDGET` | `30000` | Preferred max budget (ex VAT) |
 | `ALERT_SCORE_THRESHOLD` | `60` | Slack only if score ≥ this |
@@ -459,7 +459,7 @@ NODE_ENV=production
 PORT=3000
 DATABASE_PATH=/data/tenders.db
 POLL_INTERVAL_MINUTES=5
-LOOKBACK_HOURS=24
+LOOKBACK_HOURS=168
 MIN_BUDGET=1500
 MAX_BUDGET=30000
 ALERT_SCORE_THRESHOLD=60

@@ -15,7 +15,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_PATH: z.string().min(1).default("./data/tenders.db"),
   POLL_INTERVAL_MINUTES: z.coerce.number().int().positive().default(5),
-  LOOKBACK_HOURS: z.coerce.number().int().positive().default(24),
+  LOOKBACK_HOURS: z.coerce.number().int().positive().default(168),
   MIN_BUDGET: z.coerce.number().nonnegative().default(1500),
   MAX_BUDGET: z.coerce.number().positive().default(30000),
   ALERT_SCORE_THRESHOLD: z.coerce.number().int().min(0).max(100).default(60),
