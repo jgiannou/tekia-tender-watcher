@@ -155,6 +155,7 @@ describe("operator API + submission workflow", () => {
     expect(all.status).toBe(200);
     const allBody = await all.json();
     expect(allBody.items).toHaveLength(2);
+    expect(allBody.items[0].publishedAt).toBe("2026-09-29T10:00:00.000Z");
 
     const ready = await request("/api/operator/opportunities?filter=ready");
     const readyBody = await ready.json();

@@ -107,6 +107,8 @@ export type OpportunityItem = {
   deadline: string | null;
   status: string;
   detectedAt: string;
+  /** KIMDIS publication date (submissionDate, fallback signedDate). */
+  publishedAt?: string | null;
   relevanceStatus: string | null;
   invitationType?: string | null;
   ourInvitationStatus?: string | null;

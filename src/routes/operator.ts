@@ -509,6 +509,7 @@ export const createOperatorRoutes = (deps: {
           deadline: row.final_submission_date,
           status: row.current_status ?? "NEW",
           detectedAt: row.first_seen_at,
+          publishedAt: row.submission_date ?? row.signed_date ?? null,
           relevanceStatus: row.relevance_status,
           invitationType: row.invitation_type,
           ourInvitationStatus: row.our_invitation_status,

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Link } from "react-router-dom";
-import { api, type OpportunitiesResponse } from "../api";
+import { api, type OpportunitiesResponse, type OpportunityItem } from "../api";
 import { formatDateTime, formatEuro, statusClass } from "../lib/format";
 import {
   UI,
@@ -62,6 +62,84 @@ const writeCachedOpportunities = (
   }
 };
 
+const SORT_OPTIONS = [
+  { id: "score", label: "Βαθμολογία" },
+  { id: "newest", label: "Πιο πρόσφατη δημοσίευση" },
+  { id: "oldest", label: "Παλαιότερη δημοσίευση" },
+] as const;
+
+type SortMode = (typeof SORT_OPTIONS)[number]["id"];
+
+const SORT_STORAGE_KEY = "tekia.opportunities.sort";
+const PUBLISHED_FROM_STORAGE_KEY = "tekia.opportunities.publishedFrom";
+
+const isSortMode = (value: unknown): value is SortMode =>
+  SORT_OPTIONS.some((option) => option.id === value);
+
+const readStoredValue = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const writeStoredValue = (key: string, value: string): void => {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {
+    // Ignore — preference still applies for this session.
+  }
+};
+
+const readStoredSort = (): SortMode => {
+  const stored = readStoredValue(SORT_STORAGE_KEY);
+  return isSortMode(stored) ? stored : "score";
+};
+
+const readStoredPublishedFrom = (): string => {
+  const stored = readStoredValue(PUBLISHED_FROM_STORAGE_KEY);
+  return stored && /^\d{4}-\d{2}-\d{2}$/.test(stored) ? stored : "";
+};
+
+const publishedTime = (item: OpportunityItem): number =>
+  item.publishedAt ? Date.parse(item.publishedAt) || 0 : 0;
+
+/** yyyy-mm-dd from <input type="date"> → local midnight timestamp. */
+const startOfLocalDay = (isoDate: string): number => {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Date(year, month - 1, day).getTime();
+};
+
+const formatDate = (value: string | null | undefined): string => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("el-GR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+};
+
+const applyDateFilterAndSort = (
+  items: OpportunityItem[],
+  sortMode: SortMode,
+  publishedFrom: string,
+): OpportunityItem[] => {
+  const fromTime = publishedFrom ? startOfLocalDay(publishedFrom) : null;
+  const filtered =
+    fromTime === null
+      ? items
+      : items.filter((item) => publishedTime(item) >= fromTime);
+  if (sortMode === "score") return filtered;
+  const direction = sortMode === "newest" ? -1 : 1;
+  return [...filtered].sort(
+    (a, b) => direction * (publishedTime(a) - publishedTime(b)),
+  );
+};
+
 const outreachLabel = (status: string | null | undefined): string => {
   if (!status || status === "NOT_STARTED") return "—";
   if (status === "SENT") return "ΑΠΟΣΤΑΛΘΗΚΕ";
@@ -75,6 +153,31 @@ export const OpportunitiesPage = () => {
   );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sortMode, setSortMode] = useState<SortMode>(readStoredSort);
+  const [publishedFrom, setPublishedFrom] = useState<string>(readStoredPublishedFrom);
+
+  const visibleItems = useMemo(
+    () => applyDateFilterAndSort(data?.items ?? [], sortMode, publishedFrom),
+    [data, sortMode, publishedFrom],
+  );
+
+  const handleSortChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const next = event.target.value;
+    if (!isSortMode(next)) return;
+    writeStoredValue(SORT_STORAGE_KEY, next);
+    setSortMode(next);
+  };
+
+  const handlePublishedFromChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const next = event.target.value;
+    writeStoredValue(PUBLISHED_FROM_STORAGE_KEY, next);
+    setPublishedFrom(next);
+  };
+
+  const handleClearPublishedFrom = () => {
+    writeStoredValue(PUBLISHED_FROM_STORAGE_KEY, "");
+    setPublishedFrom("");
+  };
 
   const handleFilterChange = (nextFilter: OpportunityFilterId) => {
     try {
@@ -154,6 +257,47 @@ export const OpportunitiesPage = () => {
           </div>
         </div>
 
+        <div className="list-controls">
+          <label className="list-control">
+            <span className="muted">Ταξινόμηση</span>
+            <select
+              value={sortMode}
+              onChange={handleSortChange}
+              aria-label="Ταξινόμηση ευκαιριών"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="list-control">
+            <span className="muted">Δημοσίευση από</span>
+            <input
+              type="date"
+              value={publishedFrom}
+              onChange={handlePublishedFromChange}
+              aria-label="Εμφάνιση ευκαιριών που δημοσιεύτηκαν από αυτή την ημερομηνία"
+            />
+          </label>
+          {publishedFrom ? (
+            <button
+              type="button"
+              className="filter-btn"
+              onClick={handleClearPublishedFrom}
+              aria-label="Καθαρισμός φίλτρου ημερομηνίας δημοσίευσης"
+            >
+              Όλες οι ημερομηνίες
+            </button>
+          ) : null}
+          {data ? (
+            <span className="muted list-count" aria-live="polite">
+              {visibleItems.length} από {data.items.length}
+            </span>
+          ) : null}
+        </div>
+
         {error ? <div className="error" style={{ margin: 12 }}>{error}</div> : null}
         {loading && !data ? (
           <p className="muted" style={{ padding: 16 }}>
@@ -172,6 +316,7 @@ export const OpportunitiesPage = () => {
               <thead>
                 <tr>
                   <th>Βαθμολογία</th>
+                  <th>Δημοσίευση</th>
                   <th>Φορέας</th>
                   <th>Τίτλος</th>
                   <th>ADAM</th>
@@ -184,19 +329,22 @@ export const OpportunitiesPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {data.items.length === 0 ? (
+                {visibleItems.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="muted">
-                      Δεν υπάρχουν ευκαιρίες για αυτό το φίλτρο.
+                    <td colSpan={11} className="muted">
+                      {publishedFrom
+                        ? "Δεν υπάρχουν ευκαιρίες που δημοσιεύτηκαν από αυτή την ημερομηνία."
+                        : "Δεν υπάρχουν ευκαιρίες για αυτό το φίλτρο."}
                     </td>
                   </tr>
                 ) : (
-                data.items.map((item) => (
+                visibleItems.map((item) => (
                   <tr
                     key={item.referenceNumber}
                     className={item.linkedNotInvited ? "row-deprioritized" : undefined}
                   >
                     <td>{item.score ?? "—"}</td>
+                    <td className="nowrap">{formatDate(item.publishedAt)}</td>
                     <td>
                       {item.organization ?? "—"}
                       <div className="muted" style={{ fontSize: 12 }}>
