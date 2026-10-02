@@ -57,7 +57,7 @@ console.log(
 console.log(`bootstrap send alerts: ${config.BOOTSTRAP_SEND_ALERTS}`);
 
 const app = new Hono();
-app.route("/", createHealthRoutes(repo));
+app.route("/", createHealthRoutes(repo, { databasePath: config.databasePath }));
 app.route("/", createAdminRoutes({
   adminToken: config.ADMIN_TOKEN,
   pollJob,

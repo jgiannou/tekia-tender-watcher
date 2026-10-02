@@ -90,7 +90,9 @@ export const loadConfig = (): Config => {
     throw new Error("MIN_BUDGET cannot be greater than MAX_BUDGET");
   }
 
-  const databasePath = resolve(process.cwd(), config.DATABASE_PATH);
+  const databasePath = config.DATABASE_PATH.startsWith("/")
+    ? config.DATABASE_PATH
+    : resolve(process.cwd(), config.DATABASE_PATH);
   mkdirSync(dirname(databasePath), { recursive: true });
 
   return {
