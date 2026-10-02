@@ -158,6 +158,44 @@ describe("slack formatter", () => {
     expect(other).toContain("Targeted vendor: My company projects Ο.Ε.");
     expect(other).toContain("NO OFFER");
     expect(other).not.toContain("NEW KIMDIS LEAD");
+
+    const unwatched = formatSlackMessage({
+      score: 70,
+      title: "Συντήρηση ιστοσελίδας",
+      organization: "ΕΚΕΤΑ",
+      budgetWithoutVat: 5000,
+      recordType: "PROC",
+      stageLabel: "Πρόσκληση",
+      webCategoryLabel: "🌐 WEBSITE",
+      cpvs: [],
+      submissionDate: "2026-10-02T10:00:00.000Z",
+      publicUrl: "https://example.com/public",
+      pdfUrl: "https://example.com/pdf",
+      reasons: [],
+      referenceNumber: "26PROC333",
+      flags: {
+        earlyStage: false,
+        hasLinkedNotice: false,
+        targetedSupplier: false,
+        nonInvitedOffersRejected: false,
+        alreadyAdvanced: false,
+        pdfNeedsManualReview: false,
+        pdfVerified: true,
+      },
+      relation: {
+        decision: "AUTO_LINK",
+        parentAdam: "26REQ019899046",
+        score: 95,
+        confidence: "HIGH",
+        method: "INFERRED",
+        invitationType: "OPEN",
+        invitedVendorName: null,
+        ourInvitationStatus: null,
+        recommendedAction: "Έλεγχος πρόσκλησης",
+        parentOutreachSent: false,
+      },
+    });
+    expect(unwatched).not.toContain("FOLLOW-UP");
   });
 
   it("formats bootstrap and test messages", () => {

@@ -48,7 +48,7 @@ const COMPANY_MARKER =
  * and vendor name on the following line. Do not match ΠΡΟΣΚΛΗΣΗ.
  */
 const PROS_LABEL =
-  /(?:^|[\s\n\r])(?:ΠΡΟΣ|Προς|ΠΡΟ[\u03A3\u03A2ςσ])(?![ΚκΛλΗηΙι])\s*[:：]?\s*(?:\r?\n\s*)?([^\n\r]{2,120})/u;
+  /(?:^|[\s\n\r])(?:ΠΡΟΣ|Προς|ΠΡΟ[\u03A3\u03A2ςσ])(?!\p{L})\s*[:：]?\s*(?:\r?\n\s*)?([^\n\r]{2,120})/u;
 
 const normalize = softNormalizeGreek;
 
@@ -92,6 +92,9 @@ export const extractTargetAfterLabel = (rawText: string): string | null => {
     .trim();
 
   if (candidate.length < 3) return null;
+
+  // "Προς τεκμηρίωση της…", "προς τον φορέα…" — prose, not a named recipient.
+  if (/^\p{Ll}/u.test(candidate)) return null;
 
   const soft = normalize(candidate);
   if (

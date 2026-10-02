@@ -477,13 +477,9 @@ export const createPollJob = (deps: {
         relationApply!.relation.decision === "POSSIBLE_RELATION") &&
       parentOutreachSent;
 
-    const relationTargeted =
-      Boolean(relationApply) &&
-      (relationApply!.relation.decision === "AUTO_LINK" ||
-        relationApply!.relation.decision === "POSSIBLE_RELATION") &&
-      relationApply!.invitation.invitationType === "TARGETED";
-
-    const relationSlack = relationFollowUp || relationTargeted;
+    // Related-PROC Slack only for REQs we actually contacted — a TARGETED PROC
+    // on an unwatched REQ is not actionable and would spam the channel.
+    const relationSlack = relationFollowUp;
 
     // Watched REQ follow-up: never send a separate "new lead" style path —
     // relationSlack + FOLLOW-UP framing covers it. Matching alone is enough

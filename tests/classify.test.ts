@@ -88,6 +88,16 @@ Dotsoft Α.Ε.
     expect(result.targetedSupplier).toBe(false);
     expect(result.nonInvitedOffersRejected).toBe(false);
   });
+
+  it("does not read prose 'Προς τεκμηρίωση…' as a targeted vendor (ΕΚΕΤΑ)", () => {
+    const text = `
+      Προς τεκμηρίωση της εν λόγω απαίτησης οι υποψήφιοι προσκομίζουν με το φάκελο της προσφοράς τους.
+      ΠΡΟΣΦΟΡΕΣ υποβάλλονται ηλεκτρονικά.
+    `;
+    const result = classifyPdfText(text);
+    expect(result.targetedSupplierName).toBeNull();
+    expect(result.targetedSupplier).toBe(false);
+  });
 });
 
 describe("Kamatero REQ scoring acceptance", () => {

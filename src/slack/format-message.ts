@@ -88,9 +88,7 @@ const isFollowUpRelation = (item: SlackOpportunity): boolean =>
   Boolean(
     item.relation?.parentAdam &&
       item.recordType === "PROC" &&
-      (item.relation.parentOutreachSent ||
-        item.relation.decision === "AUTO_LINK" ||
-        item.relation.decision === "POSSIBLE_RELATION"),
+      item.relation.parentOutreachSent,
   );
 
 const headline = (item: SlackOpportunity): string => {
