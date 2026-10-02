@@ -253,13 +253,22 @@ const mergeOutreachPreferSent = (
   return fromTender;
 };
 
+/** RELEVANT rows below this score are mostly penalised noise — hidden until touched. */
+const MIN_LIST_SCORE = 20;
+
 const isActionableOpportunity = (row: TenderRow): boolean => {
   const status = row.current_status ?? "NEW";
   if (status === "SUBMITTED" || status === "WON" || status === "LOST") {
     return false;
   }
+  const operatorTouched =
+    status !== "NEW" || parseDrafts(row.drafts_json).outreach.status !== "NOT_STARTED";
+  if (operatorTouched) return true;
+  if (row.relevance_status === "IRRELEVANT") return false;
   if (row.notified_at) return true;
-  if (row.relevance_status === "RELEVANT") return true;
+  if (row.relevance_status === "RELEVANT") {
+    return (row.score ?? 0) >= MIN_LIST_SCORE;
+  }
   if (row.relevance_status === "NEEDS_REVIEW" && (row.score ?? 0) > 0) {
     return true;
   }

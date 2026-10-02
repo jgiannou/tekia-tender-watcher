@@ -2,6 +2,61 @@ import { describe, expect, it } from "vitest";
 import { isWebRelevant } from "../src/filters/web-relevance.js";
 import { scoreOpportunity } from "../src/filters/scorer.js";
 
+describe("subject-first web relevance (live false positives)", () => {
+  it("rejects fire-extinguisher maintenance whose PDF letterhead has 'Ιστοσελίδα: www…'", () => {
+    const result = isWebRelevant({
+      title:
+        "Συντήρηση και επισκευή των πυροσβεστήρων των σχολικών μονάδων του Δήμου Ηράκλειας",
+      description: "Συντήρηση πυροσβεστήρων",
+      cpvs: ["50413200-5"],
+      pdfText:
+        "ΔΗΜΟΣ ΗΡΑΚΛΕΙΑΣ\nΙστοσελίδα : www.dimosiraklias.gr\nΣυντήρηση και υποστήριξη πυροσβεστήρων",
+    });
+    expect(result.status).toBe("IRRELEVANT");
+    expect(result.category).toBe("UNKNOWN");
+  });
+
+  it("rejects consultant services where the PDF only says 'αναρτάται στην ιστοσελίδα'", () => {
+    const result = isWebRelevant({
+      title: "Υπηρεσίες Συμβούλου Υποστήριξης της Ειδικής Υπηρεσίας Διαχείρισης",
+      description: "Τεχνικός σύμβουλος",
+      cpvs: ["79410000-1"],
+      pdfText: "Η παρούσα αναρτάται στην ιστοσελίδα του φορέα και στο ΚΗΜΔΗΣ.",
+    });
+    expect(result.status).toBe("IRRELEVANT");
+  });
+
+  it("rejects tenders run 'μέσω της ψηφιακής πλατφόρμας' (ΕΣΗΔΗΣ)", () => {
+    const result = isWebRelevant({
+      title:
+        "Έγκριση διενέργειας ανοικτού ηλεκτρονικού διαγωνισμού άνω των ορίων μέσω της ψηφιακής πλατφόρμας του",
+      description: "Προμήθεια τροφίμων μέσω της ηλεκτρονικής πλατφόρμας του ΕΣΗΔΗΣ",
+      cpvs: ["15894220-9"],
+    });
+    expect(result.status).toBe("IRRELEVANT");
+  });
+
+  it("rejects contract extensions (δικαίωμα προαίρεσης)", () => {
+    const result = isWebRelevant({
+      title:
+        "Ενεργοποίηση του δικαιώματος προαίρεσης, για ένα (1) επιπλέον έτος της σύμβασης συντήρησης ιστοσελίδας",
+      description: "",
+      cpvs: ["72415000-2"],
+    });
+    expect(result.status).toBe("IRRELEVANT");
+  });
+
+  it("keeps genuine website work and web platforms", () => {
+    expect(
+      isWebRelevant({ title: "Πρωτογενές αίτημα για συντήρηση ιστοσελίδας", description: "" })
+        .status,
+    ).toBe("RELEVANT");
+    expect(
+      isWebRelevant({ title: "Ανάπτυξη ψηφιακής πλατφόρμας κρατήσεων", description: "" }).status,
+    ).toBe("RELEVANT");
+  });
+});
+
 describe("hard web relevance gate", () => {
   it("rejects PC repair / Η/Υ maintenance with broad CPV", () => {
     const result = isWebRelevant({

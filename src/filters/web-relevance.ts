@@ -281,6 +281,28 @@ const findSignals = (
   return hits;
 };
 
+/**
+ * Procurement boilerplate that mentions web terms without being web scope:
+ * "μέσω της ψηφιακής πλατφόρμας του ΕΣΗΔΗΣ", "αναρτάται στην ιστοσελίδα του φορέα".
+ * Operates on softened text (see softenGreekInflection).
+ */
+const PROCUREMENT_PLATFORM_BOILERPLATE =
+  /(?:μεσω|στην|στη|απο)\s+(?:τη\s+|την\s+)?(?:ψηφιακ\p{L}*|ηλεκτρονικ\p{L}*|διαδικτυακ\p{L}*)?\s*(?:πλατφορμ\p{L}*|πυλ\p{L}*)\s*(?:του\s+)?(?:εθνικου\s+συστηματο?\s+)?(?:εσηδη\p{L}*|promitheus|κημδη\p{L}*|ε\.σ\.η\.δ\.η\.σ\.?)/gu;
+const PUBLICATION_BOILERPLATE =
+  /(?:αναρτ\p{L}*|δημοσιευ\p{L}*|δημοσιοποι\p{L}*|αναρτηση|διαθεσιμ\p{L}*|ανακοινω\p{L}*)[^.\n]{0,80}?(?:ιστοσελιδ\p{L}*|ιστοτοπ\p{L}*|ιστοχωρ\p{L}*|διαδικτυ\p{L}*|website)/gu;
+
+const TENDER_VIA_PLATFORM_BOILERPLATE =
+  /(?:διαγωνισμ|διαδικασι|προσφορ|υποβολ)\p{L}*[^.\n]{0,80}?μεσω\s+(?:τη\s+|την\s+)?(?:ψηφιακ\p{L}*|ηλεκτρονικ\p{L}*|διαδικτυακ\p{L}*)\s+πλατφορμ\p{L}*/gu;
+
+const stripProcurementBoilerplate = (softened: string): string =>
+  softened
+    .replace(PROCUREMENT_PLATFORM_BOILERPLATE, " ")
+    .replace(TENDER_VIA_PLATFORM_BOILERPLATE, " ")
+    .replace(PUBLICATION_BOILERPLATE, " ");
+
+/** Contract extensions are reserved for the incumbent — never our lead. */
+const CONTRACT_EXTENSION = /δικαιωμα\p{L}*\s+προαιρεσ\p{L}*/u;
+
 const hasHighConfidenceWebCpv = (cpvs: string[]): boolean =>
   cpvs.some((cpv) =>
     HIGH_CONFIDENCE_WEB_CPVS.some(
@@ -338,13 +360,24 @@ const detectCategory = (
 export const isWebRelevant = (
   input: WebRelevanceInput,
 ): WebRelevanceResult => {
-  const title = softenGreekInflection(input.title ?? "");
-  const description = softenGreekInflection(input.description ?? "");
-  const pdfText = softenGreekInflection(input.pdfText ?? "");
-  const combined = `${title}\n${description}\n${pdfText}`;
+  const title = stripProcurementBoilerplate(
+    softenGreekInflection(input.title ?? ""),
+  );
+  const description = stripProcurementBoilerplate(
+    softenGreekInflection(input.description ?? ""),
+  );
+  const pdfText = stripProcurementBoilerplate(
+    softenGreekInflection(input.pdfText ?? ""),
+  );
+  const subject = `${title}\n${description}`;
+  const combined = `${subject}\n${pdfText}`;
   const cpvs = input.cpvs ?? [];
 
-  const strongWebSignals = findSignals(combined, STRONG_WEB_SIGNALS);
+  // Web scope must be in the tender subject; the PDF only confirms it.
+  const strongWebSignals = findSignals(subject, STRONG_WEB_SIGNALS);
+  const pdfOnlyWebSignals = findSignals(pdfText, STRONG_WEB_SIGNALS).filter(
+    (signal) => !strongWebSignals.includes(signal),
+  );
   const exclusionSignals = findSignals(combined, HARD_EXCLUSION_SIGNALS);
   const weakOnlySignals = findSignals(combined, WEAK_SIGNALS);
   const marketingSignals = findSignals(combined, MARKETING_SOCIAL_SIGNALS);
@@ -361,6 +394,16 @@ export const isWebRelevant = (
     highConfidenceCpv,
     reviewReason: null as string | null,
   };
+
+  if (CONTRACT_EXTENSION.test(subject)) {
+    return {
+      ...base,
+      isWebRelevant: false,
+      status: "IRRELEVANT",
+      category: "UNKNOWN",
+      ignoreReason: "Contract extension (δικαίωμα προαίρεσης) — incumbent only",
+    };
+  }
 
   const genericMaintenance = findSignals(combined, GENERIC_SOFTWARE_MAINTENANCE);
   if (genericMaintenance.length > 0 && strongWebSignals.length === 0) {
@@ -434,7 +477,9 @@ export const isWebRelevant = (
         category: "UNKNOWN",
         ignoreReason: null,
         reviewReason:
-          "Web CPV present but title/description/PDF lack clear web scope",
+          pdfOnlyWebSignals.length > 0
+            ? "Web CPV + web terms only in PDF — title/description lack web scope"
+            : "Web CPV present but title/description lack clear web scope",
       };
     }
 
@@ -444,9 +489,11 @@ export const isWebRelevant = (
       status: "IRRELEVANT",
       category: "UNKNOWN",
       ignoreReason:
-        weakOnlySignals.length > 0
-          ? "Weak IT/software terms only — no strong web signal"
-          : "No strong web relevance signals",
+        pdfOnlyWebSignals.length > 0
+          ? "Web terms only in PDF boilerplate — subject is not web"
+          : weakOnlySignals.length > 0
+            ? "Weak IT/software terms only — no strong web signal"
+            : "No strong web relevance signals",
     };
   }
 
@@ -474,7 +521,11 @@ export const isWebRelevant = (
     websiteNouns.length > 0 &&
     substantialTech.length > 0;
 
-  const category = detectCategory(combined, strongWebSignals);
+  const subjectCategory = detectCategory(subject, strongWebSignals);
+  const category =
+    subjectCategory !== "UNKNOWN"
+      ? subjectCategory
+      : detectCategory(combined, strongWebSignals);
   if (category === "UNKNOWN") {
     return {
       ...base,

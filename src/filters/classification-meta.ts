@@ -5,7 +5,7 @@ import type { RecordType } from "../kimdis/types.js";
  * Bump when PDF classify, web relevance, or scoring rules change in a way
  * that should force re-evaluation of stored tenders.
  */
-export const CLASSIFICATION_VERSION = 3;
+export const CLASSIFICATION_VERSION = 4;
 
 export type AlertEligibilityCode =
   | "ELIGIBLE"
