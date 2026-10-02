@@ -60,6 +60,8 @@ const drive = {
     ipcRenderer.invoke("tekia:drive-tender-documents", referenceNumber),
   markDocumentReady: (documentId) =>
     ipcRenderer.invoke("tekia:drive-mark-document-ready", documentId),
+  readDocument: (documentId) =>
+    ipcRenderer.invoke("tekia:drive-read-document", documentId),
   remergeDocument: (documentId, operatorValues) =>
     ipcRenderer.invoke("tekia:drive-remerge-document", {
       documentId,

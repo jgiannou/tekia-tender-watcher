@@ -40,6 +40,7 @@ import {
   getTenderDriveDocuments,
   markTenderDocumentReady,
   preparePackageReadiness,
+  readTenderDocumentContent,
   remergeOperatorValuesIntoCopy,
   saveVaultDocumentMeta,
   setVaultRootFromInput,
@@ -555,6 +556,17 @@ const registerIpc = (): void => {
     (_event, documentId: string) => {
       try {
         return markTenderDocumentReady(String(documentId ?? ""));
+      } catch (error) {
+        return driveError(error);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "tekia:drive-read-document",
+    async (_event, documentId: string) => {
+      try {
+        return await readTenderDocumentContent(String(documentId ?? ""));
       } catch (error) {
         return driveError(error);
       }

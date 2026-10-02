@@ -5,18 +5,28 @@ import { formatDateTime, formatEuro, statusClass } from "../lib/format";
 import {
   UI,
   getGreekCategoryLabel,
+  getGreekDocumentStatusLabel,
   getGreekRecordTypeLabel,
   getGreekStatusLabel,
 } from "../lib/ui-labels";
 
 const FILTERS = [
   { id: "all", label: "Όλα" },
-  { id: "new", label: "Νέα" },
+  { id: "new", label: "Νέες" },
+  { id: "monitored", label: "Παρακολουθούμενες" },
+  { id: "formal", label: "Επίσημες" },
+  { id: "closed", label: "Κλειστές" },
   { id: "review", label: "Υπό εξέταση" },
   { id: "ready", label: "Έτοιμα" },
   { id: "req", label: "REQ" },
   { id: "proc", label: "PROC" },
 ] as const;
+
+const outreachLabel = (status: string | null | undefined): string => {
+  if (!status || status === "NOT_STARTED") return "—";
+  if (status === "SENT") return "ΑΠΟΣΤΑΛΘΗΚΕ";
+  return getGreekDocumentStatusLabel(status);
+};
 
 export const OpportunitiesPage = () => {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all");
@@ -52,20 +62,24 @@ export const OpportunitiesPage = () => {
     <div className="opportunities-layout">
       <div className="counters" aria-label="Μετρητές ευκαιριών">
         <div className="counter">
-          <div className="label">Νέα</div>
+          <div className="label">Νέες</div>
           <div className="value">{data?.counters.new ?? "—"}</div>
         </div>
         <div className="counter">
-          <div className="label">Έτοιμα</div>
-          <div className="value">{data?.counters.ready ?? "—"}</div>
+          <div className="label">Παρακολουθούμενες</div>
+          <div className="value">{data?.counters.monitored ?? "—"}</div>
+        </div>
+        <div className="counter">
+          <div className="label">Επίσημες</div>
+          <div className="value">{data?.counters.formal ?? "—"}</div>
+        </div>
+        <div className="counter">
+          <div className="label">Κλειστές</div>
+          <div className="value">{data?.counters.closed ?? "—"}</div>
         </div>
         <div className="counter">
           <div className="label">Υποβληθέντα μήνα</div>
           <div className="value">{data?.counters.submittedThisMonth ?? "—"}</div>
-        </div>
-        <div className="counter">
-          <div className="label">Εκκρεμές αποτέλεσμα</div>
-          <div className="value">{data?.counters.pendingResult ?? "—"}</div>
         </div>
       </div>
 
@@ -100,54 +114,136 @@ export const OpportunitiesPage = () => {
               <thead>
                 <tr>
                   <th>Βαθμολογία</th>
-                  <th>Κατηγορία</th>
                   <th>Φορέας</th>
                   <th>Τίτλος</th>
                   <th>ADAM</th>
-                  <th>Τύπος</th>
+                  <th>Εκδήλωση ενδιαφέροντος</th>
+                  <th>Παρακολούθηση</th>
+                  <th>Σχετική πρόσκληση</th>
                   <th>Προϋπολογισμός</th>
-                  <th>Προθεσμία</th>
                   <th>Κατάσταση</th>
-                  <th>Εντοπίστηκε</th>
                   <th>Ενέργεια</th>
                 </tr>
               </thead>
               <tbody>
                 {data.items.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="muted">
+                    <td colSpan={10} className="muted">
                       Δεν υπάρχουν ευκαιρίες για αυτό το φίλτρο.
                     </td>
                   </tr>
                 ) : (
-                  data.items.map((item) => (
-                    <tr key={item.referenceNumber}>
-                      <td>{item.score ?? "—"}</td>
-                      <td>{getGreekCategoryLabel(item.category)}</td>
-                      <td>{item.organization ?? "—"}</td>
-                      <td>{item.title ?? "—"}</td>
-                      <td>
-                        <code>{item.referenceNumber}</code>
-                      </td>
-                      <td>{getGreekRecordTypeLabel(item.recordType)}</td>
-                      <td>{formatEuro(item.budgetWithoutVat)}</td>
-                      <td>{formatDateTime(item.deadline)}</td>
-                      <td>
-                        <span className={statusClass(item.status)}>
-                          {getGreekStatusLabel(item.status)}
-                        </span>
-                      </td>
-                      <td>{formatDateTime(item.detectedAt)}</td>
-                      <td>
-                        <Link
-                          className="btn"
-                          to={`/tenders/${encodeURIComponent(item.referenceNumber)}`}
-                        >
-                          {UI.open}
-                        </Link>
-                      </td>
-                    </tr>
-                  ))
+                data.items.map((item) => (
+                  <tr
+                    key={item.referenceNumber}
+                    className={item.linkedNotInvited ? "row-deprioritized" : undefined}
+                  >
+                    <td>{item.score ?? "—"}</td>
+                    <td>
+                      {item.organization ?? "—"}
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {getGreekCategoryLabel(item.category)}
+                      </div>
+                    </td>
+                    <td>
+                      {item.title ?? "—"}
+                      {item.linkedNotInvited ? (
+                        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                          Στοχευμένη πρόσκληση — δεν προσκληθήκαμε
+                        </div>
+                      ) : null}
+                      {item.possibleRelation ? (
+                        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                          Πιθανή συνέχεια Πρωτογενούς Αιτήματος
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>
+                      <code>{item.referenceNumber}</code>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {getGreekRecordTypeLabel(item.recordType)}
+                      </div>
+                    </td>
+                    <td>
+                      {item.outreachStatus && item.outreachStatus !== "NOT_STARTED" ? (
+                        <>
+                          <span className={statusClass(item.outreachStatus)}>
+                            {outreachLabel(item.outreachStatus)}
+                          </span>
+                          {item.outreachSentAt ? (
+                            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                              {formatDateTime(item.outreachSentAt)}
+                            </div>
+                          ) : null}
+                          {item.outreachRecipient ? (
+                            <div className="muted" style={{ fontSize: 12 }}>
+                              {item.outreachRecipient}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {item.monitoringState && item.monitoringState !== "NONE" ? (
+                        <>
+                          <span className={statusClass(item.monitoringState)}>
+                            {item.monitoringStateLabel}
+                          </span>
+                          {item.watchForRelatedProc ? (
+                            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                              Παρακολούθηση ενεργή
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>
+                      {item.relatedProcAdam ? (
+                        <>
+                          <Link
+                            to={`/tenders/${encodeURIComponent(item.relatedProcAdam)}`}
+                          >
+                            <code>{item.relatedProcAdam}</code>
+                          </Link>
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            {item.relatedProcLinked
+                              ? "Συνδεδεμένη"
+                              : item.relatedProcPossible
+                                ? "Πιθανή"
+                                : ""}
+                          </div>
+                        </>
+                      ) : item.outreachStatus === "SENT" ? (
+                        <span className="muted">Δεν έχει εντοπιστεί ακόμη</span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td>{formatEuro(item.budgetWithoutVat)}</td>
+                    <td>
+                      <span className={statusClass(item.status)}>
+                        {getGreekStatusLabel(item.status)}
+                      </span>
+                      {item.lastEventAt ? (
+                        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                          {formatDateTime(item.lastEventAt)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>
+                      <Link
+                        className="btn"
+                        to={`/tenders/${encodeURIComponent(item.referenceNumber)}`}
+                      >
+                        {UI.open}
+                      </Link>
+                    </td>
+                  </tr>
+                ))
                 )}
               </tbody>
             </table>

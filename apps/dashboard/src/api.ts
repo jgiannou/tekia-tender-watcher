@@ -108,6 +108,24 @@ export type OpportunityItem = {
   status: string;
   detectedAt: string;
   relevanceStatus: string | null;
+  invitationType?: string | null;
+  ourInvitationStatus?: string | null;
+  outreachStatus?: "NOT_STARTED" | "DRAFT" | "READY" | "SENT";
+  outreachSentAt?: string | null;
+  outreachRecipient?: string | null;
+  outreachSubject?: string | null;
+  watchForRelatedProc?: boolean;
+  monitoringState?: string;
+  monitoringStateLabel?: string;
+  monitoringRecommendedAction?: string;
+  relatedProcAdam?: string | null;
+  relatedProcLinked?: boolean;
+  relatedProcPossible?: boolean;
+  lastEventAt?: string | null;
+  lastEventType?: string | null;
+  linkedNotInvited?: boolean;
+  possibleRelation?: boolean;
+  listPriority?: number;
 };
 
 export type OpportunitiesResponse = {
@@ -117,6 +135,10 @@ export type OpportunitiesResponse = {
     ready: number;
     submittedThisMonth: number;
     pendingResult: number;
+    outreachSent?: number;
+    monitored?: number;
+    formal?: number;
+    closed?: number;
   };
   items: OpportunityItem[];
 };
@@ -188,16 +210,63 @@ export type TenderDetail = {
   }>;
   sendingConfigured: boolean;
   scoreReasons: string[];
+  relation: {
+    parentTenderId: string | null;
+    parentTitle: string | null;
+    candidateTenderId: string | null;
+    candidateTitle: string | null;
+    confidence: string | null;
+    method: string | null;
+    score: number | null;
+    reasons: Array<{ points: number; label: string }>;
+  };
+  invitation: {
+    type: string | null;
+    invitedVendorName: string | null;
+    ourStatus: string | null;
+  };
+  linkedProcs: Array<{
+    referenceNumber: string;
+    title: string | null;
+    organization: string | null;
+    parentTenderId: string | null;
+    relationCandidateId: string | null;
+    relationConfidence: string | null;
+    relationMethod: string | null;
+    relationScore: number | null;
+    relationReasons: Array<{ points: number; label: string }>;
+    invitationType: string | null;
+    invitedVendorName: string | null;
+    ourInvitationStatus: string | null;
+    linked: boolean;
+    possible: boolean;
+  }>;
+  monitoring?: {
+    watchForRelatedProc: boolean;
+    state: string;
+    stateLabel: string;
+    recommendedAction: string;
+    relatedProc: {
+      referenceNumber: string;
+      linked: boolean;
+      possible: boolean;
+      invitationType: string | null;
+      ourInvitationStatus: string | null;
+      invitedVendorName: string | null;
+    } | null;
+  };
 };
 
 export type DraftPackage = {
-  status: "NOT_STARTED" | "DRAFT" | "READY";
+  status: "NOT_STARTED" | "DRAFT" | "READY" | "SENT";
   subject?: string | null;
   body?: string | null;
   notes?: string | null;
   amountWithoutVat?: number | null;
   attachments?: string[];
   updatedAt?: string | null;
+  sentAt?: string | null;
+  recipient?: string | null;
 };
 
 export type SubmissionListItem = {
@@ -278,6 +347,29 @@ export const api = {
     request<{ tender: TenderDetail; approvalInvalidated: boolean }>(
       `/api/operator/tenders/${encodeURIComponent(ref)}`,
       { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  recordOutreachSent: (
+    ref: string,
+    body: {
+      sentAt: string;
+      recipient?: string | null;
+      subject?: string | null;
+      notes?: string | null;
+    },
+  ) =>
+    request<{ tender: TenderDetail }>(
+      `/api/operator/tenders/${encodeURIComponent(ref)}/outreach/send`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+  confirmRelation: (ref: string) =>
+    request<{ tender: TenderDetail }>(
+      `/api/operator/tenders/${encodeURIComponent(ref)}/relation/confirm`,
+      { method: "POST", body: "{}" },
+    ),
+  dismissRelation: (ref: string) =>
+    request<{ tender: TenderDetail }>(
+      `/api/operator/tenders/${encodeURIComponent(ref)}/relation/dismiss`,
+      { method: "POST", body: "{}" },
     ),
   setStatus: (ref: string, status: string, note?: string) =>
     request<{ tender: TenderDetail }>(

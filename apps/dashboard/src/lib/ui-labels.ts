@@ -16,6 +16,7 @@ export const getGreekStatusLabel = (status: string): string => {
     READY: "Έτοιμο",
     APPROVED: "Εγκεκριμένο",
     SUBMITTED: "Υποβλήθηκε",
+    SENT: "Στάλθηκε",
     WON: "Επιτυχές",
     LOST: "Ανεπιτυχές",
     PENDING: "Εκκρεμεί",
@@ -38,6 +39,7 @@ export const getGreekDocumentStatusLabel = (status: string): string => {
     NEEDS_CONFIGURATION: "Απαιτεί ρύθμιση",
     DRAFT: "Πρόχειρο",
     READY: "Έτοιμο",
+    SENT: "Στάλθηκε",
     NOT_STARTED: "Δεν έχει ξεκινήσει",
   };
   return map[status] ?? status;
@@ -56,6 +58,26 @@ export const getGreekCategoryLabel = (
     UNKNOWN: "Άγνωστη κατηγορία",
   };
   return map[webCategory] ?? webCategory.replace(/_/g, " ");
+};
+
+export const getGreekEventTypeLabel = (eventType: string): string => {
+  const map: Record<string, string> = {
+    DETECTED: "Εντοπίστηκε",
+    REVIEWED: "Υπό εξέταση",
+    READY: "Έτοιμο",
+    APPROVED: "Εγκρίθηκε",
+    SUBMITTED: "Υποβλήθηκε επίσημη προσφορά",
+    WON: "Επιτυχές αποτέλεσμα",
+    LOST: "Ανεπιτυχές αποτέλεσμα",
+    RELATED_PROC: "Εντοπίστηκε σχετική πρόσκληση",
+    RELATION_CONFIRMED: "Επιβεβαιώθηκε σύνδεση",
+    RELATION_DISMISSED: "Απορρίφθηκε σύνδεση",
+    OUTREACH_READY: "Εκδήλωση ενδιαφέροντος έτοιμη",
+    OUTREACH_SENT: "Η Εκδήλωση Ενδιαφέροντος στάλθηκε",
+    MONITORING_STARTED: "Ξεκίνησε παρακολούθηση",
+    INVITATION_CLASSIFIED: "Ταξινομήθηκε πρόσκληση",
+  };
+  return map[eventType] ?? eventType;
 };
 
 export const getGreekPhaseStepLabel = (step: 1 | 2 | 3 | 4): string => {
@@ -163,6 +185,8 @@ export const UI = {
   close: "Κλείσιμο",
   cancel: "Ακύρωση",
   markReady: "Σήμανση ως Έτοιμο",
+  markOutreachSent: "Σημείωσε ως σταλμένη",
+  recordOutreachSent: "Καταχώριση αποστολής εκδήλωσης ενδιαφέροντος",
   approve: "Έγκριση",
   nextAction: "Επόμενη ενέργεια",
   prepareOutreach: "Προετοιμασία Εκδήλωσης Ενδιαφέροντος",
@@ -195,6 +219,8 @@ export const UI = {
     "Χρησιμοποίησέ το μόνο εάν η υποβολή έγινε εκτός της εφαρμογής.",
   safetyGenerate: "Η δημιουργία εγγράφου δεν πραγματοποιεί αποστολή.",
   safetyReady: "Η σήμανση ως Έτοιμο δεν πραγματοποιεί αποστολή.",
+  safetyOutreachSent:
+    "Καταγράφηκε ότι στάλθηκε χειροκίνητα. Η εφαρμογή δεν έστειλε email. Δεν πρόκειται για επίσημη υποβολή.",
   safetyApprove: "Η Έγκριση δεν πραγματοποιεί αποστολή.",
   safetyNoAutoSend:
     "Καμία εξωτερική αποστολή δεν πραγματοποιείται χωρίς ρητή ενέργεια του χρήστη.",

@@ -19,6 +19,13 @@ import {
   buildApprovalSnapshot,
   shouldInvalidateApproval,
 } from "../operator/approval.js";
+import {
+  deriveReqMonitoringState,
+  isActivelyMonitored,
+  isClosedMonitoringState,
+  isFormalOpportunityState,
+  isOutreachSent,
+} from "../operator/outreach-monitoring.js";
 
 export type TenderRow = {
   reference_number: string;
@@ -63,6 +70,15 @@ export type TenderRow = {
   approval_status: string | null;
   approval_snapshot_json: string | null;
   approved_at: string | null;
+  parent_tender_id: string | null;
+  relation_candidate_id: string | null;
+  relation_confidence: string | null;
+  relation_method: string | null;
+  relation_score: number | null;
+  relation_reasons_json: string | null;
+  invitation_type: string | null;
+  invited_vendor_name: string | null;
+  our_invitation_status: string | null;
 };
 
 export type SubmissionRow = {
@@ -133,7 +149,11 @@ export type OpportunityFilter =
   | "review"
   | "ready"
   | "req"
-  | "proc";
+  | "proc"
+  | "outreach_sent"
+  | "monitored"
+  | "formal"
+  | "closed";
 
 export type CreateSubmissionInput = {
   tenderReferenceNumber: string;
@@ -175,6 +195,79 @@ const isActionableOpportunity = (row: TenderRow): boolean => {
     return true;
   }
   return false;
+};
+
+const linkedProcSummariesForReq = (
+  reqAdam: string,
+  allRows: TenderRow[],
+) =>
+  allRows
+    .filter(
+      (r) =>
+        r.record_type === "PROC" &&
+        (r.parent_tender_id === reqAdam || r.relation_candidate_id === reqAdam),
+    )
+    .map((proc) => ({
+      referenceNumber: proc.reference_number,
+      linked: proc.parent_tender_id === reqAdam,
+      possible:
+        proc.relation_candidate_id === reqAdam && !proc.parent_tender_id,
+      invitationType: proc.invitation_type,
+      ourInvitationStatus: proc.our_invitation_status,
+    }));
+
+const reqMonitoringState = (row: TenderRow, allRows: TenderRow[]) =>
+  deriveReqMonitoringState({
+    outreachStatus: parseDrafts(row.drafts_json).outreach.status,
+    linkedProcs: linkedProcSummariesForReq(row.reference_number, allRows),
+  });
+
+const matchesOpportunityFilter = (
+  row: TenderRow,
+  filter: OpportunityFilter,
+  allRows: TenderRow[],
+): boolean => {
+  const status = (row.current_status ?? "NEW").toUpperCase();
+  switch (filter) {
+    case "new":
+      return status === "NEW";
+    case "review":
+      return status === "REVIEW";
+    case "ready":
+      return status === "READY";
+    case "req":
+      return row.record_type === "REQ";
+    case "proc":
+      return row.record_type === "PROC";
+    case "outreach_sent":
+    case "monitored": {
+      if (row.record_type !== "REQ") return false;
+      if (!isOutreachSent(parseDrafts(row.drafts_json).outreach)) return false;
+      return isActivelyMonitored(reqMonitoringState(row, allRows));
+    }
+    case "formal": {
+      if (row.record_type === "PROC") {
+        return (
+          row.invitation_type === "OPEN" ||
+          row.our_invitation_status === "INVITED"
+        );
+      }
+      if (row.record_type !== "REQ") return false;
+      return isFormalOpportunityState(reqMonitoringState(row, allRows));
+    }
+    case "closed": {
+      if (row.record_type === "PROC") {
+        return (
+          row.invitation_type === "TARGETED" &&
+          row.our_invitation_status === "NOT_INVITED"
+        );
+      }
+      if (row.record_type !== "REQ") return false;
+      return isClosedMonitoringState(reqMonitoringState(row, allRows));
+    }
+    default:
+      return true;
+  }
 };
 
 const parseChecklist = (raw: string | null): DocumentChecklistItem[] => {
@@ -495,25 +588,11 @@ export const createRepository = (db: Database.Database) => {
     parseChecklist,
 
     listOpportunities: (filter: OpportunityFilter = "all"): TenderRow[] => {
-      const actionable = (listAll.all() as TenderRow[]).filter(isActionableOpportunity);
-
-      return actionable.filter((row) => {
-        const status = (row.current_status ?? "NEW").toUpperCase();
-        switch (filter) {
-          case "new":
-            return status === "NEW";
-          case "review":
-            return status === "REVIEW";
-          case "ready":
-            return status === "READY";
-          case "req":
-            return row.record_type === "REQ";
-          case "proc":
-            return row.record_type === "PROC";
-          default:
-            return true;
-        }
-      });
+      const allRows = listAll.all() as TenderRow[];
+      const actionable = allRows.filter(isActionableOpportunity);
+      return actionable.filter((row) =>
+        matchesOpportunityFilter(row, filter, allRows),
+      );
     },
 
     getOpportunityCounters: (): {
@@ -521,6 +600,10 @@ export const createRepository = (db: Database.Database) => {
       ready: number;
       submittedThisMonth: number;
       pendingResult: number;
+      outreachSent: number;
+      monitored: number;
+      formal: number;
+      closed: number;
     } => {
       const now = new Date();
       const monthPrefix = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -529,9 +612,8 @@ export const createRepository = (db: Database.Database) => {
         SubmissionRow & { tender_title?: string }
       >;
 
-      const actionable = (listAll.all() as TenderRow[]).filter(
-        isActionableOpportunity,
-      );
+      const allRows = listAll.all() as TenderRow[];
+      const actionable = allRows.filter(isActionableOpportunity);
 
       return {
         new: actionable.filter((r) => (r.current_status ?? "NEW") === "NEW")
@@ -541,6 +623,20 @@ export const createRepository = (db: Database.Database) => {
           s.submitted_at.startsWith(monthPrefix),
         ).length,
         pendingResult: submissions.filter((s) => s.result === "PENDING").length,
+        outreachSent: actionable.filter(
+          (r) =>
+            r.record_type === "REQ" &&
+            isOutreachSent(parseDrafts(r.drafts_json).outreach),
+        ).length,
+        monitored: actionable.filter((r) =>
+          matchesOpportunityFilter(r, "monitored", allRows),
+        ).length,
+        formal: actionable.filter((r) =>
+          matchesOpportunityFilter(r, "formal", allRows),
+        ).length,
+        closed: actionable.filter((r) =>
+          matchesOpportunityFilter(r, "closed", allRows),
+        ).length,
       };
     },
 
@@ -715,6 +811,83 @@ export const createRepository = (db: Database.Database) => {
       };
     },
 
+    /**
+     * Record that Early Outreach was sent manually outside the app.
+     * Sets outreachStatus=SENT and starts monitoring — never sets SUBMITTED.
+     */
+    recordOutreachSent: (
+      adam: string,
+      input: {
+        sentAt: string;
+        recipient?: string | null;
+        subject?: string | null;
+        notes?: string | null;
+      },
+    ): TenderRow | undefined => {
+      const existing = findByAdam.get(adam) as TenderRow | undefined;
+      if (!existing) return undefined;
+
+      const drafts = parseDrafts(existing.drafts_json);
+      const recipient =
+        input.recipient?.trim() ||
+        existing.contact_email?.trim() ||
+        null;
+
+      drafts.outreach = {
+        ...drafts.outreach,
+        status: "SENT",
+        subject:
+          input.subject?.trim() ||
+          drafts.outreach.subject ||
+          null,
+        notes: input.notes?.trim() || drafts.outreach.notes || null,
+        sentAt: input.sentAt,
+        recipient,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const nextStatus =
+        existing.current_status === "NEW" || !existing.current_status
+          ? "REVIEW"
+          : existing.current_status === "SUBMITTED"
+            ? "REVIEW"
+            : existing.current_status;
+
+      db.prepare(
+        `
+        UPDATE tenders SET
+          drafts_json = @drafts_json,
+          current_status = @current_status
+        WHERE reference_number = @reference_number
+      `,
+      ).run({
+        reference_number: adam,
+        drafts_json: JSON.stringify(drafts),
+        current_status: nextStatus,
+      });
+
+      addEvent(
+        adam,
+        "OUTREACH_SENT",
+        `Η Εκδήλωση Ενδιαφέροντος στάλθηκε${
+          recipient ? ` προς ${recipient}` : ""
+        }`,
+        input.sentAt,
+      );
+      addEvent(
+        adam,
+        "MONITORING_STARTED",
+        "Παρακολούθηση ενεργή — αναμονή σχετικής πρόσκλησης",
+        input.sentAt,
+      );
+
+      if (nextStatus === "REVIEW" && existing.current_status !== "REVIEW") {
+        addEvent(adam, "REVIEWED", "Moved to review after outreach sent");
+      }
+
+      return findByAdam.get(adam) as TenderRow;
+    },
+
     approveTender: (
       adam: string,
     ): { tender: TenderRow } | { error: string } => {
@@ -853,6 +1026,164 @@ export const createRepository = (db: Database.Database) => {
         updated_at: new Date().toISOString(),
       });
       return settings;
+    },
+
+    listRecentReqs: (limit = 200): TenderRow[] => {
+      const rows = listAll.all() as TenderRow[];
+      return rows
+        .filter((r) => r.record_type === "REQ")
+        .sort((a, b) =>
+          String(b.submission_date ?? b.first_seen_at).localeCompare(
+            String(a.submission_date ?? a.first_seen_at),
+          ),
+        )
+        .slice(0, limit);
+    },
+
+    listLinkedProcsForReq: (reqAdam: string): TenderRow[] => {
+      const rows = listAll.all() as TenderRow[];
+      return rows.filter(
+        (r) =>
+          r.record_type === "PROC" &&
+          (r.parent_tender_id === reqAdam ||
+            r.relation_candidate_id === reqAdam),
+      );
+    },
+
+    updateRelationAndInvitation: (
+      adam: string,
+      patch: {
+        parentTenderId?: string | null;
+        relationCandidateId?: string | null;
+        relationConfidence?: string | null;
+        relationMethod?: string | null;
+        relationScore?: number | null;
+        relationReasons?: Array<{ points: number; label: string }> | null;
+        invitationType?: string | null;
+        invitedVendorName?: string | null;
+        ourInvitationStatus?: string | null;
+      },
+    ): TenderRow | undefined => {
+      const existing = findByAdam.get(adam) as TenderRow | undefined;
+      if (!existing) return undefined;
+
+      db.prepare(
+        `
+        UPDATE tenders SET
+          parent_tender_id = @parent_tender_id,
+          relation_candidate_id = @relation_candidate_id,
+          relation_confidence = @relation_confidence,
+          relation_method = @relation_method,
+          relation_score = @relation_score,
+          relation_reasons_json = @relation_reasons_json,
+          invitation_type = @invitation_type,
+          invited_vendor_name = @invited_vendor_name,
+          our_invitation_status = @our_invitation_status
+        WHERE reference_number = @reference_number
+      `,
+      ).run({
+        reference_number: adam,
+        parent_tender_id:
+          patch.parentTenderId !== undefined
+            ? patch.parentTenderId
+            : existing.parent_tender_id,
+        relation_candidate_id:
+          patch.relationCandidateId !== undefined
+            ? patch.relationCandidateId
+            : existing.relation_candidate_id,
+        relation_confidence:
+          patch.relationConfidence !== undefined
+            ? patch.relationConfidence
+            : existing.relation_confidence,
+        relation_method:
+          patch.relationMethod !== undefined
+            ? patch.relationMethod
+            : existing.relation_method,
+        relation_score:
+          patch.relationScore !== undefined
+            ? patch.relationScore
+            : existing.relation_score,
+        relation_reasons_json:
+          patch.relationReasons !== undefined
+            ? patch.relationReasons
+              ? JSON.stringify(patch.relationReasons)
+              : null
+            : existing.relation_reasons_json,
+        invitation_type:
+          patch.invitationType !== undefined
+            ? patch.invitationType
+            : existing.invitation_type,
+        invited_vendor_name:
+          patch.invitedVendorName !== undefined
+            ? patch.invitedVendorName
+            : existing.invited_vendor_name,
+        our_invitation_status:
+          patch.ourInvitationStatus !== undefined
+            ? patch.ourInvitationStatus
+            : existing.our_invitation_status,
+      });
+
+      return findByAdam.get(adam) as TenderRow;
+    },
+
+    confirmProcRelation: (procAdam: string): TenderRow | undefined => {
+      const proc = findByAdam.get(procAdam) as TenderRow | undefined;
+      if (!proc || proc.record_type !== "PROC") return undefined;
+      const parent = proc.relation_candidate_id ?? proc.parent_tender_id;
+      if (!parent) return undefined;
+
+      db.prepare(
+        `
+        UPDATE tenders SET
+          parent_tender_id = @parent,
+          relation_candidate_id = NULL,
+          relation_confidence = 'HIGH',
+          relation_method = 'MANUAL'
+        WHERE reference_number = @adam
+      `,
+      ).run({ parent, adam: procAdam });
+
+      addEvent(
+        parent,
+        "RELATION_CONFIRMED",
+        `Operator confirmed link to PROC ${procAdam}`,
+      );
+      addEvent(
+        procAdam,
+        "RELATION_CONFIRMED",
+        `Operator confirmed parent REQ ${parent}`,
+      );
+
+      return findByAdam.get(procAdam) as TenderRow;
+    },
+
+    dismissProcRelation: (procAdam: string): TenderRow | undefined => {
+      const proc = findByAdam.get(procAdam) as TenderRow | undefined;
+      if (!proc || proc.record_type !== "PROC") return undefined;
+      const candidate = proc.relation_candidate_id;
+
+      db.prepare(
+        `
+        UPDATE tenders SET
+          parent_tender_id = NULL,
+          relation_candidate_id = NULL,
+          relation_confidence = NULL,
+          relation_method = NULL,
+          relation_score = NULL,
+          relation_reasons_json = NULL
+        WHERE reference_number = @adam
+      `,
+      ).run({ adam: procAdam });
+
+      if (candidate) {
+        addEvent(
+          procAdam,
+          "RELATION_DISMISSED",
+          `Operator dismissed possible link to REQ ${candidate}`,
+        );
+      }
+
+      return findByAdam.get(procAdam) as TenderRow;
     },
   };
 };

@@ -25,7 +25,11 @@ import type { SlackClient } from "../slack/client.js";
 import {
   formatBootstrapMessage,
   formatSlackMessage,
+  isRelatedProcFollowUp,
 } from "../slack/format-message.js";
+import { applyProcRelationAndInvitation } from "../relations/apply-proc-relation.js";
+import { invitationRecommendedAction } from "../relations/invitation-identity.js";
+import { isOutreachSent } from "../operator/outreach-monitoring.js";
 
 export type PollResult = {
   fetched: number;
@@ -357,6 +361,20 @@ export const createPollJob = (deps: {
       nowIso,
     });
 
+    let relationApply: ReturnType<typeof applyProcRelationAndInvitation> = null;
+    if (record.recordType === "PROC") {
+      const corpus = `${record.title}\n${record.description}\n${pdfText}`;
+      relationApply = applyProcRelationAndInvitation(
+        deps.repo,
+        record.adam,
+        pdfClassification,
+        {
+          corpusText: corpus,
+          pdfExtracted: pdfTextStatus === "extracted",
+        },
+      );
+    }
+
     const eligibility = evaluateSlackEligibility({
       recordType: record.recordType,
       isWebRelevant: relevance.isWebRelevant && relevanceStatus === "RELEVANT",
@@ -374,7 +392,41 @@ export const createPollJob = (deps: {
 
     const matching = eligibility.eligible;
 
-    if (!matching || !options.sendAlerts || options.bootstrap) {
+    const parentAdam =
+      relationApply?.linkedParent ?? relationApply?.relation.parentAdam ?? null;
+    let parentOutreachSent = false;
+    if (parentAdam) {
+      const parentRow = deps.repo.findByAdam(parentAdam);
+      if (parentRow) {
+        const parentDrafts = deps.repo.parseDrafts(parentRow.drafts_json);
+        parentOutreachSent = parentDrafts.outreach.status === "SENT";
+      }
+    }
+
+    const relationFollowUp =
+      Boolean(relationApply) &&
+      (relationApply!.relation.decision === "AUTO_LINK" ||
+        relationApply!.relation.decision === "POSSIBLE_RELATION") &&
+      parentOutreachSent;
+
+    const relationTargeted =
+      Boolean(relationApply) &&
+      (relationApply!.relation.decision === "AUTO_LINK" ||
+        relationApply!.relation.decision === "POSSIBLE_RELATION") &&
+      relationApply!.invitation.invitationType === "TARGETED";
+
+    const relationSlack = relationFollowUp || relationTargeted;
+
+    // Watched REQ follow-up: never send a separate "new lead" style path —
+    // relationSlack + FOLLOW-UP framing covers it. Matching alone is enough
+    // only when there is no follow-up relation.
+    const alertAsMatch = matching && !relationFollowUp;
+
+    if (
+      (!alertAsMatch && !relationSlack) ||
+      !options.sendAlerts ||
+      options.bootstrap
+    ) {
       return { isNew: true, matching, notified: false };
     }
 
@@ -414,6 +466,23 @@ export const createPollJob = (deps: {
         budgetInRange,
       },
       targetedSupplierName: pdfClassification.targetedSupplierName,
+      relation: relationApply
+        ? {
+            decision: relationApply.relation.decision,
+            parentAdam:
+              relationApply.linkedParent ?? relationApply.relation.parentAdam,
+            score: relationApply.relation.score,
+            confidence: relationApply.relation.confidence,
+            method: relationApply.relation.method,
+            invitationType: relationApply.invitation.invitationType,
+            invitedVendorName: relationApply.invitation.invitedVendorName,
+            ourInvitationStatus: relationApply.invitation.ourInvitationStatus,
+            recommendedAction: invitationRecommendedAction(
+              relationApply.invitation,
+            ),
+            parentOutreachSent,
+          }
+        : null,
     });
 
     const sent = await deps.slack.sendText(text);

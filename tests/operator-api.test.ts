@@ -166,6 +166,104 @@ describe("operator API + submission workflow", () => {
     );
   });
 
+  it("filters and surfaces early outreach sent status", async () => {
+    seedTender(repo, "26REQ_OUT1");
+    seedTender(repo, "26REQ_OUT2");
+    repo.updateTenderOperatorFields("26REQ_OUT2", {
+      drafts: {
+        outreach: {
+          status: "SENT",
+          subject: "Εκδήλωση ενδιαφέροντος",
+          body: "Στάλθηκε χειροκίνητα",
+          sentAt: "2026-10-02T10:00:00.000Z",
+          recipient: "info@peta.gr",
+        },
+        technical: { status: "NOT_STARTED" },
+        economic: { status: "NOT_STARTED" },
+        declarations: { status: "NOT_STARTED" },
+      },
+    });
+
+    const all = await request("/api/operator/opportunities?filter=all");
+    const allBody = await all.json();
+    const sentItem = allBody.items.find(
+      (i: { referenceNumber: string }) => i.referenceNumber === "26REQ_OUT2",
+    );
+    const pendingItem = allBody.items.find(
+      (i: { referenceNumber: string }) => i.referenceNumber === "26REQ_OUT1",
+    );
+    expect(sentItem?.outreachStatus).toBe("SENT");
+    expect(sentItem?.monitoringState).toBe("WAITING_FOR_INVITATION");
+    expect(sentItem?.watchForRelatedProc).toBe(true);
+    expect(pendingItem?.outreachStatus).toBe("NOT_STARTED");
+    expect(allBody.counters.outreachSent).toBeGreaterThanOrEqual(1);
+    expect(allBody.counters.monitored).toBeGreaterThanOrEqual(1);
+
+    const sent = await request("/api/operator/opportunities?filter=monitored");
+    const sentBody = await sent.json();
+    expect(sentBody.items).toHaveLength(1);
+    expect(sentBody.items[0].referenceNumber).toBe("26REQ_OUT2");
+    expect(sentBody.items[0].outreachStatus).toBe("SENT");
+    expect(sentBody.items[0].outreachRecipient).toBe("info@peta.gr");
+  });
+
+  it("records outreach SENT without setting tender SUBMITTED", async () => {
+    seedTender(repo, "26REQ019873897");
+    repo.updateTenderOperatorFields("26REQ019873897", {
+      contact_email: "info@peta.gr",
+      drafts: {
+        outreach: {
+          status: "READY",
+          subject: "Εκδήλωση ενδιαφέροντος — ΠΕΤΑ",
+        },
+        technical: { status: "NOT_STARTED" },
+        economic: { status: "NOT_STARTED" },
+        declarations: { status: "NOT_STARTED" },
+      },
+    });
+
+    const res = await request(
+      "/api/operator/tenders/26REQ019873897/outreach/send",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          sentAt: "2026-10-02T09:30:00.000Z",
+          subject: "Εκδήλωση ενδιαφέροντος — ΠΕΤΑ",
+          notes: "Στάλθηκε χειροκίνητα",
+        }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tender.drafts.outreach.status).toBe("SENT");
+    expect(body.tender.drafts.outreach.sentAt).toBe("2026-10-02T09:30:00.000Z");
+    expect(body.tender.drafts.outreach.recipient).toBe("info@peta.gr");
+    expect(body.tender.currentStatus).not.toBe("SUBMITTED");
+    expect(body.tender.monitoring.watchForRelatedProc).toBe(true);
+    expect(body.tender.monitoring.state).toBe("WAITING_FOR_INVITATION");
+    expect(body.tender.monitoring.stateLabel).toBe("Αναμονή πρόσκλησης");
+    const types = body.tender.events.map((e: { eventType: string }) => e.eventType);
+    expect(types).toContain("OUTREACH_SENT");
+    expect(types).toContain("MONITORING_STARTED");
+  });
+
+  it("does not invent outreach recipient when contact email missing", async () => {
+    seedTender(repo, "26REQ_NOEMAIL");
+    const res = await request(
+      "/api/operator/tenders/26REQ_NOEMAIL/outreach/send",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          sentAt: "2026-10-02T09:30:00.000Z",
+          subject: "Hello",
+        }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tender.drafts.outreach.recipient).toBeNull();
+  });
+
   it("does not treat tenders without Submission as submitted", async () => {
     seedTender(repo, "26REQ3");
     repo.updateOperationalStatus("26REQ3", "READY");

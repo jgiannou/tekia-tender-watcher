@@ -721,6 +721,45 @@ export const getTenderDriveDocuments = (
 ): TenderDocumentRecord[] => listTenderDocuments(referenceNumber);
 
 /**
+ * Read plain text from a tender Drive COPY (never master).
+ * Used to populate local preview/edit fields from the Google Doc.
+ */
+export const readTenderDocumentContent = async (
+  documentId: string,
+): Promise<{
+  documentId: string;
+  driveFileId: string;
+  text: string;
+  subject: string | null;
+  body: string;
+  unresolvedPlaceholders: string[];
+}> => {
+  const existing = findTenderDocument(documentId);
+  if (!existing) throw new Error("Tender document not found");
+  assertMergeTargetIsCopy(existing.masterFileId, existing.driveFileId);
+
+  const config = requireConfig();
+  const accessToken = await getValidAccessToken(config);
+  const text = await getDocumentText(accessToken, existing.driveFileId);
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trimEnd())
+    .filter((l, idx, arr) => !(l.trim() === "" && idx === 0));
+
+  const firstNonEmpty = lines.find((l) => l.trim().length > 0)?.trim() ?? null;
+  const body = text.trim();
+
+  return {
+    documentId: existing.id,
+    driveFileId: existing.driveFileId,
+    text,
+    subject: firstNonEmpty ? firstNonEmpty.slice(0, 200) : null,
+    body,
+    unresolvedPlaceholders: findUnresolvedPlaceholders(text),
+  };
+};
+
+/**
  * Re-merge operator values into an existing COPY (e.g. after filling economic fields).
  * Never targets masterFileId.
  */

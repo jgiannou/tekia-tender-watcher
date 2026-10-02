@@ -117,11 +117,24 @@ export const openDatabase = (databasePath: string): Database.Database => {
   addColumnIfMissing(db, "tenders", "approval_snapshot_json", "TEXT");
   addColumnIfMissing(db, "tenders", "approved_at", "TEXT");
 
+  // REQ ↔ PROC relation + invitation assessment
+  addColumnIfMissing(db, "tenders", "parent_tender_id", "TEXT");
+  addColumnIfMissing(db, "tenders", "relation_candidate_id", "TEXT");
+  addColumnIfMissing(db, "tenders", "relation_confidence", "TEXT");
+  addColumnIfMissing(db, "tenders", "relation_method", "TEXT");
+  addColumnIfMissing(db, "tenders", "relation_score", "INTEGER");
+  addColumnIfMissing(db, "tenders", "relation_reasons_json", "TEXT");
+  addColumnIfMissing(db, "tenders", "invitation_type", "TEXT");
+  addColumnIfMissing(db, "tenders", "invited_vendor_name", "TEXT");
+  addColumnIfMissing(db, "tenders", "our_invitation_status", "TEXT");
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tenders_notified_at ON tenders(notified_at);
     CREATE INDEX IF NOT EXISTS idx_tenders_score ON tenders(score);
     CREATE INDEX IF NOT EXISTS idx_tenders_relevance_status ON tenders(relevance_status);
     CREATE INDEX IF NOT EXISTS idx_tenders_current_status ON tenders(current_status);
+    CREATE INDEX IF NOT EXISTS idx_tenders_parent ON tenders(parent_tender_id);
+    CREATE INDEX IF NOT EXISTS idx_tenders_relation_candidate ON tenders(relation_candidate_id);
     CREATE INDEX IF NOT EXISTS idx_submissions_tender ON submissions(tender_reference_number);
     CREATE INDEX IF NOT EXISTS idx_submissions_result ON submissions(result);
     CREATE INDEX IF NOT EXISTS idx_tender_events_tender ON tender_events(tender_reference_number);

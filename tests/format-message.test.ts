@@ -75,6 +75,90 @@ describe("slack formatter", () => {
     expect(text).toContain("PDF verified");
   });
 
+  it("formats FOLLOW-UP for watched REQ related PROC invitation", () => {
+    const invited = formatSlackMessage({
+      score: 70,
+      title: "Συντήρηση ιστοσελίδας",
+      organization: "ΠΕΤΑ Α.Ε.",
+      budgetWithoutVat: 5000,
+      recordType: "PROC",
+      stageLabel: "Πρόσκληση",
+      webCategoryLabel: "🌐 WEBSITE",
+      cpvs: [],
+      submissionDate: "2026-10-02T10:00:00.000Z",
+      publicUrl: "https://example.com/public",
+      pdfUrl: "https://example.com/pdf",
+      reasons: [],
+      referenceNumber: "26PROC111",
+      flags: {
+        earlyStage: false,
+        hasLinkedNotice: false,
+        targetedSupplier: true,
+        nonInvitedOffersRejected: false,
+        alreadyAdvanced: false,
+        pdfNeedsManualReview: false,
+        pdfVerified: true,
+      },
+      relation: {
+        decision: "AUTO_LINK",
+        parentAdam: "26REQ019873897",
+        score: 90,
+        confidence: "HIGH",
+        method: "INFERRED",
+        invitationType: "TARGETED",
+        invitedVendorName: "ΤΕΚΙΑ Α.Ε.",
+        ourInvitationStatus: "INVITED",
+        recommendedAction: "Προετοιμασία Φακέλου Προσφοράς",
+        parentOutreachSent: true,
+      },
+    });
+    expect(invited).toContain("FOLLOW-UP — RELATED PROC DETECTED — TEKIA INVITED");
+    expect(invited).toContain("REQ: `26REQ019873897`");
+    expect(invited).toContain("PREPARE OFFER");
+    expect(invited).not.toContain("NEW KIMDIS LEAD");
+
+    const other = formatSlackMessage({
+      score: 70,
+      title: "Συντήρηση ιστοσελίδας",
+      organization: "Δήμος Σιθωνίας",
+      budgetWithoutVat: 2400,
+      recordType: "PROC",
+      stageLabel: "Πρόσκληση",
+      webCategoryLabel: "🌐 WEBSITE",
+      cpvs: [],
+      submissionDate: "2026-10-02T10:00:00.000Z",
+      publicUrl: "https://example.com/public",
+      pdfUrl: "https://example.com/pdf",
+      reasons: [],
+      referenceNumber: "26PROC222",
+      flags: {
+        earlyStage: false,
+        hasLinkedNotice: false,
+        targetedSupplier: true,
+        nonInvitedOffersRejected: true,
+        alreadyAdvanced: false,
+        pdfNeedsManualReview: false,
+        pdfVerified: true,
+      },
+      relation: {
+        decision: "AUTO_LINK",
+        parentAdam: "26REQ019877036",
+        score: 95,
+        confidence: "HIGH",
+        method: "INFERRED",
+        invitationType: "TARGETED",
+        invitedVendorName: "My company projects Ο.Ε.",
+        ourInvitationStatus: "NOT_INVITED",
+        recommendedAction: "Καμία υποβολή προσφοράς",
+        parentOutreachSent: true,
+      },
+    });
+    expect(other).toContain("FOLLOW-UP — RELATED PROC DETECTED — TEKIA NOT INVITED");
+    expect(other).toContain("Targeted vendor: My company projects Ο.Ε.");
+    expect(other).toContain("NO OFFER");
+    expect(other).not.toContain("NEW KIMDIS LEAD");
+  });
+
   it("formats bootstrap and test messages", () => {
     expect(formatBootstrapMessage()).toContain("TEKIA Tender Watcher started");
     expect(formatTestSlackMessage()).toContain("test notification");

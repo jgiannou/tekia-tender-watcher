@@ -29,6 +29,7 @@ type TekiaDriveBridge = {
   ) => Promise<unknown>;
   tenderDocuments: (referenceNumber: string) => Promise<unknown>;
   markDocumentReady: (documentId: string) => Promise<unknown>;
+  readDocument: (documentId: string) => Promise<unknown>;
   remergeDocument: (
     documentId: string,
     operatorValues: Record<string, string>,

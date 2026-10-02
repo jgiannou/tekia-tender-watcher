@@ -6,6 +6,14 @@ import type { Config } from "../config.js";
 import type { Repository, TenderRow } from "../db/repository.js";
 import { buildDecisionTrace } from "../operator/decision-trace.js";
 import {
+  deriveReqMonitoringState,
+  getGreekMonitoringRecommendedAction,
+  getGreekMonitoringStateLabel,
+  primaryRelatedProc,
+  watchForRelatedProc,
+  type MonitoringState,
+} from "../operator/outreach-monitoring.js";
+import {
   DRAFT_STATUSES,
   DOCUMENT_ITEM_STATUSES,
   OPERATIONAL_STATUSES,
@@ -29,6 +37,8 @@ const draftPackageSchema = z.object({
   amountWithoutVat: z.number().nullable().optional(),
   attachments: z.array(z.string()).optional(),
   updatedAt: z.string().nullable().optional(),
+  sentAt: z.string().nullable().optional(),
+  recipient: z.string().nullable().optional(),
 });
 
 const draftsSchema = z.object({
@@ -36,6 +46,13 @@ const draftsSchema = z.object({
   technical: draftPackageSchema.optional(),
   economic: draftPackageSchema.optional(),
   declarations: draftPackageSchema.optional(),
+});
+
+const recordOutreachSchema = z.object({
+  sentAt: z.string().min(1),
+  recipient: z.string().nullable().optional(),
+  subject: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
 });
 
 const patchTenderSchema = z.object({
@@ -124,11 +141,64 @@ const settingsSchema = z.object({
   ),
 });
 
+const parseRelationReasons = (
+  raw: string | null,
+): Array<{ points: number; label: string }> => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const row = item as { points?: unknown; label?: unknown };
+        if (typeof row.label !== "string") return null;
+        return {
+          points: typeof row.points === "number" ? row.points : 0,
+          label: row.label,
+        };
+      })
+      .filter((v): v is { points: number; label: string } => Boolean(v));
+  } catch {
+    return [];
+  }
+};
+
 const serializeTender = (row: TenderRow, repo: Repository) => {
   const drafts = repo.parseDrafts(row.drafts_json);
   const checklist = repo.parseChecklist(row.document_checklist_json);
   const submission = repo.getSubmissionForTender(row.reference_number);
   const events = repo.listEvents(row.reference_number);
+  const linkedProcs =
+    row.record_type === "REQ"
+      ? repo.listLinkedProcsForReq(row.reference_number).map((proc) => ({
+          referenceNumber: proc.reference_number,
+          title: proc.title,
+          organization: proc.organization,
+          parentTenderId: proc.parent_tender_id,
+          relationCandidateId: proc.relation_candidate_id,
+          relationConfidence: proc.relation_confidence,
+          relationMethod: proc.relation_method,
+          relationScore: proc.relation_score,
+          relationReasons: parseRelationReasons(proc.relation_reasons_json),
+          invitationType: proc.invitation_type,
+          invitedVendorName: proc.invited_vendor_name,
+          ourInvitationStatus: proc.our_invitation_status,
+          linked:
+            proc.parent_tender_id === row.reference_number &&
+            Boolean(proc.parent_tender_id),
+          possible:
+            proc.relation_candidate_id === row.reference_number &&
+            !proc.parent_tender_id,
+        }))
+      : [];
+
+  const parentRow = row.parent_tender_id
+    ? repo.findByAdam(row.parent_tender_id)
+    : null;
+  const candidateRow = row.relation_candidate_id
+    ? repo.findByAdam(row.relation_candidate_id)
+    : null;
 
   return {
     referenceNumber: row.reference_number,
@@ -176,6 +246,62 @@ const serializeTender = (row: TenderRow, repo: Repository) => {
     approvalStatus: row.approval_status,
     approvedAt: row.approved_at,
     decisionTrace: buildDecisionTrace(row),
+    relation: {
+      parentTenderId: row.parent_tender_id,
+      parentTitle: parentRow?.title ?? null,
+      candidateTenderId: row.relation_candidate_id,
+      candidateTitle: candidateRow?.title ?? null,
+      confidence: row.relation_confidence,
+      method: row.relation_method,
+      score: row.relation_score,
+      reasons: parseRelationReasons(row.relation_reasons_json),
+    },
+    invitation: {
+      type: row.invitation_type,
+      invitedVendorName: row.invited_vendor_name,
+      ourStatus: row.our_invitation_status,
+    },
+    linkedProcs,
+    monitoring: (() => {
+      if (row.record_type !== "REQ") {
+        return {
+          watchForRelatedProc: false,
+          state: "NONE" as MonitoringState,
+          stateLabel: "—",
+          recommendedAction: "—",
+          relatedProc: null as null,
+        };
+      }
+      const summaries = linkedProcs.map((p) => ({
+        referenceNumber: p.referenceNumber,
+        linked: p.linked,
+        possible: p.possible,
+        invitationType: p.invitationType,
+        ourInvitationStatus: p.ourInvitationStatus,
+        invitedVendorName: p.invitedVendorName,
+      }));
+      const state = deriveReqMonitoringState({
+        outreachStatus: drafts.outreach.status,
+        linkedProcs: summaries,
+      });
+      const related = primaryRelatedProc(summaries);
+      return {
+        watchForRelatedProc: watchForRelatedProc(drafts),
+        state,
+        stateLabel: getGreekMonitoringStateLabel(state),
+        recommendedAction: getGreekMonitoringRecommendedAction(state),
+        relatedProc: related
+          ? {
+              referenceNumber: related.referenceNumber,
+              linked: related.linked,
+              possible: related.possible,
+              invitationType: related.invitationType,
+              ourInvitationStatus: related.ourInvitationStatus,
+              invitedVendorName: related.invitedVendorName ?? null,
+            }
+          : null,
+      };
+    })(),
     submission: submission
       ? {
           id: submission.id,
@@ -308,29 +434,159 @@ export const createOperatorRoutes = (deps: {
 
   app.get("/api/operator/opportunities", (c) => {
     const filterRaw = (c.req.query("filter") ?? "all").toLowerCase();
-    const allowed = new Set(["all", "new", "review", "ready", "req", "proc"]);
+    const allowed = new Set([
+      "all",
+      "new",
+      "review",
+      "ready",
+      "req",
+      "proc",
+      "outreach_sent",
+      "monitored",
+      "formal",
+      "closed",
+    ]);
     const filter = allowed.has(filterRaw)
-      ? (filterRaw as "all" | "new" | "review" | "ready" | "req" | "proc")
+      ? (filterRaw as
+          | "all"
+          | "new"
+          | "review"
+          | "ready"
+          | "req"
+          | "proc"
+          | "outreach_sent"
+          | "monitored"
+          | "formal"
+          | "closed")
       : "all";
 
     const rows = deps.repo.listOpportunities(filter);
+    const items = rows
+      .map((row) => {
+        const drafts = deps.repo.parseDrafts(row.drafts_json);
+        const linkedProcs =
+          row.record_type === "REQ"
+            ? deps.repo.listLinkedProcsForReq(row.reference_number)
+            : [];
+        const linkedSummaries = linkedProcs.map((p) => ({
+          referenceNumber: p.reference_number,
+          linked: p.parent_tender_id === row.reference_number,
+          possible:
+            p.relation_candidate_id === row.reference_number &&
+            !p.parent_tender_id,
+          invitationType: p.invitation_type,
+          ourInvitationStatus: p.our_invitation_status,
+          invitedVendorName: p.invited_vendor_name,
+        }));
+        const linkedNotInvited = linkedSummaries.some(
+          (p) =>
+            p.linked &&
+            p.invitationType === "TARGETED" &&
+            p.ourInvitationStatus === "NOT_INVITED",
+        );
+        const possibleRelation = linkedSummaries.some((p) => p.possible);
+        const monitoringState =
+          row.record_type === "REQ"
+            ? deriveReqMonitoringState({
+                outreachStatus: drafts.outreach.status,
+                linkedProcs: linkedSummaries,
+              })
+            : ("NONE" as MonitoringState);
+        const related = primaryRelatedProc(linkedSummaries);
+        const eventsAsc = deps.repo.listEvents(row.reference_number);
+        const lastEvent = eventsAsc[eventsAsc.length - 1] ?? null;
+
+        return {
+          referenceNumber: row.reference_number,
+          score: row.score,
+          category: row.web_category,
+          organization: row.organization,
+          title: row.title,
+          recordType: row.record_type,
+          budgetWithoutVat: row.budget_without_vat,
+          deadline: row.final_submission_date,
+          status: row.current_status ?? "NEW",
+          detectedAt: row.first_seen_at,
+          relevanceStatus: row.relevance_status,
+          invitationType: row.invitation_type,
+          ourInvitationStatus: row.our_invitation_status,
+          outreachStatus: drafts.outreach.status,
+          outreachSentAt: drafts.outreach.sentAt ?? null,
+          outreachRecipient: drafts.outreach.recipient ?? null,
+          outreachSubject: drafts.outreach.subject ?? null,
+          watchForRelatedProc: watchForRelatedProc(drafts),
+          monitoringState,
+          monitoringStateLabel: getGreekMonitoringStateLabel(monitoringState),
+          monitoringRecommendedAction:
+            getGreekMonitoringRecommendedAction(monitoringState),
+          relatedProcAdam: related?.referenceNumber ?? null,
+          relatedProcLinked: related?.linked ?? false,
+          relatedProcPossible: related?.possible ?? false,
+          lastEventAt: lastEvent?.created_at ?? null,
+          lastEventType: lastEvent?.event_type ?? null,
+          linkedNotInvited,
+          possibleRelation,
+          listPriority: linkedNotInvited ? 0 : possibleRelation ? 1 : 2,
+        };
+      })
+      .sort((a, b) => {
+        if (a.listPriority !== b.listPriority) {
+          return b.listPriority - a.listPriority;
+        }
+        return (b.score ?? 0) - (a.score ?? 0);
+      });
+
     return c.json({
       filter,
       counters: deps.repo.getOpportunityCounters(),
-      items: rows.map((row) => ({
-        referenceNumber: row.reference_number,
-        score: row.score,
-        category: row.web_category,
-        organization: row.organization,
-        title: row.title,
-        recordType: row.record_type,
-        budgetWithoutVat: row.budget_without_vat,
-        deadline: row.final_submission_date,
-        status: row.current_status ?? "NEW",
-        detectedAt: row.first_seen_at,
-        relevanceStatus: row.relevance_status,
-      })),
+      items,
     });
+  });
+
+  app.post("/api/operator/tenders/:referenceNumber/outreach/send", async (c) => {
+    const adam = c.req.param("referenceNumber");
+    const body = await c.req.json().catch(() => null);
+    const parsed = recordOutreachSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: "invalid_body", details: parsed.error.flatten() }, 400);
+    }
+
+    const existing = deps.repo.findByAdam(adam);
+    if (!existing) return c.json({ error: "not_found" }, 404);
+    if (existing.record_type !== "REQ") {
+      return c.json(
+        {
+          error: "not_req",
+          message: "Early Outreach recording applies to REQ only",
+        },
+        400,
+      );
+    }
+
+    const recipientRaw = parsed.data.recipient?.trim() || null;
+    // Never invent recipient — only use explicit form value or stored contact email.
+    const recipient =
+      recipientRaw || existing.contact_email?.trim() || null;
+
+    const updated = deps.repo.recordOutreachSent(adam, {
+      sentAt: parsed.data.sentAt,
+      recipient,
+      subject: parsed.data.subject ?? null,
+      notes: parsed.data.notes ?? null,
+    });
+
+    if (!updated) return c.json({ error: "not_found" }, 404);
+
+    // Guard: outreach must never flip tender to SUBMITTED
+    let finalRow = updated;
+    if (updated.current_status === "SUBMITTED") {
+      deps.repo.updateOperationalStatus(adam, "REVIEW", {
+        note: "Corrected: outreach sent is not a formal submission",
+      });
+      finalRow = deps.repo.findByAdam(adam)!;
+    }
+
+    return c.json({ tender: serializeTender(finalRow, deps.repo) });
   });
 
   app.get("/api/operator/tenders/:referenceNumber", (c) => {
@@ -340,8 +596,32 @@ export const createOperatorRoutes = (deps: {
     return c.json(serializeTender(row, deps.repo));
   });
 
-  app.patch("/api/operator/tenders/:referenceNumber", async (c) => {
+  app.post("/api/operator/tenders/:referenceNumber/relation/confirm", (c) => {
     const adam = c.req.param("referenceNumber");
+    const updated = deps.repo.confirmProcRelation(adam);
+    if (!updated) {
+      return c.json(
+        { error: "not_found_or_no_candidate", message: "No PROC candidate to confirm" },
+        404,
+      );
+    }
+    return c.json({ tender: serializeTender(updated, deps.repo) });
+  });
+
+  app.post("/api/operator/tenders/:referenceNumber/relation/dismiss", (c) => {
+    const adam = c.req.param("referenceNumber");
+    const updated = deps.repo.dismissProcRelation(adam);
+    if (!updated) {
+      return c.json(
+        { error: "not_found", message: "PROC not found" },
+        404,
+      );
+    }
+    return c.json({ tender: serializeTender(updated, deps.repo) });
+  });
+
+  app.patch("/api/operator/tenders/:referenceNumber", async (c) => {
+    const adam = decodeURIComponent(c.req.param("referenceNumber"));
     const existing = deps.repo.findByAdam(adam);
     if (!existing) return c.json({ error: "not_found" }, 404);
 

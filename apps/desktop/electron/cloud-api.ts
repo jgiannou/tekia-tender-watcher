@@ -82,10 +82,16 @@ export const requestCloudApi = async <T = unknown>(
   }
 
   if (!response.ok) {
-    const message =
+    const messageFromBody =
       typeof body === "object" && body && "error" in body
         ? String((body as { error: string }).error)
-        : `HTTP ${response.status}`;
+        : typeof body === "object" && body && "message" in body
+          ? String((body as { message: string }).message)
+          : null;
+    const message =
+      messageFromBody && messageFromBody !== "undefined"
+        ? messageFromBody
+        : `HTTP ${response.status} ${init.method ?? "GET"} ${path}`;
     throw new CloudApiError(response.status, "error", message, body);
   }
 

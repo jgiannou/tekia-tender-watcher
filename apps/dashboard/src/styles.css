@@ -254,6 +254,42 @@ th {
   color: var(--coral);
 }
 
+.badge.sent {
+  background: #eaf7ef;
+  color: var(--ok);
+}
+
+.badge.waiting_for_invitation,
+.badge.possible_relation {
+  background: #eef3ff;
+  color: #2746a0;
+}
+
+.badge.invited,
+.badge.open_invitation {
+  background: #eaf7ef;
+  color: var(--ok);
+}
+
+.badge.targeted_other {
+  background: #fdecec;
+  color: var(--bad);
+}
+
+.badge.draft {
+  background: #eef3ff;
+  color: #2746a0;
+}
+
+.badge.not_started {
+  background: var(--chip);
+  color: var(--muted);
+}
+
+.monitoring-card {
+  border-left: 4px solid #2746a0;
+}
+
 .badge.won {
   background: #eaf7ef;
   color: var(--ok);
@@ -486,6 +522,18 @@ th {
 
 .phase-progress-arrow {
   color: var(--muted);
+}
+
+tr.row-deprioritized td {
+  opacity: 0.72;
+}
+
+.relation-card {
+  border-left: 4px solid #c45c26;
+}
+
+.relation-card.possible {
+  border-left-color: #b08900;
 }
 
 details.card > summary {

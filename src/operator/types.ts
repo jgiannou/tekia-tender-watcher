@@ -31,11 +31,18 @@ export const TENDER_EVENT_TYPES = [
   "SUBMITTED",
   "WON",
   "LOST",
+  "RELATED_PROC",
+  "RELATION_CONFIRMED",
+  "RELATION_DISMISSED",
+  "OUTREACH_READY",
+  "OUTREACH_SENT",
+  "MONITORING_STARTED",
+  "INVITATION_CLASSIFIED",
 ] as const;
 
 export type TenderEventType = (typeof TENDER_EVENT_TYPES)[number];
 
-export const DRAFT_STATUSES = ["NOT_STARTED", "DRAFT", "READY"] as const;
+export const DRAFT_STATUSES = ["NOT_STARTED", "DRAFT", "READY", "SENT"] as const;
 export type DraftStatus = (typeof DRAFT_STATUSES)[number];
 
 export const DOCUMENT_ITEM_STATUSES = [
@@ -64,6 +71,10 @@ export type DraftPackage = {
   amountWithoutVat?: number | null;
   attachments?: string[];
   updatedAt?: string | null;
+  /** ISO timestamp when Early Outreach was recorded as sent (manual). */
+  sentAt?: string | null;
+  /** Recipient email for recorded Early Outreach — never invent. */
+  recipient?: string | null;
 };
 
 export type TenderDrafts = {

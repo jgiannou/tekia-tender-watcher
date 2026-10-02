@@ -24,6 +24,7 @@ import {
   getGreekDocumentStatusLabel,
   getGreekDraftLabel,
   getGreekDriveDocTypeLabel,
+  getGreekEventTypeLabel,
   getGreekRelevanceLabel,
   getGreekStatusLabel,
   getGreekSubmissionMethodLabel,
@@ -85,6 +86,16 @@ export const TenderDetailPage = () => {
   });
   const [formRevision, setFormRevision] = useState(0);
   const [savingDetails, setSavingDetails] = useState(false);
+  const [draftEditorKey, setDraftEditorKey] = useState(0);
+  const [loadingDriveText, setLoadingDriveText] = useState(false);
+  const [showOutreachSendForm, setShowOutreachSendForm] = useState(false);
+  const [outreachSendForm, setOutreachSendForm] = useState({
+    sentAt: "",
+    recipient: "",
+    subject: "",
+    notes: "",
+  });
+  const [savingOutreachSent, setSavingOutreachSent] = useState(false);
   const [vaultChecklist, setVaultChecklist] = useState<VaultChecklistItem[] | null>(
     null,
   );
@@ -530,6 +541,51 @@ export const TenderDetailPage = () => {
     }
   };
 
+  const openOutreachSendForm = () => {
+    if (!tender) return;
+    const localNow = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const localIso = `${localNow.getFullYear()}-${pad(localNow.getMonth() + 1)}-${pad(localNow.getDate())}T${pad(localNow.getHours())}:${pad(localNow.getMinutes())}`;
+    setOutreachSendForm({
+      sentAt: localIso,
+      recipient: tender.contact.email?.trim() || "",
+      subject: tender.drafts.outreach.subject?.trim() || "",
+      notes: tender.drafts.outreach.notes?.trim() || "",
+    });
+    setShowOutreachSendForm(true);
+  };
+
+  const handleRecordOutreachSent = async (
+    e: React.FormEvent<HTMLFormElement>,
+  ) => {
+    e.preventDefault();
+    if (!tender) return;
+    setSavingOutreachSent(true);
+    setError(null);
+    try {
+      const sentAt = new Date(outreachSendForm.sentAt).toISOString();
+      if (Number.isNaN(new Date(outreachSendForm.sentAt).getTime())) {
+        setError("Μη έγκυρη ημερομηνία αποστολής");
+        return;
+      }
+      const result = await api.recordOutreachSent(referenceNumber, {
+        sentAt,
+        recipient: outreachSendForm.recipient.trim() || null,
+        subject: outreachSendForm.subject.trim() || null,
+        notes: outreachSendForm.notes.trim() || null,
+      });
+      setTender(result.tender);
+      setShowOutreachSendForm(false);
+      setMessage(
+        `Η Εκδήλωση Ενδιαφέροντος καταχωρήθηκε ως σταλμένη. Παρακολούθηση ενεργή. ${UI.safetyOutreachSent}`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingOutreachSent(false);
+    }
+  };
+
   const handleMarkReady = async () => {
     try {
       const result = await api.setStatus(
@@ -554,6 +610,121 @@ export const TenderDetailPage = () => {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  };
+
+  const handleConfirmRelation = async (procAdam: string) => {
+    try {
+      const result = await api.confirmRelation(procAdam);
+      // Reload current tender (REQ or PROC) to refresh linked cards
+      await load(false);
+      setMessage(`Επιβεβαιώθηκε η σύνδεση με ${procAdam}.`);
+      void result;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleDismissRelation = async (procAdam: string) => {
+    try {
+      await api.dismissRelation(procAdam);
+      await load(false);
+      setMessage(`Απορρίφθηκε η πιθανή σύνδεση με ${procAdam}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleOpenOutreachEditor = async () => {
+    if (!tender) return;
+
+    const adam = tender.referenceNumber;
+    const driveDoc = driveDocuments.find((d) =>
+      OUTREACH_DRIVE_DOC_TYPES.has(d.type),
+    );
+
+    if (driveDoc && isDesktop()) {
+      if (!window.tekia?.drive?.readDocument) {
+        setError(
+          "Αυτή η έκδοση της εφαρμογής δεν υποστηρίζει φόρτωση κειμένου από Drive. Κάνε νέο install από το τελευταίο DMG.",
+        );
+        setEditingDraft("outreach");
+        return;
+      }
+
+      setLoadingDriveText(true);
+      setError(null);
+      setMessage(null);
+      try {
+        const result = (await window.tekia.drive.readDocument(driveDoc.id)) as {
+          subject?: string | null;
+          body?: string;
+          __tekiaError?: boolean;
+          message?: string;
+        };
+        if (result?.__tekiaError) {
+          setError(result.message ?? "Αποτυχία ανάγνωσης από το Drive");
+          return;
+        }
+
+        const next: DraftPackage = {
+          ...tender.drafts.outreach,
+          status:
+            tender.drafts.outreach.status === "NOT_STARTED"
+              ? "DRAFT"
+              : tender.drafts.outreach.status,
+          subject: result.subject ?? tender.drafts.outreach.subject,
+          body: result.body?.trim()
+            ? result.body
+            : tender.drafts.outreach.body,
+          updatedAt: new Date().toISOString(),
+        };
+
+        // Always show Drive text locally first — don't block the editor on cloud save.
+        setTender({
+          ...tender,
+          drafts: { ...tender.drafts, outreach: next },
+        });
+        setDraftEditorKey((n) => n + 1);
+        setEditingDraft("outreach");
+        setMessage(
+          result.body?.trim()
+            ? "Το θέμα/περιεχόμενο φορτώθηκε από το Google Doc."
+            : "Το Google Doc φαίνεται κενό ή δεν διαβάστηκε κείμενο.",
+        );
+
+        try {
+          // Persist only schema fields (avoid huge accidental payloads / unknown keys).
+          const patched = await api.patchTender(adam, {
+            drafts: {
+              outreach: {
+                status: next.status,
+                subject: next.subject ?? null,
+                body: next.body ?? null,
+                notes: next.notes ?? null,
+                sentAt: next.sentAt ?? null,
+                recipient: next.recipient ?? null,
+                updatedAt: next.updatedAt ?? null,
+              },
+            },
+          });
+          setTender(patched.tender);
+        } catch (persistErr) {
+          const detail =
+            persistErr instanceof Error ? persistErr.message : String(persistErr);
+          setError(
+            `Το κείμενο εμφανίζεται τοπικά, αλλά δεν αποθηκεύτηκε στο watcher (${detail}). Πάτα Αποθήκευση για νέα προσπάθεια.`,
+          );
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoadingDriveText(false);
+      }
+      return;
+    }
+
+    setDraftEditorKey((n) => n + 1);
+    setEditingDraft("outreach");
   };
 
   const handleRecordSubmission = async (event: FormEvent<HTMLFormElement>) => {
@@ -596,13 +767,18 @@ export const TenderDetailPage = () => {
   const outreachDraft = tender.drafts.outreach;
 
   const outreachStatusLabel = (() => {
+    if (outreachDraft.status === "SENT") {
+      return getGreekDocumentStatusLabel("SENT");
+    }
     if (outreachDrive) return getGreekDocumentStatusLabel(outreachDrive.status);
     if (outreachDraft.status === "NOT_STARTED") return UI.notCreated;
     return getGreekDocumentStatusLabel(outreachDraft.status);
   })();
 
   const isOutreachReady =
-    outreachDrive?.status === "READY" || outreachDraft.status === "READY";
+    outreachDraft.status === "SENT" ||
+    outreachDrive?.status === "READY" ||
+    outreachDraft.status === "READY";
 
   const earlyVaultItems =
     vaultChecklist?.filter(
@@ -746,6 +922,7 @@ export const TenderDetailPage = () => {
     const draft = tender.drafts[key];
     return (
       <form
+        key={`${key}-${draftEditorKey}-${draft.updatedAt ?? "new"}`}
         className="form-grid"
         style={{ width: "100%", marginTop: 10 }}
         onSubmit={(e) => void handleSaveDraft(e, key)}
@@ -755,6 +932,7 @@ export const TenderDetailPage = () => {
           <select name="status" defaultValue={draft.status}>
             <option value="DRAFT">Πρόχειρο</option>
             <option value="READY">Έτοιμο</option>
+            <option value="SENT">Στάλθηκε</option>
             <option value="NOT_STARTED">Δεν έχει ξεκινήσει</option>
           </select>
         </label>
@@ -764,7 +942,7 @@ export const TenderDetailPage = () => {
         </label>
         <label>
           Περιεχόμενο
-          <textarea name="body" defaultValue={draft.body ?? ""} />
+          <textarea name="body" defaultValue={draft.body ?? ""} rows={12} />
         </label>
         <label>
           Σημειώσεις
@@ -957,6 +1135,288 @@ export const TenderDetailPage = () => {
       {/* 2. Unified phase card */}
       <TenderPhaseCard phase={phase} actions={phaseActions} />
 
+      {tender.recordType === "REQ" &&
+      (tender.drafts.outreach.status === "SENT" ||
+        tender.monitoring?.watchForRelatedProc) ? (
+        <section
+          className="card monitoring-card"
+          aria-label="Παρακολούθηση Ευκαιρίας"
+        >
+          <h3 style={{ marginTop: 0 }}>Παρακολούθηση Ευκαιρίας</h3>
+          <div className="meta-grid">
+            <div className="meta-item">
+              <span className="k">Εκδήλωση ενδιαφέροντος</span>
+              <span className="v">
+                <span className={statusClass("SENT")}>Αποστάλθηκε</span>
+              </span>
+            </div>
+            <div className="meta-item">
+              <span className="k">Ημερομηνία</span>
+              <span className="v">
+                {formatDateTime(tender.drafts.outreach.sentAt ?? null)}
+              </span>
+            </div>
+            <div className="meta-item">
+              <span className="k">Παραλήπτης</span>
+              <span className="v">
+                {tender.drafts.outreach.recipient?.trim() || "—"}
+              </span>
+            </div>
+            <div className="meta-item">
+              <span className="k">Κατάσταση</span>
+              <span className="v">
+                {tender.monitoring?.stateLabel ?? "Αναμονή πρόσκλησης"}
+              </span>
+            </div>
+            <div className="meta-item">
+              <span className="k">Σχετική πρόσκληση</span>
+              <span className="v">
+                {tender.monitoring?.relatedProc ? (
+                  <Link
+                    to={`/tenders/${encodeURIComponent(
+                      tender.monitoring.relatedProc.referenceNumber,
+                    )}`}
+                  >
+                    <code>{tender.monitoring.relatedProc.referenceNumber}</code>
+                  </Link>
+                ) : (
+                  "Δεν έχει εντοπιστεί ακόμη"
+                )}
+              </span>
+            </div>
+            <div className="meta-item">
+              <span className="k">Συνιστώμενη ενέργεια</span>
+              <span className="v">
+                {tender.monitoring?.recommendedAction ?? "—"}
+              </span>
+            </div>
+          </div>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Το σύστημα ελέγχει νέα PROC και προσπαθεί να εντοπίσει συνέχεια του
+            συγκεκριμένου αιτήματος. Η εκδήλωση ενδιαφέροντος δεν είναι επίσημη
+            υποβολή προσφοράς.
+          </p>
+        </section>
+      ) : null}
+
+      {(tender.linkedProcs?.length ?? 0) > 0 ||
+      tender.relation?.parentTenderId ||
+      tender.relation?.candidateTenderId ? (
+        <section
+          className={`card relation-card${
+            tender.linkedProcs?.some((p) => p.possible) ||
+            tender.relation?.candidateTenderId
+              ? " possible"
+              : ""
+          }`}
+          aria-label="Εξέλιξη ευκαιρίας"
+        >
+          <h3 style={{ marginTop: 0 }}>Εξέλιξη ευκαιρίας</h3>
+
+          {tender.recordType === "REQ"
+            ? (tender.linkedProcs ?? []).map((proc) => (
+                <div key={proc.referenceNumber} style={{ marginBottom: 16 }}>
+                  {proc.linked ? (
+                    <p style={{ marginTop: 0 }}>
+                      Η ευκαιρία εξελίχθηκε σε πρόσκληση υποβολής προσφοράς.
+                    </p>
+                  ) : (
+                    <p style={{ marginTop: 0 }}>
+                      Πιθανή συνέχεια προηγούμενου Πρωτογενούς Αιτήματος
+                    </p>
+                  )}
+                  <div className="meta-grid">
+                    <div className="meta-item">
+                      <span className="k">Πρωτογενές Αίτημα</span>
+                      <span className="v">
+                        <code>{tender.referenceNumber}</code>
+                      </span>
+                    </div>
+                    <div className="meta-item">
+                      <span className="k">Σχετική Πρόσκληση</span>
+                      <span className="v">
+                        <Link
+                          to={`/tenders/${encodeURIComponent(proc.referenceNumber)}`}
+                        >
+                          <code>{proc.referenceNumber}</code>
+                        </Link>
+                      </span>
+                    </div>
+                    <div className="meta-item">
+                      <span className="k">Τύπος πρόσκλησης</span>
+                      <span className="v">
+                        {proc.invitationType === "TARGETED"
+                          ? "Στοχευμένη"
+                          : proc.invitationType === "OPEN"
+                            ? "Ανοιχτή"
+                            : "Άγνωστη"}
+                      </span>
+                    </div>
+                    <div className="meta-item">
+                      <span className="k">Προσκεκλημένος οικονομικός φορέας</span>
+                      <span className="v">
+                        {proc.invitedVendorName ?? "—"}
+                      </span>
+                    </div>
+                    <div className="meta-item">
+                      <span className="k">Κατάσταση TEKIA</span>
+                      <span className="v">
+                        {proc.ourInvitationStatus === "NOT_INVITED"
+                          ? "Δεν προσκληθήκαμε"
+                          : proc.ourInvitationStatus === "INVITED"
+                            ? "Προσκληθήκαμε"
+                            : proc.invitationType === "OPEN"
+                              ? "Μπορούμε να συμμετέχουμε"
+                              : "Άγνωστη"}
+                      </span>
+                    </div>
+                    <div className="meta-item">
+                      <span className="k">Confidence</span>
+                      <span className="v">
+                        {proc.relationConfidence === "HIGH"
+                          ? "Υψηλή"
+                          : proc.relationConfidence === "MEDIUM"
+                            ? "Μεσαία"
+                            : proc.relationConfidence ?? "—"}
+                        {proc.relationScore != null
+                          ? ` (${proc.relationScore})`
+                          : ""}
+                      </span>
+                    </div>
+                  </div>
+                  {proc.ourInvitationStatus === "NOT_INVITED" ? (
+                    <p className="alert-box">
+                      Προτεινόμενη ενέργεια: Καμία υποβολή προσφοράς — η πρόσκληση
+                      απευθύνεται σε άλλο οικονομικό φορέα.
+                    </p>
+                  ) : null}
+                  {proc.relationReasons?.length ? (
+                    <ul className="checklist">
+                      {proc.relationReasons.map((r) => (
+                        <li key={r.label}>
+                          {r.points > 0 ? `+${r.points}` : ""} {r.label}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {proc.possible ? (
+                    <div className="actions">
+                      <button
+                        type="button"
+                        className="btn primary"
+                        onClick={() =>
+                          void handleConfirmRelation(proc.referenceNumber)
+                        }
+                      >
+                        Επιβεβαίωση σύνδεσης
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() =>
+                          void handleDismissRelation(proc.referenceNumber)
+                        }
+                      >
+                        Δεν σχετίζεται
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            : null}
+
+          {tender.recordType === "PROC" && tender.relation?.parentTenderId ? (
+            <div>
+              <p style={{ marginTop: 0 }}>
+                Σύνδεση με προϋπάρχον Πρωτογενές Αίτημα.
+              </p>
+              <div className="meta-grid">
+                <div className="meta-item">
+                  <span className="k">Γονικό REQ</span>
+                  <span className="v">
+                    <Link
+                      to={`/tenders/${encodeURIComponent(tender.relation.parentTenderId)}`}
+                    >
+                      <code>{tender.relation.parentTenderId}</code>
+                    </Link>
+                  </span>
+                </div>
+                <div className="meta-item">
+                  <span className="k">Τύπος πρόσκλησης</span>
+                  <span className="v">
+                    {tender.invitation.type === "TARGETED"
+                      ? "Στοχευμένη"
+                      : tender.invitation.type === "OPEN"
+                        ? "Ανοιχτή"
+                        : "Άγνωστη"}
+                  </span>
+                </div>
+                <div className="meta-item">
+                  <span className="k">Προσκεκλημένος</span>
+                  <span className="v">
+                    {tender.invitation.invitedVendorName ?? "—"}
+                  </span>
+                </div>
+                <div className="meta-item">
+                  <span className="k">Κατάσταση TEKIA</span>
+                  <span className="v">
+                    {tender.invitation.ourStatus === "NOT_INVITED"
+                      ? "Δεν προσκλήθηκε"
+                      : tender.invitation.ourStatus === "INVITED"
+                        ? "Προσκλήθηκε"
+                        : "Άγνωστη"}
+                  </span>
+                </div>
+              </div>
+              {tender.relation.reasons?.length ? (
+                <ul className="checklist">
+                  {tender.relation.reasons.map((r) => (
+                    <li key={r.label}>
+                      {r.points > 0 ? `+${r.points}` : ""} {r.label}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+
+          {tender.recordType === "PROC" &&
+          tender.relation?.candidateTenderId &&
+          !tender.relation.parentTenderId ? (
+            <div>
+              <p style={{ marginTop: 0 }}>
+                Πιθανή συνέχεια προηγούμενου Πρωτογενούς Αιτήματος
+              </p>
+              <p>
+                Υποψήφιο REQ:{" "}
+                <Link
+                  to={`/tenders/${encodeURIComponent(tender.relation.candidateTenderId)}`}
+                >
+                  <code>{tender.relation.candidateTenderId}</code>
+                </Link>{" "}
+                (score {tender.relation.score ?? "—"})
+              </p>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => void handleConfirmRelation(tender.referenceNumber)}
+                >
+                  Επιβεβαίωση σύνδεσης
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void handleDismissRelation(tender.referenceNumber)}
+                >
+                  Δεν σχετίζεται
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       {tender.recordType === "PROC" ? (
         <section className="card">
           <h3>{UI.procVerification}</h3>
@@ -1082,9 +1542,10 @@ export const TenderDetailPage = () => {
                 <button
                   type="button"
                   className="btn"
-                  onClick={() => setEditingDraft("outreach")}
+                  disabled={loadingDriveText}
+                  onClick={() => void handleOpenOutreachEditor()}
                 >
-                  {UI.edit}
+                  {loadingDriveText ? "Φόρτωση από Drive…" : UI.edit}
                 </button>
                 {outreachDrive && outreachDrive.status !== "READY" ? (
                   <button
@@ -1096,13 +1557,25 @@ export const TenderDetailPage = () => {
                     {UI.markReady}
                   </button>
                 ) : null}
-                {!outreachDrive && outreachDraft.status !== "READY" ? (
+                {!outreachDrive &&
+                outreachDraft.status !== "READY" &&
+                outreachDraft.status !== "SENT" ? (
                   <button
                     type="button"
                     className="btn"
                     onClick={() => void handleMarkDraftReady("outreach")}
                   >
                     {UI.markReady}
+                  </button>
+                ) : null}
+                {outreachDraft.status !== "SENT" ? (
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={openOutreachSendForm}
+                    aria-label={UI.recordOutreachSent}
+                  >
+                    {UI.recordOutreachSent}
                   </button>
                 ) : null}
                 {isDesktop() && !outreachDrive ? (
@@ -1118,7 +1591,102 @@ export const TenderDetailPage = () => {
             )}
           </div>
 
+          {showOutreachSendForm ? (
+            <form
+              className="form-grid"
+              style={{ marginTop: 12 }}
+              onSubmit={(e) => void handleRecordOutreachSent(e)}
+              aria-label={UI.recordOutreachSent}
+            >
+              <label>
+                Ημερομηνία αποστολής
+                <input
+                  type="datetime-local"
+                  required
+                  value={outreachSendForm.sentAt}
+                  onChange={(e) =>
+                    setOutreachSendForm((prev) => ({
+                      ...prev,
+                      sentAt: e.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Παραλήπτης email
+                <input
+                  type="email"
+                  value={outreachSendForm.recipient}
+                  placeholder="Μόνο αν υπάρχει — δεν εφευρίσκεται"
+                  onChange={(e) =>
+                    setOutreachSendForm((prev) => ({
+                      ...prev,
+                      recipient: e.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Θέμα
+                <input
+                  type="text"
+                  value={outreachSendForm.subject}
+                  onChange={(e) =>
+                    setOutreachSendForm((prev) => ({
+                      ...prev,
+                      subject: e.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Σημειώσεις (προαιρετικό)
+                <textarea
+                  value={outreachSendForm.notes}
+                  onChange={(e) =>
+                    setOutreachSendForm((prev) => ({
+                      ...prev,
+                      notes: e.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
+                Καταγράφει χειροκίνητη αποστολή εκτός εφαρμογής. Δεν αλλάζει την
+                κατάσταση σε «Υποβλήθηκε» και δεν στέλνει email.
+              </p>
+              <div className="actions" style={{ gridColumn: "1 / -1" }}>
+                <button
+                  type="submit"
+                  className="btn primary"
+                  disabled={savingOutreachSent}
+                >
+                  {savingOutreachSent ? UI.loading : "Καταχώριση αποστολής"}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setShowOutreachSendForm(false)}
+                >
+                  {UI.cancel}
+                </button>
+              </div>
+            </form>
+          ) : null}
+
           {renderDraftEditor("outreach")}
+          {editingDraft === "outreach" && outreachDrive ? (
+            <p className="muted" style={{ marginTop: 8 }}>
+              Πηγή κειμένου: Google Doc.{" "}
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => void openExternalUrl(outreachDrive.driveUrl)}
+              >
+                {UI.openInDrive}
+              </button>
+            </p>
+          ) : null}
 
           {isOutreachReady ? (
             <div style={{ marginTop: 16 }}>
@@ -1585,7 +2153,7 @@ export const TenderDetailPage = () => {
             <li key={event.id}>
               <span className="muted">{formatTime(event.createdAt)}</span>
               <span>
-                {event.eventType}
+                {getGreekEventTypeLabel(event.eventType)}
                 {event.note ? ` — ${event.note}` : ""}
               </span>
             </li>
