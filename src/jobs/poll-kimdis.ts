@@ -25,11 +25,9 @@ import type { SlackClient } from "../slack/client.js";
 import {
   formatBootstrapMessage,
   formatSlackMessage,
-  isRelatedProcFollowUp,
 } from "../slack/format-message.js";
 import { applyProcRelationAndInvitation } from "../relations/apply-proc-relation.js";
 import { invitationRecommendedAction } from "../relations/invitation-identity.js";
-import { isOutreachSent } from "../operator/outreach-monitoring.js";
 
 export type PollResult = {
   fetched: number;

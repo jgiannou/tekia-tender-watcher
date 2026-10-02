@@ -25,7 +25,7 @@ export type LinkedProcSummary = {
 };
 
 export const isOutreachSent = (
-  outreach: Pick<DraftPackage, "status"> | null | undefined,
+  outreach: { status?: string | null } | null | undefined,
 ): boolean => outreach?.status === "SENT";
 
 /** Automatic: SENT outreach means we watch for related PROC. */
