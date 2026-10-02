@@ -150,17 +150,6 @@ export const invitationRecommendedAction = (
 };
 
 /** Helper for tests / UI: detect ΠΡΟΣ even without full PDF classify. */
-export const extractProsVendor = (rawText: string): string | null => {
-  const match = rawText.match(
-    /(?:ΠΡΟΣ|Προς|Αποδέκτης|Παραλήπτης)\s*[:：]\s*([^\n\r]{3,120})/u,
-  );
-  if (!match?.[1]) return null;
-  const candidate = match[1].replace(/\s{2,}/g, " ").trim();
-  if (candidate.length < 3) return null;
-  if (/γενικ[ήη]|κοιν[όο]|ενδιαφερομεν|οικονομικ[οό]υς φορε/iu.test(candidate)) {
-    return null;
-  }
-  return candidate.slice(0, 120);
-};
+export { extractTargetAfterLabel as extractProsVendor } from "../pdf/classify.js";
 
 export const stripForCompare = stripAccents;

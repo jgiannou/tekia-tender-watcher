@@ -165,7 +165,7 @@ const parseRelationReasons = (
 };
 
 const serializeTender = (row: TenderRow, repo: Repository) => {
-  const drafts = repo.parseDrafts(row.drafts_json);
+  const drafts = repo.resolveDrafts(row);
   const checklist = repo.parseChecklist(row.document_checklist_json);
   const submission = repo.getSubmissionForTender(row.reference_number);
   const events = repo.listEvents(row.reference_number);
@@ -227,6 +227,8 @@ const serializeTender = (row: TenderRow, repo: Repository) => {
     relevanceStatus: row.relevance_status,
     ignoreReason: row.ignore_reason,
     reviewReason: row.review_reason,
+    alertEligibilityReason: row.alert_eligibility_reason,
+    classificationVersion: row.classification_version,
     currentStatus: row.current_status ?? "NEW",
     contact: {
       name: row.contact_name,
@@ -463,7 +465,7 @@ export const createOperatorRoutes = (deps: {
     const rows = deps.repo.listOpportunities(filter);
     const items = rows
       .map((row) => {
-        const drafts = deps.repo.parseDrafts(row.drafts_json);
+        const drafts = deps.repo.resolveDrafts(row);
         const linkedProcs =
           row.record_type === "REQ"
             ? deps.repo.listLinkedProcsForReq(row.reference_number)

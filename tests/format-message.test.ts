@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatBootstrapMessage,
+  formatBootstrapSummaryMessage,
   formatSlackMessage,
   formatTestSlackMessage,
 } from "../src/slack/format-message.js";
@@ -162,5 +163,12 @@ describe("slack formatter", () => {
   it("formats bootstrap and test messages", () => {
     expect(formatBootstrapMessage()).toContain("TEKIA Tender Watcher started");
     expect(formatTestSlackMessage()).toContain("test notification");
+    expect(
+      formatBootstrapSummaryMessage({
+        highPriorityCount: 2,
+        recentHours: 48,
+        examples: [],
+      }),
+    ).toContain("Bootstrap completed");
   });
 });

@@ -2,6 +2,9 @@ import type { Config } from "../config.js";
 import type { Repository, TenderRow } from "../db/repository.js";
 import { scoreOpportunity } from "../filters/scorer.js";
 import {
+  CLASSIFICATION_VERSION,
+} from "../filters/classification-meta.js";
+import {
   evaluateSlackEligibility,
   isDeadlineInPast,
 } from "../filters/slack-eligibility.js";
@@ -145,6 +148,7 @@ const classifyRow = (
   nonInvitedOffersRejected: boolean;
   slackEligible: boolean;
   slackBlockReason: string | null;
+  alertEligibilityCode: string;
 } => {
   const cpvs = parseCpvs(row.cpvs);
   const description = descriptionFromRaw(row.raw_json);
@@ -257,6 +261,7 @@ const classifyRow = (
     nonInvitedOffersRejected,
     slackEligible: eligibility.eligible,
     slackBlockReason: eligibility.reason,
+    alertEligibilityCode: eligibility.code,
   };
 };
 
@@ -296,6 +301,8 @@ export const reevaluateStoredTenders = (
       reviewReason: result.reviewReason,
       targetedSupplier: result.targetedSupplier,
       nonInvitedOffersRejected: result.nonInvitedOffersRejected,
+      classificationVersion: CLASSIFICATION_VERSION,
+      alertEligibilityReason: result.alertEligibilityCode,
       nowIso,
     });
 

@@ -256,5 +256,36 @@ export const formatSlackMessage = (item: SlackOpportunity): string => {
 export const formatBootstrapMessage = (): string =>
   "✅ TEKIA Tender Watcher started. Existing KIMDIS records were indexed; alerts will be sent for new matches.";
 
+export const formatBootstrapSummaryMessage = (input: {
+  highPriorityCount: number;
+  recentHours: number;
+  examples: Array<{
+    adam: string;
+    title: string;
+    score: number;
+    organization: string;
+  }>;
+}): string => {
+  const lines = [
+    `✅ Bootstrap completed — ${input.highPriorityCount} high-priority recent opportunities (last ${input.recentHours}h) require review.`,
+    "Individual historical alerts were suppressed to avoid flooding Slack.",
+    "",
+  ];
+
+  for (const example of input.examples) {
+    lines.push(
+      `• score ${example.score} | \`${example.adam}\` | ${example.organization} — ${example.title}`,
+    );
+  }
+
+  if (input.highPriorityCount > input.examples.length) {
+    lines.push(
+      `…and ${input.highPriorityCount - input.examples.length} more — open the dashboard to review.`,
+    );
+  }
+
+  return lines.join("\n");
+};
+
 export const formatTestSlackMessage = (): string =>
   "✅ TEKIA Tender Watcher test notification — Slack webhook is working.";

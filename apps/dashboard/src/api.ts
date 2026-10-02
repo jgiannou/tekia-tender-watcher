@@ -161,6 +161,8 @@ export type TenderDetail = {
   publicKimdisUrl: string | null;
   webCategory: string | null;
   relevanceStatus: string | null;
+  alertEligibilityReason?: string | null;
+  classificationVersion?: number | null;
   currentStatus: string;
   contact: {
     name: string | null;

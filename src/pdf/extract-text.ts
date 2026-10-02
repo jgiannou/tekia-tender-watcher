@@ -1,4 +1,5 @@
 import pdfParse from "pdf-parse";
+import { repairGreekPdfText } from "./greek-text.js";
 
 export type PdfTextStatus = "none" | "extracted" | "unreadable" | "skipped" | "error";
 
@@ -18,7 +19,7 @@ export const extractPdfText = async (
 
   try {
     const parsed = await pdfParse(buffer);
-    const text = (parsed.text ?? "").replace(/\u0000/g, "").trim();
+    const text = repairGreekPdfText((parsed.text ?? "").trim());
 
     if (text.length < MIN_MEANINGFUL_CHARS) {
       return { status: "unreadable", text: "" };

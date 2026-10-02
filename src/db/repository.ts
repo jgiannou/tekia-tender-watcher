@@ -8,6 +8,7 @@ import {
   DEFAULT_DRAFTS,
   DEFAULT_OPERATOR_SETTINGS,
   type DocumentChecklistItem,
+  type DraftPackage,
   type OperationalStatus,
   type OperatorSettings,
   type SubmissionMethod,
@@ -79,6 +80,9 @@ export type TenderRow = {
   invitation_type: string | null;
   invited_vendor_name: string | null;
   our_invitation_status: string | null;
+  classification_version: number | null;
+  source_fingerprint: string | null;
+  alert_eligibility_reason: string | null;
 };
 
 export type SubmissionRow = {
@@ -132,6 +136,9 @@ export type UpsertTenderInput = {
   reviewReason: string | null;
   rawJson: unknown;
   nowIso: string;
+  classificationVersion?: number | null;
+  sourceFingerprint?: string | null;
+  alertEligibilityReason?: string | null;
 };
 
 export type PollStats = {
@@ -182,6 +189,68 @@ const parseDrafts = (raw: string | null): TenderDrafts => {
   } catch {
     return DEFAULT_DRAFTS();
   }
+};
+
+type OutreachLedgerRow = {
+  reference_number: string;
+  status: string;
+  subject: string | null;
+  body: string | null;
+  notes: string | null;
+  recipient: string | null;
+  sent_at: string | null;
+  updated_at: string;
+  payload_json: string | null;
+};
+
+const outreachFromLedgerRow = (row: OutreachLedgerRow): DraftPackage => {
+  let payload: Partial<DraftPackage> = {};
+  if (row.payload_json) {
+    try {
+      payload = JSON.parse(row.payload_json) as Partial<DraftPackage>;
+    } catch {
+      payload = {};
+    }
+  }
+  return {
+    status: (row.status as DraftPackage["status"]) || "NOT_STARTED",
+    subject: row.subject ?? payload.subject ?? null,
+    body: row.body ?? payload.body ?? null,
+    notes: row.notes ?? payload.notes ?? null,
+    recipient: row.recipient ?? payload.recipient ?? null,
+    sentAt: row.sent_at ?? payload.sentAt ?? null,
+    updatedAt: row.updated_at ?? payload.updatedAt ?? null,
+    amountWithoutVat: payload.amountWithoutVat ?? null,
+    attachments: payload.attachments ?? [],
+  };
+};
+
+const mergeOutreachPreferSent = (
+  fromTender: DraftPackage,
+  fromLedger: DraftPackage | null,
+): DraftPackage => {
+  if (!fromLedger) return fromTender;
+  const rank = (s: string | null | undefined) =>
+    s === "SENT" ? 4 : s === "READY" ? 3 : s === "DRAFT" ? 2 : s === "NOT_STARTED" ? 1 : 0;
+  if (rank(fromLedger.status) > rank(fromTender.status)) {
+    return { ...fromTender, ...fromLedger };
+  }
+  if (rank(fromLedger.status) < rank(fromTender.status)) {
+    return fromTender;
+  }
+  // Same status — prefer whichever has more content / newer timestamp
+  const ledgerTs = Date.parse(fromLedger.updatedAt || fromLedger.sentAt || "");
+  const tenderTs = Date.parse(fromTender.updatedAt || fromTender.sentAt || "");
+  if (Number.isFinite(ledgerTs) && Number.isFinite(tenderTs) && ledgerTs > tenderTs) {
+    return { ...fromTender, ...fromLedger };
+  }
+  if (
+    !(fromTender.body || fromTender.subject) &&
+    (fromLedger.body || fromLedger.subject)
+  ) {
+    return { ...fromTender, ...fromLedger };
+  }
+  return fromTender;
 };
 
 const isActionableOpportunity = (row: TenderRow): boolean => {
@@ -298,6 +367,93 @@ export const createRepository = (db: Database.Database) => {
     "SELECT COUNT(*) AS count FROM tenders WHERE notified_at IS NOT NULL",
   );
 
+  const getOutreachLedger = db.prepare(
+    "SELECT * FROM outreach_ledger WHERE reference_number = ?",
+  );
+  const upsertOutreachLedger = db.prepare(`
+    INSERT INTO outreach_ledger (
+      reference_number, status, subject, body, notes, recipient, sent_at, updated_at, payload_json
+    ) VALUES (
+      @reference_number, @status, @subject, @body, @notes, @recipient, @sent_at, @updated_at, @payload_json
+    )
+    ON CONFLICT(reference_number) DO UPDATE SET
+      status = excluded.status,
+      subject = excluded.subject,
+      body = excluded.body,
+      notes = excluded.notes,
+      recipient = excluded.recipient,
+      sent_at = excluded.sent_at,
+      updated_at = excluded.updated_at,
+      payload_json = excluded.payload_json
+  `);
+
+  const saveOutreachLedger = (adam: string, outreach: DraftPackage): void => {
+    const updatedAt = outreach.updatedAt ?? new Date().toISOString();
+    upsertOutreachLedger.run({
+      reference_number: adam,
+      status: outreach.status ?? "NOT_STARTED",
+      subject: outreach.subject ?? null,
+      body: outreach.body ?? null,
+      notes: outreach.notes ?? null,
+      recipient: outreach.recipient ?? null,
+      sent_at: outreach.sentAt ?? null,
+      updated_at: updatedAt,
+      payload_json: JSON.stringify(outreach),
+    });
+  };
+
+  const ledgerOutreachFor = (adam: string): DraftPackage | null => {
+    const row = getOutreachLedger.get(adam) as OutreachLedgerRow | undefined;
+    return row ? outreachFromLedgerRow(row) : null;
+  };
+
+  const resolveDrafts = (row: TenderRow): TenderDrafts => {
+    const drafts = parseDrafts(row.drafts_json);
+    const ledger = ledgerOutreachFor(row.reference_number);
+    return {
+      ...drafts,
+      outreach: mergeOutreachPreferSent(drafts.outreach, ledger),
+    };
+  };
+
+  const applyLedgerToTenderRow = (adam: string): void => {
+    const ledger = ledgerOutreachFor(adam);
+    if (!ledger) return;
+    if (ledger.status === "NOT_STARTED" && !ledger.body && !ledger.subject) {
+      return;
+    }
+    const existing = findByAdam.get(adam) as TenderRow | undefined;
+    if (!existing) return;
+    const drafts = parseDrafts(existing.drafts_json);
+    const merged = mergeOutreachPreferSent(drafts.outreach, ledger);
+    if (
+      drafts.outreach.status === merged.status &&
+      drafts.outreach.subject === merged.subject &&
+      drafts.outreach.body === merged.body &&
+      drafts.outreach.sentAt === merged.sentAt
+    ) {
+      return;
+    }
+    drafts.outreach = merged;
+    const nextStatus =
+      merged.status === "SENT" &&
+      (existing.current_status === "NEW" || !existing.current_status)
+        ? "REVIEW"
+        : existing.current_status;
+    db.prepare(
+      `
+      UPDATE tenders SET
+        drafts_json = @drafts_json,
+        current_status = @current_status
+      WHERE reference_number = @reference_number
+    `,
+    ).run({
+      reference_number: adam,
+      drafts_json: JSON.stringify(drafts),
+      current_status: nextStatus,
+    });
+  };
+
   const insertTender = db.prepare(`
     INSERT INTO tenders (
       reference_number, record_type, title, organization,
@@ -307,6 +463,7 @@ export const createRepository = (db: Database.Database) => {
       official_pdf_url, public_kimdis_url, score_reasons,
       web_relevant, web_category, relevance_status, ignore_reason, review_reason,
       current_status,
+      classification_version, source_fingerprint, alert_eligibility_reason,
       first_seen_at, last_seen_at, notified_at, raw_json
     ) VALUES (
       @reference_number, @record_type, @title, @organization,
@@ -316,6 +473,7 @@ export const createRepository = (db: Database.Database) => {
       @official_pdf_url, @public_kimdis_url, @score_reasons,
       @web_relevant, @web_category, @relevance_status, @ignore_reason, @review_reason,
       'NEW',
+      @classification_version, @source_fingerprint, @alert_eligibility_reason,
       @first_seen_at, @last_seen_at, NULL, @raw_json
     )
   `);
@@ -323,6 +481,38 @@ export const createRepository = (db: Database.Database) => {
   const touchSeen = db.prepare(`
     UPDATE tenders
     SET last_seen_at = @last_seen_at
+    WHERE reference_number = @reference_number
+  `);
+
+  const updateClassification = db.prepare(`
+    UPDATE tenders
+    SET
+      title = @title,
+      organization = @organization,
+      submission_date = @submission_date,
+      signed_date = @signed_date,
+      final_submission_date = @final_submission_date,
+      budget_without_vat = @budget_without_vat,
+      budget_with_vat = @budget_with_vat,
+      cpvs = @cpvs,
+      score = @score,
+      stage = @stage,
+      targeted_supplier = @targeted_supplier,
+      non_invited_offers_rejected = @non_invited_offers_rejected,
+      pdf_text_status = @pdf_text_status,
+      official_pdf_url = @official_pdf_url,
+      public_kimdis_url = @public_kimdis_url,
+      score_reasons = @score_reasons,
+      web_relevant = @web_relevant,
+      web_category = @web_category,
+      relevance_status = @relevance_status,
+      ignore_reason = @ignore_reason,
+      review_reason = @review_reason,
+      classification_version = @classification_version,
+      source_fingerprint = @source_fingerprint,
+      alert_eligibility_reason = @alert_eligibility_reason,
+      raw_json = @raw_json,
+      last_seen_at = @last_seen_at
     WHERE reference_number = @reference_number
   `);
 
@@ -339,6 +529,9 @@ export const createRepository = (db: Database.Database) => {
       review_reason = @review_reason,
       targeted_supplier = @targeted_supplier,
       non_invited_offers_rejected = @non_invited_offers_rejected,
+      classification_version = COALESCE(@classification_version, classification_version),
+      source_fingerprint = COALESCE(@source_fingerprint, source_fingerprint),
+      alert_eligibility_reason = COALESCE(@alert_eligibility_reason, alert_eligibility_reason),
       last_seen_at = @last_seen_at
     WHERE reference_number = @reference_number
   `);
@@ -482,6 +675,9 @@ export const createRepository = (db: Database.Database) => {
         relevance_status: input.relevanceStatus,
         ignore_reason: input.ignoreReason,
         review_reason: input.reviewReason,
+        classification_version: input.classificationVersion ?? null,
+        source_fingerprint: input.sourceFingerprint ?? null,
+        alert_eligibility_reason: input.alertEligibilityReason ?? null,
         first_seen_at: input.nowIso,
         last_seen_at: input.nowIso,
         raw_json: JSON.stringify(input.rawJson),
@@ -489,7 +685,43 @@ export const createRepository = (db: Database.Database) => {
 
       addEvent(input.referenceNumber, "DETECTED", "Discovered by watcher", input.nowIso);
 
+      // Re-apply durable early-outreach if this ADAM was recorded before a DB rebuild.
+      applyLedgerToTenderRow(input.referenceNumber);
+
       return { isNew: true };
+    },
+
+    /** Full classify/score write for an existing ADAM (re-eval path). */
+    updateExistingClassification: (input: UpsertTenderInput): void => {
+      updateClassification.run({
+        reference_number: input.referenceNumber,
+        title: input.title,
+        organization: input.organization,
+        submission_date: input.submissionDate,
+        signed_date: input.signedDate,
+        final_submission_date: input.finalSubmissionDate,
+        budget_without_vat: input.budgetWithoutVat,
+        budget_with_vat: input.budgetWithVat,
+        cpvs: JSON.stringify(input.cpvs),
+        score: input.score,
+        stage: input.stage,
+        targeted_supplier: input.targetedSupplier ? 1 : 0,
+        non_invited_offers_rejected: input.nonInvitedOffersRejected ? 1 : 0,
+        pdf_text_status: input.pdfTextStatus,
+        official_pdf_url: input.officialPdfUrl,
+        public_kimdis_url: input.publicKimdisUrl,
+        score_reasons: JSON.stringify(input.scoreReasons),
+        web_relevant: input.webRelevant ? 1 : 0,
+        web_category: input.webCategory,
+        relevance_status: input.relevanceStatus,
+        ignore_reason: input.ignoreReason,
+        review_reason: input.reviewReason,
+        classification_version: input.classificationVersion ?? null,
+        source_fingerprint: input.sourceFingerprint ?? null,
+        alert_eligibility_reason: input.alertEligibilityReason ?? null,
+        raw_json: JSON.stringify(input.rawJson),
+        last_seen_at: input.nowIso,
+      });
     },
 
     updateRelevanceFields: (input: {
@@ -504,6 +736,9 @@ export const createRepository = (db: Database.Database) => {
       reviewReason: string | null;
       targetedSupplier?: boolean;
       nonInvitedOffersRejected?: boolean;
+      classificationVersion?: number | null;
+      sourceFingerprint?: string | null;
+      alertEligibilityReason?: string | null;
       nowIso: string;
     }): void => {
       updateRelevance.run({
@@ -518,6 +753,9 @@ export const createRepository = (db: Database.Database) => {
         review_reason: input.reviewReason,
         targeted_supplier: input.targetedSupplier ? 1 : 0,
         non_invited_offers_rejected: input.nonInvitedOffersRejected ? 1 : 0,
+        classification_version: input.classificationVersion ?? null,
+        source_fingerprint: input.sourceFingerprint ?? null,
+        alert_eligibility_reason: input.alertEligibilityReason ?? null,
         last_seen_at: input.nowIso,
       });
     },
@@ -585,9 +823,20 @@ export const createRepository = (db: Database.Database) => {
     },
 
     parseDrafts,
+    resolveDrafts,
+    saveOutreachLedger,
+    applyLedgerToTenderRow,
     parseChecklist,
 
     listOpportunities: (filter: OpportunityFilter = "all"): TenderRow[] => {
+      // Ensure durable outreach ledger is reflected on tender rows before filtering.
+      const ledgerAdams = db
+        .prepare("SELECT reference_number FROM outreach_ledger")
+        .all() as Array<{ reference_number: string }>;
+      for (const row of ledgerAdams) {
+        applyLedgerToTenderRow(row.reference_number);
+      }
+
       const allRows = listAll.all() as TenderRow[];
       const actionable = allRows.filter(isActionableOpportunity);
       return actionable.filter((row) =>
@@ -605,6 +854,13 @@ export const createRepository = (db: Database.Database) => {
       formal: number;
       closed: number;
     } => {
+      const ledgerAdams = db
+        .prepare("SELECT reference_number FROM outreach_ledger")
+        .all() as Array<{ reference_number: string }>;
+      for (const row of ledgerAdams) {
+        applyLedgerToTenderRow(row.reference_number);
+      }
+
       const now = new Date();
       const monthPrefix = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 
@@ -716,6 +972,9 @@ export const createRepository = (db: Database.Database) => {
       if (!existing) return undefined;
 
       const nextDrafts = patch.drafts ?? parseDrafts(existing.drafts_json);
+      if (patch.drafts?.outreach) {
+        saveOutreachLedger(adam, nextDrafts.outreach);
+      }
       const nextRecipient =
         patch.submission_email !== undefined
           ? patch.submission_email
@@ -845,6 +1104,8 @@ export const createRepository = (db: Database.Database) => {
         recipient,
         updatedAt: new Date().toISOString(),
       };
+
+      saveOutreachLedger(adam, drafts.outreach);
 
       const nextStatus =
         existing.current_status === "NEW" || !existing.current_status

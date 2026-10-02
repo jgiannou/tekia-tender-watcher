@@ -1,3 +1,5 @@
+import { repairGreekPdfText, softNormalizeGreek } from "./greek-text.js";
+
 export type PdfClassification = {
   stage: "UNKNOWN" | "EARLY" | "ALREADY_ADVANCED";
   targetedSupplier: boolean;
@@ -7,41 +9,81 @@ export type PdfClassification = {
 };
 
 const ADVANCED_PHRASES = [
-  "αναθέτει",
-  "ανατέθηκε",
-  "ανάθεση στην",
-  "πλέον συμφέρουσα",
-  "υποβλήθηκαν προσφορές",
-  "οικονομικές προσφορές",
-  "έρευνα αγοράς",
-  "προσφορά της εταιρείας",
-  "αποφασίζει την ανάθεση",
+  "αναθετει",
+  "ανατεθηκε",
+  "αναθεση στην",
+  "πλεον συμφερουσα",
+  "υποβληθηκαν προσφορες",
+  "οικονομικες προσφορες",
+  "ερευνα αγορας",
+  "προσφορα της εταιρειας",
+  "αποφασιζει την αναθεση",
 ] as const;
 
-/** Single-hit phrases that strongly indicate award / advanced stage. */
+/** Single-hit phrases that strongly indicate award / advanced stage.
+ *  Do NOT include "πλέον συμφέρουσα" alone — it appears as award *criterion*
+ *  boilerplate on nearly every Greek tender ("κριτήριο ανάθεσης: …").
+ */
 const STRONG_AWARD_PHRASES = [
-  "ανατέθηκε",
-  "ανάθεση στην",
-  "αποφασίζει την ανάθεση",
-  "πλέον συμφέρουσα",
+  "ανατεθηκε",
+  "αναθεση στην",
+  "αποφασιζει την αναθεση",
 ] as const;
 
-const NON_INVITED_PHRASES = [
+const NON_INVITED_EXACT = [
   "δεν λαμβάνονται υπόψη προσφορές οικονομικών φορέων που δεν προσκλήθηκαν",
   "δεν γίνονται δεκτές προσφορές οικονομικών φορέων που δεν προσκλήθηκαν",
   "προσφορές οικονομικών φορέων που δεν προσκλήθηκαν δεν λαμβάνονται υπόψη",
 ] as const;
 
-const normalize = (text: string): string =>
-  text
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase();
+/** Internal org units — ΠΡΟΣ here is routing, not a named economic operator. */
+const INTERNAL_RECIPIENT =
+  /^(τμημα|σμημα|διευθυνση|υπηρεσια|γραφειο|νομαρχ|δημο[συ]?|περιφερ|τομεα[σς]?|συμβουλιο|επιτροπη)(?:\s|$|[,.:·])/iu;
 
-const extractTargetAfterLabel = (rawText: string): string | null => {
-  const match = rawText.match(
-    /(?:ΠΡΟΣ|Προς|Αποδέκτης|Παραλήπτης)\s*[:：]\s*([^\n\r]{3,120})/u,
-  );
+const COMPANY_MARKER =
+  /\b(α\.?\s*ε\.?|αε\b|ι\.?κ\.?ε\.?|ικε\b|ε\.?π\.?ε\.?|επε\b|ο\.?\s*ε\.?|ε\.?\s*ε\.?|ltd|llc|s\.?a\.?)\b/iu;
+
+/**
+ * ΠΡΟΣ / Αποδέκτης — tolerate mis-encoded Σ (U+03A2), optional colon,
+ * and vendor name on the following line. Do not match ΠΡΟΣΚΛΗΣΗ.
+ */
+const PROS_LABEL =
+  /(?:^|[\s\n\r])(?:ΠΡΟΣ|Προς|ΠΡΟ[\u03A3\u03A2ςσ])(?![ΚκΛλΗηΙι])\s*[:：]?\s*(?:\r?\n\s*)?([^\n\r]{2,120})/u;
+
+const normalize = softNormalizeGreek;
+
+/**
+ * Fuzzy: "δεν λαμβάνονται … προσφορ… οικονομικ… φορ… που δεν προσκληθ…"
+ * Survives common glyph swaps (υπόψθ, προςφορζσ, φορζων, …).
+ */
+const fuzzyNonInvitedRejected = (soft: string): boolean => {
+  if (
+    /δεν\s+λαμβαν\w{0,12}\s+υπο\w{0,8}\s+προ[σς]φορ.{0,80}?οικονομικ.{0,40}?φορ.{0,50}?δεν\s+προ[σς]κληθ/u.test(
+      soft,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /δεν\s+(γινονται|γινονται)\s+δεκτ\w{0,8}\s+προ[σς]φορ.{0,80}?δεν\s+προ[σς]κληθ/u.test(
+      soft,
+    )
+  ) {
+    return true;
+  }
+  // Short bridge: δεν λαμβαν… + δεν προσκληθ within a window
+  if (
+    /δεν\s+λαμβαν\w{0,12}.{0,120}?δεν\s+προ[σς]κληθ/u.test(soft) &&
+    /προ[σς]φορ|οικονομικ|φορ[εε]ων|φορζων/u.test(soft)
+  ) {
+    return true;
+  }
+  return false;
+};
+
+export const extractTargetAfterLabel = (rawText: string): string | null => {
+  const repaired = repairGreekPdfText(rawText);
+  const match = repaired.match(PROS_LABEL);
   if (!match?.[1]) return null;
 
   const candidate = match[1]
@@ -51,8 +93,21 @@ const extractTargetAfterLabel = (rawText: string): string | null => {
 
   if (candidate.length < 3) return null;
 
-  const generic = /γενικ[ήη]|κοιν[όο]|ενδιαφερομεν|οικονομικ[οό]υς φορε/iu;
-  if (generic.test(candidate)) return null;
+  const soft = normalize(candidate);
+  if (
+    /γενικ[ηη]|κοιν[οο]|ενδιαφερομεν|οικονομικ[οο]υς\s*φορε|ολουσ\s*τουσ/u.test(
+      soft,
+    )
+  ) {
+    return null;
+  }
+
+  // Internal memo routing (e.g. ΠΡΟΣ: Τμήμα Προμηθειών) is not a supplier.
+  if (INTERNAL_RECIPIENT.test(soft)) return null;
+
+  // Prefer clear economic-operator markers; otherwise accept non-internal names
+  // of reasonable length (covers "Dotsoft Α.Ε." and similar).
+  if (!COMPANY_MARKER.test(candidate) && candidate.length < 5) return null;
 
   return candidate.slice(0, 120);
 };
@@ -68,23 +123,25 @@ export const classifyPdfText = (text: string): PdfClassification => {
     };
   }
 
-  const normalized = normalize(text);
+  const repaired = repairGreekPdfText(text);
+  const soft = normalize(repaired);
   let advancedPhraseHits = 0;
 
   for (const phrase of ADVANCED_PHRASES) {
-    if (normalized.includes(normalize(phrase))) {
+    if (soft.includes(phrase)) {
       advancedPhraseHits += 1;
     }
   }
 
-  const strongAward = STRONG_AWARD_PHRASES.some((phrase) =>
-    normalized.includes(normalize(phrase)),
-  );
+  const strongAward = STRONG_AWARD_PHRASES.some((phrase) => soft.includes(phrase));
 
-  const nonInvitedOffersRejected = NON_INVITED_PHRASES.some((phrase) =>
-    normalized.includes(normalize(phrase)),
+  const nonInvitedExact = NON_INVITED_EXACT.some((phrase) =>
+    soft.includes(normalize(phrase)),
   );
-  const targetedSupplierName = extractTargetAfterLabel(text);
+  const nonInvitedOffersRejected =
+    nonInvitedExact || fuzzyNonInvitedRejected(soft);
+
+  const targetedSupplierName = extractTargetAfterLabel(repaired);
   const targetedSupplier =
     Boolean(targetedSupplierName) || nonInvitedOffersRejected;
 

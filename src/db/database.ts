@@ -128,6 +128,85 @@ export const openDatabase = (databasePath: string): Database.Database => {
   addColumnIfMissing(db, "tenders", "invited_vendor_name", "TEXT");
   addColumnIfMissing(db, "tenders", "our_invitation_status", "TEXT");
 
+  // Classification re-eval + alert debugging
+  addColumnIfMissing(db, "tenders", "classification_version", "INTEGER");
+  addColumnIfMissing(db, "tenders", "source_fingerprint", "TEXT");
+  addColumnIfMissing(db, "tenders", "alert_eligibility_reason", "TEXT");
+
+  // Durable early-outreach ledger — survives tender row rebuild / volume quirks
+  // when we re-apply on insert. Not deleted by poll reclassify.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS outreach_ledger (
+      reference_number TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'NOT_STARTED',
+      subject TEXT,
+      body TEXT,
+      notes TEXT,
+      recipient TEXT,
+      sent_at TEXT,
+      updated_at TEXT NOT NULL,
+      payload_json TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_outreach_ledger_status
+      ON outreach_ledger(status);
+    CREATE INDEX IF NOT EXISTS idx_outreach_ledger_sent
+      ON outreach_ledger(sent_at);
+  `);
+
+  // Backfill ledger from any existing SENT/DRAFT outreach already on tenders.
+  try {
+    const rows = db
+      .prepare(
+        `SELECT reference_number, drafts_json FROM tenders
+         WHERE drafts_json IS NOT NULL AND drafts_json != ''`,
+      )
+      .all() as Array<{ reference_number: string; drafts_json: string }>;
+    const insert = db.prepare(`
+      INSERT INTO outreach_ledger (
+        reference_number, status, subject, body, notes, recipient, sent_at, updated_at, payload_json
+      ) VALUES (
+        @reference_number, @status, @subject, @body, @notes, @recipient, @sent_at, @updated_at, @payload_json
+      )
+      ON CONFLICT(reference_number) DO NOTHING
+    `);
+    const tx = db.transaction(() => {
+      for (const row of rows) {
+        try {
+          const parsed = JSON.parse(row.drafts_json) as {
+            outreach?: {
+              status?: string;
+              subject?: string | null;
+              body?: string | null;
+              notes?: string | null;
+              recipient?: string | null;
+              sentAt?: string | null;
+              updatedAt?: string | null;
+            };
+          };
+          const o = parsed.outreach;
+          if (!o?.status || o.status === "NOT_STARTED") continue;
+          if (!o.subject && !o.body && o.status !== "SENT") continue;
+          insert.run({
+            reference_number: row.reference_number,
+            status: o.status,
+            subject: o.subject ?? null,
+            body: o.body ?? null,
+            notes: o.notes ?? null,
+            recipient: o.recipient ?? null,
+            sent_at: o.sentAt ?? null,
+            updated_at: o.updatedAt ?? new Date().toISOString(),
+            payload_json: JSON.stringify(o),
+          });
+        } catch {
+          // skip bad JSON
+        }
+      }
+    });
+    tx();
+  } catch {
+    // older DBs without drafts_json column yet — ignore
+  }
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tenders_notified_at ON tenders(notified_at);
     CREATE INDEX IF NOT EXISTS idx_tenders_score ON tenders(score);

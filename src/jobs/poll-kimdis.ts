@@ -13,6 +13,11 @@ import {
   isDeadlineInPast,
 } from "../filters/slack-eligibility.js";
 import {
+  CLASSIFICATION_VERSION,
+  buildSourceFingerprint,
+  shouldReevaluateTender,
+} from "../filters/classification-meta.js";
+import {
   isWebRelevant,
   webCategorySlackLabel,
   type RelevanceStatus,
@@ -24,6 +29,7 @@ import type { Repository } from "../db/repository.js";
 import type { SlackClient } from "../slack/client.js";
 import {
   formatBootstrapMessage,
+  formatBootstrapSummaryMessage,
   formatSlackMessage,
 } from "../slack/format-message.js";
 import { applyProcRelationAndInvitation } from "../relations/apply-proc-relation.js";
@@ -37,6 +43,9 @@ export type PollResult = {
   bootstrap: boolean;
   durationMs: number;
 };
+
+/** Recent window for bootstrap high-priority summary (hours). */
+const BOOTSTRAP_RECENT_HOURS = 48;
 
 const CONTRACT_TYPES = ["9", "14"] as const;
 
@@ -148,10 +157,43 @@ export const createPollJob = (deps: {
 
   const processRecord = async (
     record: NormalizedRecord,
-    options: { bootstrap: boolean; sendAlerts: boolean },
-  ): Promise<{ isNew: boolean; matching: boolean; notified: boolean }> => {
+    options: {
+      bootstrap: boolean;
+      sendAlerts: boolean;
+      bootstrapHighlights: Array<{
+        adam: string;
+        title: string;
+        score: number;
+        organization: string;
+      }>;
+    },
+  ): Promise<{ isNew: boolean; matching: boolean; notified: boolean; reevaluated: boolean }> => {
+    const fingerprint = buildSourceFingerprint({
+      recordType: record.recordType,
+      title: record.title,
+      description: record.description,
+      organization: record.organization,
+      cpvs: record.cpvs,
+      budgetWithoutVat: record.budgetWithoutVat,
+      finalSubmissionDate: record.finalSubmissionDate,
+      hasNoticeRef: record.hasNoticeRef,
+    });
+
     const existing = deps.repo.findByAdam(record.adam);
-    if (existing) {
+    const needsReeval =
+      !existing ||
+      shouldReevaluateTender({
+        storedVersion: existing.classification_version,
+        storedFingerprint: existing.source_fingerprint,
+        currentFingerprint: fingerprint,
+        score: existing.score,
+        relevanceStatus: existing.relevance_status,
+        pdfTextStatus: existing.pdf_text_status,
+        recordType: record.recordType,
+        webRelevant: existing.web_relevant,
+      });
+
+    if (existing && !needsReeval) {
       deps.repo.upsertNewOrTouch({
         referenceNumber: record.adam,
         recordType: record.recordType,
@@ -181,8 +223,18 @@ export const createPollJob = (deps: {
         reviewReason: existing.review_reason,
         rawJson: record.raw,
         nowIso: new Date().toISOString(),
+        classificationVersion: existing.classification_version,
+        sourceFingerprint: existing.source_fingerprint,
+        alertEligibilityReason: existing.alert_eligibility_reason,
       });
-      return { isNew: false, matching: false, notified: false };
+      return { isNew: false, matching: false, notified: false, reevaluated: false };
+    }
+
+    const isNew = !existing;
+    if (existing && needsReeval) {
+      console.log(
+        `re-eval ${record.adam} version=${existing.classification_version ?? "null"}→${CLASSIFICATION_VERSION} fingerprintChanged=${(existing.source_fingerprint ?? "") !== fingerprint}`,
+      );
     }
 
     let pdfText = "";
@@ -190,10 +242,11 @@ export const createPollJob = (deps: {
     let pdfClassification = classifyPdfText("");
     let stage = record.recordType === "REQ" ? "EARLY" : "UNKNOWN";
 
-    const shouldFetchPdf =
-      record.recordType === "PROC"
-        ? maybeWorthPdf(record.title, record.description, record.cpvs)
-        : maybeWorthPdf(record.title, record.description, record.cpvs);
+    const shouldFetchPdf = maybeWorthPdf(
+      record.title,
+      record.description,
+      record.cpvs,
+    );
 
     if (shouldFetchPdf) {
       try {
@@ -331,7 +384,30 @@ export const createPollJob = (deps: {
     const pdfUrl = deps.kimdis.pdfUrl(record.recordType, record.adam);
     const nowIso = new Date().toISOString();
 
-    deps.repo.upsertNewOrTouch({
+    const eligibility = evaluateSlackEligibility({
+      recordType: record.recordType,
+      isWebRelevant: relevance.isWebRelevant && relevanceStatus === "RELEVANT",
+      category: relevance.category,
+      relevanceStatus,
+      score,
+      threshold: deps.config.ALERT_SCORE_THRESHOLD,
+      hasNoticeRef: record.hasNoticeRef,
+      alreadyAdvanced: pdfClassification.stage === "ALREADY_ADVANCED",
+      targetedSupplier: pdfClassification.targetedSupplier,
+      nonInvitedOffersRejected: pdfClassification.nonInvitedOffersRejected,
+      pdfTextStatus,
+      finalSubmissionDate: record.finalSubmissionDate,
+    });
+
+    let alertEligibilityReason = eligibility.code;
+    if (options.bootstrap && eligibility.eligible && !options.sendAlerts) {
+      alertEligibilityReason = "BOOTSTRAP_SUPPRESSED";
+    }
+    if (!options.bootstrap && eligibility.eligible && existing?.notified_at) {
+      alertEligibilityReason = "ALREADY_NOTIFIED";
+    }
+
+    const persistInput = {
       referenceNumber: record.adam,
       recordType: record.recordType,
       title: record.title,
@@ -357,7 +433,16 @@ export const createPollJob = (deps: {
       reviewReason,
       rawJson: record.raw,
       nowIso,
-    });
+      classificationVersion: CLASSIFICATION_VERSION,
+      sourceFingerprint: fingerprint,
+      alertEligibilityReason,
+    };
+
+    if (isNew) {
+      deps.repo.upsertNewOrTouch(persistInput);
+    } else {
+      deps.repo.updateExistingClassification(persistInput);
+    }
 
     let relationApply: ReturnType<typeof applyProcRelationAndInvitation> = null;
     if (record.recordType === "PROC") {
@@ -373,21 +458,6 @@ export const createPollJob = (deps: {
       );
     }
 
-    const eligibility = evaluateSlackEligibility({
-      recordType: record.recordType,
-      isWebRelevant: relevance.isWebRelevant && relevanceStatus === "RELEVANT",
-      category: relevance.category,
-      relevanceStatus,
-      score,
-      threshold: deps.config.ALERT_SCORE_THRESHOLD,
-      hasNoticeRef: record.hasNoticeRef,
-      alreadyAdvanced: pdfClassification.stage === "ALREADY_ADVANCED",
-      targetedSupplier: pdfClassification.targetedSupplier,
-      nonInvitedOffersRejected: pdfClassification.nonInvitedOffersRejected,
-      pdfTextStatus,
-      finalSubmissionDate: record.finalSubmissionDate,
-    });
-
     const matching = eligibility.eligible;
 
     const parentAdam =
@@ -396,7 +466,7 @@ export const createPollJob = (deps: {
     if (parentAdam) {
       const parentRow = deps.repo.findByAdam(parentAdam);
       if (parentRow) {
-        const parentDrafts = deps.repo.parseDrafts(parentRow.drafts_json);
+        const parentDrafts = deps.repo.resolveDrafts(parentRow);
         parentOutreachSent = parentDrafts.outreach.status === "SENT";
       }
     }
@@ -420,16 +490,47 @@ export const createPollJob = (deps: {
     // only when there is no follow-up relation.
     const alertAsMatch = matching && !relationFollowUp;
 
+    const alreadyNotified = Boolean(
+      existing?.notified_at ?? deps.repo.wasNotified(record.adam),
+    );
+
+    const publishedAt = record.submissionDate ?? record.signedDate;
+    const recentBootstrap =
+      options.bootstrap &&
+      matching &&
+      publishedAt != null &&
+      Date.now() - new Date(publishedAt).getTime() <=
+        BOOTSTRAP_RECENT_HOURS * 3600_000;
+
+    if (recentBootstrap) {
+      options.bootstrapHighlights.push({
+        adam: record.adam,
+        title: record.title,
+        score,
+        organization: record.organization,
+      });
+    }
+
     if (
       (!alertAsMatch && !relationSlack) ||
       !options.sendAlerts ||
       options.bootstrap
     ) {
-      return { isNew: true, matching, notified: false };
+      return {
+        isNew,
+        matching,
+        notified: false,
+        reevaluated: !isNew,
+      };
     }
 
-    if (deps.repo.wasNotified(record.adam)) {
-      return { isNew: true, matching, notified: false };
+    if (alreadyNotified) {
+      return {
+        isNew,
+        matching,
+        notified: false,
+        reevaluated: !isNew,
+      };
     }
 
     const budgetInRange =
@@ -485,11 +586,21 @@ export const createPollJob = (deps: {
 
     const sent = await deps.slack.sendText(text);
     if (!sent) {
-      return { isNew: true, matching, notified: false };
+      return {
+        isNew,
+        matching,
+        notified: false,
+        reevaluated: !isNew,
+      };
     }
 
     deps.repo.markNotified(record.adam, new Date().toISOString());
-    return { isNew: true, matching, notified: true };
+    return {
+      isNew,
+      matching,
+      notified: true,
+      reevaluated: !isNew,
+    };
   };
 
   const run = async (): Promise<PollResult> => {
@@ -547,16 +658,43 @@ export const createPollJob = (deps: {
       let newCount = 0;
       let matching = 0;
       let notified = 0;
+      let reevaluated = 0;
+      const bootstrapHighlights: Array<{
+        adam: string;
+        title: string;
+        score: number;
+        organization: string;
+      }> = [];
 
       for (const record of unique.values()) {
-        const result = await processRecord(record, { bootstrap, sendAlerts });
+        const result = await processRecord(record, {
+          bootstrap,
+          sendAlerts,
+          bootstrapHighlights,
+        });
         if (result.isNew) newCount += 1;
         if (result.matching) matching += 1;
         if (result.notified) notified += 1;
+        if (result.reevaluated) reevaluated += 1;
       }
 
       if (bootstrap) {
-        await deps.slack.sendText(formatBootstrapMessage());
+        bootstrapHighlights.sort((a, b) => b.score - a.score);
+        const summaryText =
+          bootstrapHighlights.length > 0
+            ? formatBootstrapSummaryMessage({
+                highPriorityCount: bootstrapHighlights.length,
+                recentHours: BOOTSTRAP_RECENT_HOURS,
+                examples: bootstrapHighlights.slice(0, 5),
+              })
+            : formatBootstrapMessage();
+        await deps.slack.sendText(summaryText);
+
+        // Surfaced via summary — mark notified so we don't flood later polls
+        for (const hit of bootstrapHighlights) {
+          deps.repo.markNotified(hit.adam, new Date().toISOString());
+        }
+
         deps.repo.markBootstrapDone();
       } else if (!deps.repo.isBootstrapDone()) {
         deps.repo.markBootstrapDone();
@@ -566,7 +704,7 @@ export const createPollJob = (deps: {
 
       const durationMs = Date.now() - started;
       console.log(
-        `poll done fetched=${unique.size} new=${newCount} matching=${matching} notified=${notified} durationMs=${durationMs}`,
+        `poll done fetched=${unique.size} new=${newCount} matching=${matching} notified=${notified} reevaluated=${reevaluated} durationMs=${durationMs}`,
       );
 
       return {

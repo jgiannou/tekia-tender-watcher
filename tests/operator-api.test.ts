@@ -77,13 +77,14 @@ const seedTender = (
 describe("operator API + submission workflow", () => {
   let dir: string;
   let dbPath: string;
+  let db: ReturnType<typeof openDatabase>;
   let repo: ReturnType<typeof createRepository>;
   let app: ReturnType<typeof createOperatorRoutes>;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "tekia-ops-"));
     dbPath = join(dir, "tenders.db");
-    const db = openDatabase(dbPath);
+    db = openDatabase(dbPath);
     repo = createRepository(db);
     app = createOperatorRoutes({
       operatorToken: TOKEN,
@@ -95,6 +96,7 @@ describe("operator API + submission workflow", () => {
   });
 
   afterEach(() => {
+    db.close();
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -430,7 +432,112 @@ describe("operator API + submission workflow", () => {
     expect(res.status).toBe(400);
   });
 
-  it("keeps cloud external sending disabled and free of send symbols in src", () => {
+  it("persists outreach draft subject/body/notes on PATCH and returns them on GET", async () => {
+    seedTender(repo, "26REQ019897367");
+
+    const patch = await app.request(
+      "/api/operator/tenders/26REQ019897367",
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Operator-Token": TOKEN,
+        },
+        body: JSON.stringify({
+          drafts: {
+            outreach: {
+              status: "DRAFT",
+              subject: "TEKIA",
+              body: "Αξιότιμοι κύριοι,\nΕκδήλωση ενδιαφέροντος.",
+              notes: "Σημείωση χειριστή",
+            },
+          },
+        }),
+      },
+    );
+    expect(patch.status).toBe(200);
+    const patched = await patch.json();
+    expect(patched.tender.drafts.outreach.subject).toBe("TEKIA");
+    expect(patched.tender.drafts.outreach.body).toContain("Εκδήλωση ενδιαφέροντος");
+    expect(patched.tender.drafts.outreach.notes).toBe("Σημείωση χειριστή");
+    expect(patched.tender.drafts.outreach.status).toBe("DRAFT");
+
+    const get = await app.request("/api/operator/tenders/26REQ019897367", {
+      headers: { "X-Operator-Token": TOKEN },
+    });
+    expect(get.status).toBe(200);
+    const got = await get.json();
+    expect(got.drafts.outreach.subject).toBe("TEKIA");
+    expect(got.drafts.outreach.body).toContain("Εκδήλωση ενδιαφέροντος");
+    expect(got.drafts.outreach.notes).toBe("Σημείωση χειριστή");
+  });
+
+  it("restores SENT outreach from durable ledger after tender row rebuild", async () => {
+    seedTender(repo, "26REQ-LEDGER");
+
+    const send = await app.request(
+      "/api/operator/tenders/26REQ-LEDGER/outreach/send",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Operator-Token": TOKEN,
+        },
+        body: JSON.stringify({
+          sentAt: "2026-10-02T10:00:00.000Z",
+          subject: "Εκδήλωση ενδιαφέροντος",
+          notes: "στάλθηκε",
+        }),
+      },
+    );
+    expect(send.status).toBe(200);
+
+    // Simulate Coolify tender wipe: delete tender row but keep ledger.
+    db.prepare("DELETE FROM tender_events WHERE tender_reference_number = ?").run(
+      "26REQ-LEDGER",
+    );
+    db.prepare("DELETE FROM tenders WHERE reference_number = ?").run("26REQ-LEDGER");
+    expect(repo.findByAdam("26REQ-LEDGER")).toBeUndefined();
+
+    // Poll-like re-insert
+    repo.upsertNewOrTouch({
+      referenceNumber: "26REQ-LEDGER",
+      recordType: "REQ",
+      title: "Ιστοσελίδα",
+      organization: "ΔΕΥΑΝ",
+      submissionDate: "2026-10-01T00:00:00.000Z",
+      signedDate: null,
+      finalSubmissionDate: null,
+      budgetWithoutVat: 5000,
+      budgetWithVat: 6200,
+      cpvs: ["72413000-8"],
+      score: 80,
+      stage: "EARLY",
+      targetedSupplier: false,
+      nonInvitedOffersRejected: false,
+      pdfTextStatus: "skipped",
+      officialPdfUrl: "https://example.com/pdf",
+      publicKimdisUrl: "https://example.com/kimdis",
+      scoreReasons: [],
+      webRelevant: true,
+      webCategory: "WEBSITE",
+      relevanceStatus: "RELEVANT",
+      ignoreReason: null,
+      reviewReason: null,
+      rawJson: {},
+      nowIso: new Date().toISOString(),
+    });
+
+    const got = await app.request("/api/operator/tenders/26REQ-LEDGER", {
+      headers: { "X-Operator-Token": TOKEN },
+    });
+    const body = await got.json();
+    expect(body.drafts.outreach.status).toBe("SENT");
+    expect(body.drafts.outreach.subject).toContain("Εκδήλωση");
+    expect(body.monitoring.state).toBe("WAITING_FOR_INVITATION");
+  });
+
+  it("keeps cloud external sending disabled and free of send symbols in src", async () => {
     assertCloudCannotSend();
     expect(CLOUD_EXTERNAL_SENDING_ENABLED).toBe(false);
 

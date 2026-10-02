@@ -22,6 +22,11 @@ import {
   getConnectionPublic,
   saveConnection,
 } from "./secure-store.js";
+import {
+  getCachedOutreach,
+  localOutreachIsNewer,
+  saveCachedOutreach,
+} from "./outreach-cache.js";
 import { isAllowedExternalUrl, parseDeepLink } from "./url-safety.js";
 import {
   isOnScreen,
@@ -357,10 +362,158 @@ const registerIpc = (): void => {
         throw new CloudApiError(0, "error", "Only operator API paths are allowed");
       }
       try {
-        return await requestCloudApi(payload.path, {
+        const result = await requestCloudApi(payload.path, {
           method: payload.method,
           body: payload.body,
         });
+
+        const method = (payload.method ?? "GET").toUpperCase();
+        const tenderMatch = payload.path.match(
+          /^\/api\/operator\/tenders\/([^/?]+)(?:\/outreach\/send)?$/,
+        );
+        const adam = tenderMatch
+          ? decodeURIComponent(tenderMatch[1]!)
+          : null;
+
+        const asRecord = (value: unknown): Record<string, unknown> | null =>
+          value && typeof value === "object"
+            ? (value as Record<string, unknown>)
+            : null;
+
+        const cacheOutreachFromTender = (tender: Record<string, unknown>) => {
+          const drafts = asRecord(tender.drafts);
+          const outreach = asRecord(drafts?.outreach);
+          if (!outreach) return;
+          const ref =
+            typeof tender.referenceNumber === "string"
+              ? tender.referenceNumber
+              : adam;
+          if (!ref) return;
+          saveCachedOutreach({
+            referenceNumber: ref,
+            status: String(outreach.status ?? "NOT_STARTED"),
+            subject:
+              typeof outreach.subject === "string" ? outreach.subject : null,
+            body: typeof outreach.body === "string" ? outreach.body : null,
+            notes: typeof outreach.notes === "string" ? outreach.notes : null,
+            recipient:
+              typeof outreach.recipient === "string"
+                ? outreach.recipient
+                : null,
+            sentAt:
+              typeof outreach.sentAt === "string" ? outreach.sentAt : null,
+            updatedAt:
+              typeof outreach.updatedAt === "string"
+                ? outreach.updatedAt
+                : new Date().toISOString(),
+          });
+        };
+
+        // Persist successful outreach writes locally (survives Coolify DB wipe).
+        if (
+          adam &&
+          (method === "PATCH" || method === "POST") &&
+          result &&
+          typeof result === "object"
+        ) {
+          const root = asRecord(result);
+          const tender = asRecord(root?.tender) ?? root;
+          if (tender?.drafts) cacheOutreachFromTender(tender);
+        }
+
+        // On tender GET: if local cache is ahead of server, re-push then return.
+        if (adam && method === "GET" && result && typeof result === "object") {
+          const tender = asRecord(result);
+          const drafts = asRecord(tender?.drafts);
+          const serverOutreach = asRecord(drafts?.outreach);
+          const local = getCachedOutreach(adam);
+          if (
+            local &&
+            localOutreachIsNewer(local, {
+              status: serverOutreach?.status as string | null,
+              updatedAt: serverOutreach?.updatedAt as string | null,
+              sentAt: serverOutreach?.sentAt as string | null,
+              subject: serverOutreach?.subject as string | null,
+              body: serverOutreach?.body as string | null,
+            })
+          ) {
+            try {
+              if (local.status === "SENT") {
+                const restored = await requestCloudApi<{
+                  tender: Record<string, unknown>;
+                }>(`/api/operator/tenders/${encodeURIComponent(adam)}/outreach/send`, {
+                  method: "POST",
+                  body: JSON.stringify({
+                    sentAt: local.sentAt ?? local.updatedAt,
+                    recipient: local.recipient,
+                    subject: local.subject,
+                    notes: local.notes,
+                  }),
+                });
+                // Also restore body via PATCH (send endpoint may not write body).
+                if (local.body || local.subject) {
+                  const patched = await requestCloudApi<{
+                    tender: Record<string, unknown>;
+                  }>(`/api/operator/tenders/${encodeURIComponent(adam)}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({
+                      drafts: {
+                        outreach: {
+                          status: "SENT",
+                          subject: local.subject,
+                          body: local.body,
+                          notes: local.notes,
+                          recipient: local.recipient,
+                          sentAt: local.sentAt,
+                          updatedAt: local.updatedAt,
+                        },
+                      },
+                    }),
+                  });
+                  cacheOutreachFromTender(patched.tender);
+                  return patched.tender;
+                }
+                cacheOutreachFromTender(restored.tender);
+                return restored.tender;
+              }
+
+              const patched = await requestCloudApi<Record<string, unknown>>(
+                `/api/operator/tenders/${encodeURIComponent(adam)}`,
+                {
+                  method: "PATCH",
+                  body: JSON.stringify({
+                    drafts: {
+                      outreach: {
+                        status: local.status,
+                        subject: local.subject,
+                        body: local.body,
+                        notes: local.notes,
+                        recipient: local.recipient,
+                        sentAt: local.sentAt,
+                        updatedAt: local.updatedAt,
+                      },
+                    },
+                  }),
+                },
+              );
+              const patchedTender =
+                asRecord(asRecord(patched)?.tender) ?? asRecord(patched);
+              if (patchedTender) {
+                cacheOutreachFromTender(patchedTender);
+                return patchedTender;
+              }
+            } catch (restoreErr) {
+              console.warn(
+                "local outreach restore failed:",
+                restoreErr instanceof Error ? restoreErr.message : restoreErr,
+              );
+            }
+          } else if (tender?.drafts) {
+            cacheOutreachFromTender(tender);
+          }
+        }
+
+        return result;
       } catch (error) {
         if (error instanceof CloudApiError) {
           return {

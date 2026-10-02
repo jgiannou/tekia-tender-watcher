@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   api,
@@ -33,6 +33,25 @@ import {
 
 const draftKeys = ["outreach", "technical", "economic", "declarations"] as const;
 type DraftKey = (typeof draftKeys)[number];
+
+type DraftEditorForm = {
+  status: DraftPackage["status"];
+  subject: string;
+  body: string;
+  notes: string;
+  amountWithoutVat: string;
+};
+
+const toDraftEditorForm = (draft: DraftPackage): DraftEditorForm => ({
+  status: draft.status === "NOT_STARTED" ? "DRAFT" : draft.status,
+  subject: draft.subject ?? "",
+  body: draft.body ?? "",
+  notes: draft.notes ?? "",
+  amountWithoutVat:
+    draft.amountWithoutVat != null ? String(draft.amountWithoutVat) : "",
+});
+
+const DRAFT_AUTOSAVE_MS = 700;
 
 type VaultChecklistItem = {
   key: string;
@@ -88,6 +107,16 @@ export const TenderDetailPage = () => {
   const [savingDetails, setSavingDetails] = useState(false);
   const [draftEditorKey, setDraftEditorKey] = useState(0);
   const [loadingDriveText, setLoadingDriveText] = useState(false);
+  const [draftEditorForm, setDraftEditorForm] = useState<DraftEditorForm | null>(
+    null,
+  );
+  const [draftSaveState, setDraftSaveState] = useState<
+    "idle" | "dirty" | "saving" | "saved" | "error"
+  >("idle");
+  const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
+  const draftAutosaveSeq = useRef(0);
+  const draftFormRef = useRef<DraftEditorForm | null>(null);
+  const editingDraftRef = useRef<DraftKey | null>(null);
   const [showOutreachSendForm, setShowOutreachSendForm] = useState(false);
   const [outreachSendForm, setOutreachSendForm] = useState({
     sentAt: "",
@@ -173,6 +202,93 @@ export const TenderDetailPage = () => {
     void load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referenceNumber]);
+
+  useEffect(() => {
+    draftFormRef.current = draftEditorForm;
+  }, [draftEditorForm]);
+
+  useEffect(() => {
+    editingDraftRef.current = editingDraft;
+  }, [editingDraft]);
+
+  const persistDraftToServer = async (
+    key: DraftKey,
+    form: DraftEditorForm,
+    options?: { silent?: boolean },
+  ): Promise<boolean> => {
+    if (!tender) return false;
+    const seq = ++draftAutosaveSeq.current;
+    setDraftSaveState("saving");
+    setDraftSaveError(null);
+    const next: DraftPackage = {
+      ...tender.drafts[key],
+      status: form.status,
+      subject: form.subject.trim() || null,
+      body: form.body.trim() || null,
+      notes: form.notes.trim() || null,
+      amountWithoutVat:
+        key === "economic" && form.amountWithoutVat.trim()
+          ? Number(form.amountWithoutVat)
+          : tender.drafts[key].amountWithoutVat ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      const result = await api.patchTender(referenceNumber, {
+        drafts: { [key]: next },
+      });
+      // Ignore stale responses if a newer save started.
+      if (seq !== draftAutosaveSeq.current) return true;
+      setTender(result.tender);
+      setDraftSaveState("saved");
+      if (!options?.silent) {
+        setMessage(
+          result.approvalInvalidated
+            ? "Αποθηκεύτηκε στον server. Η έγκριση ακυρώθηκε λόγω ουσιαστικών αλλαγών."
+            : "Αποθηκεύτηκε στον server.",
+        );
+      }
+      return true;
+    } catch (err) {
+      if (seq !== draftAutosaveSeq.current) return false;
+      const detail = err instanceof Error ? err.message : String(err);
+      setDraftSaveState("error");
+      setDraftSaveError(detail);
+      setError(`Αποτυχία αποθήκευσης προχείρου στον server: ${detail}`);
+      return false;
+    }
+  };
+
+  // Debounced autosave — server is source of truth for draft fields.
+  useEffect(() => {
+    if (!editingDraft || !draftEditorForm || draftSaveState !== "dirty") return;
+    const timer = window.setTimeout(() => {
+      void persistDraftToServer(editingDraft, draftEditorForm, { silent: true });
+    }, DRAFT_AUTOSAVE_MS);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftEditorForm, editingDraft, draftSaveState]);
+
+  const openDraftEditor = (key: DraftKey, draft: DraftPackage) => {
+    const form = toDraftEditorForm(draft);
+    setDraftEditorForm(form);
+    draftFormRef.current = form;
+    setDraftSaveState("idle");
+    setDraftSaveError(null);
+    setDraftEditorKey((n) => n + 1);
+    setEditingDraft(key);
+  };
+
+  const closeDraftEditor = async () => {
+    const key = editingDraftRef.current;
+    const form = draftFormRef.current;
+    if (key && form && draftSaveState === "dirty") {
+      await persistDraftToServer(key, form, { silent: false });
+    }
+    setEditingDraft(null);
+    setDraftEditorForm(null);
+    setDraftSaveState("idle");
+    setDraftSaveError(null);
+  };
 
   useEffect(() => {
     if (!isDesktop() || !window.tekia?.drive) {
@@ -332,7 +448,9 @@ export const TenderDetailPage = () => {
       );
       if (result.driveUrl) void openExternalUrl(result.driveUrl);
       await refreshDriveDocuments();
-      if (templateKey === "earlyOutreach") setEditingDraft("outreach");
+      if (templateKey === "earlyOutreach" && tender) {
+        openDraftEditor("outreach", tender.drafts.outreach);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -456,11 +574,11 @@ export const TenderDetailPage = () => {
         drafts: { [key]: next },
       });
       setTender(result.tender);
-      setEditingDraft(key);
+      openDraftEditor(key, result.tender.drafts[key]);
       setMessage(
         result.approvalInvalidated
-          ? "Το πρόχειρο ενημερώθηκε. Η έγκριση ακυρώθηκε."
-          : "Το πρόχειρο προετοιμάστηκε (χωρίς αποστολή).",
+          ? "Το πρόχειρο ενημερώθηκε στον server. Η έγκριση ακυρώθηκε."
+          : "Το πρόχειρο προετοιμάστηκε και αποθηκεύτηκε στον server.",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -473,8 +591,11 @@ export const TenderDetailPage = () => {
       OUTREACH_DRIVE_DOC_TYPES.has(d.type),
     );
     if (existingDrive) {
-      void openExternalUrl(existingDrive.driveUrl);
-      setEditingDraft("outreach");
+      // Prefer server draft as source of truth; Drive is optional import.
+      openDraftEditor("outreach", tender.drafts.outreach);
+      setMessage(
+        "Εμφανίζονται τα αποθηκευμένα δεδομένα από τον server. Χρησιμοποίησε «Φόρτωση από Drive» αν θέλεις το Google Doc.",
+      );
       return;
     }
     if (isDesktop() && window.tekia?.drive) {
@@ -489,32 +610,20 @@ export const TenderDetailPage = () => {
     key: DraftKey,
   ) => {
     event.preventDefault();
-    if (!tender) return;
-    const form = new FormData(event.currentTarget);
-    const next: DraftPackage = {
-      ...tender.drafts[key],
-      status: String(form.get("status") || "DRAFT") as DraftPackage["status"],
-      subject: String(form.get("subject") || "") || null,
-      body: String(form.get("body") || "") || null,
-      notes: String(form.get("notes") || "") || null,
-      amountWithoutVat: form.get("amountWithoutVat")
-        ? Number(form.get("amountWithoutVat"))
-        : null,
-      updatedAt: new Date().toISOString(),
-    };
-    try {
-      const result = await api.patchTender(referenceNumber, {
-        drafts: { [key]: next },
-      });
-      setTender(result.tender);
-      setMessage(
-        result.approvalInvalidated
-          ? "Αποθηκεύτηκε. Η έγκριση ακυρώθηκε λόγω ουσιαστικών αλλαγών."
-          : "Το πρόχειρο αποθηκεύτηκε.",
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
+    if (!draftEditorForm) return;
+    const ok = await persistDraftToServer(key, draftEditorForm, {
+      silent: false,
+    });
+    if (ok) setDraftSaveState("saved");
+  };
+
+  const updateDraftEditorField = <K extends keyof DraftEditorForm>(
+    field: K,
+    value: DraftEditorForm[K],
+  ) => {
+    setDraftEditorForm((prev) => (prev ? { ...prev, [field]: value } : prev));
+    setDraftSaveState("dirty");
+    setMessage(null);
   };
 
   const handleMarkDraftReady = async (key: DraftKey) => {
@@ -634,97 +743,74 @@ export const TenderDetailPage = () => {
     }
   };
 
-  const handleOpenOutreachEditor = async () => {
+  const handleReloadOutreachFromDrive = async () => {
     if (!tender) return;
-
-    const adam = tender.referenceNumber;
     const driveDoc = driveDocuments.find((d) =>
       OUTREACH_DRIVE_DOC_TYPES.has(d.type),
     );
-
-    if (driveDoc && isDesktop()) {
-      if (!window.tekia?.drive?.readDocument) {
-        setError(
-          "Αυτή η έκδοση της εφαρμογής δεν υποστηρίζει φόρτωση κειμένου από Drive. Κάνε νέο install από το τελευταίο DMG.",
-        );
-        setEditingDraft("outreach");
-        return;
-      }
-
-      setLoadingDriveText(true);
-      setError(null);
-      setMessage(null);
-      try {
-        const result = (await window.tekia.drive.readDocument(driveDoc.id)) as {
-          subject?: string | null;
-          body?: string;
-          __tekiaError?: boolean;
-          message?: string;
-        };
-        if (result?.__tekiaError) {
-          setError(result.message ?? "Αποτυχία ανάγνωσης από το Drive");
-          return;
-        }
-
-        const next: DraftPackage = {
-          ...tender.drafts.outreach,
-          status:
-            tender.drafts.outreach.status === "NOT_STARTED"
-              ? "DRAFT"
-              : tender.drafts.outreach.status,
-          subject: result.subject ?? tender.drafts.outreach.subject,
-          body: result.body?.trim()
-            ? result.body
-            : tender.drafts.outreach.body,
-          updatedAt: new Date().toISOString(),
-        };
-
-        // Always show Drive text locally first — don't block the editor on cloud save.
-        setTender({
-          ...tender,
-          drafts: { ...tender.drafts, outreach: next },
-        });
-        setDraftEditorKey((n) => n + 1);
-        setEditingDraft("outreach");
-        setMessage(
-          result.body?.trim()
-            ? "Το θέμα/περιεχόμενο φορτώθηκε από το Google Doc."
-            : "Το Google Doc φαίνεται κενό ή δεν διαβάστηκε κείμενο.",
-        );
-
-        try {
-          // Persist only schema fields (avoid huge accidental payloads / unknown keys).
-          const patched = await api.patchTender(adam, {
-            drafts: {
-              outreach: {
-                status: next.status,
-                subject: next.subject ?? null,
-                body: next.body ?? null,
-                notes: next.notes ?? null,
-                sentAt: next.sentAt ?? null,
-                recipient: next.recipient ?? null,
-                updatedAt: next.updatedAt ?? null,
-              },
-            },
-          });
-          setTender(patched.tender);
-        } catch (persistErr) {
-          const detail =
-            persistErr instanceof Error ? persistErr.message : String(persistErr);
-          setError(
-            `Το κείμενο εμφανίζεται τοπικά, αλλά δεν αποθηκεύτηκε στο watcher (${detail}). Πάτα Αποθήκευση για νέα προσπάθεια.`,
-          );
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoadingDriveText(false);
-      }
+    if (!driveDoc || !isDesktop() || !window.tekia?.drive?.readDocument) {
+      setError("Δεν υπάρχει Google Doc για φόρτωση από το Drive.");
       return;
     }
 
-    setDraftEditorKey((n) => n + 1);
-    setEditingDraft("outreach");
+    setLoadingDriveText(true);
+    setError(null);
+    try {
+      const result = (await window.tekia.drive.readDocument(driveDoc.id)) as {
+        subject?: string | null;
+        body?: string;
+        __tekiaError?: boolean;
+        message?: string;
+      };
+      if (result?.__tekiaError) {
+        setError(result.message ?? "Αποτυχία ανάγνωσης από το Drive");
+        return;
+      }
+
+      const form: DraftEditorForm = {
+        status:
+          tender.drafts.outreach.status === "NOT_STARTED"
+            ? "DRAFT"
+            : tender.drafts.outreach.status,
+        subject: (result.subject ?? tender.drafts.outreach.subject ?? "").trim(),
+        body: result.body?.trim()
+          ? result.body
+          : (tender.drafts.outreach.body ?? ""),
+        notes: tender.drafts.outreach.notes ?? "",
+        amountWithoutVat: "",
+      };
+      setDraftEditorForm(form);
+      setDraftEditorKey((n) => n + 1);
+      setEditingDraft("outreach");
+      // Persist Drive import to server immediately — server remains source of truth.
+      const ok = await persistDraftToServer("outreach", form, { silent: false });
+      if (ok) {
+        setMessage(
+          "Φορτώθηκε από το Google Doc και αποθηκεύτηκε στον server.",
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingDriveText(false);
+    }
+  };
+
+  const handleOpenOutreachEditor = async () => {
+    if (!tender) return;
+
+    // Always open from server drafts. Drive import is explicit & optional.
+    const serverDraft = tender.drafts.outreach;
+    const hasServerContent = Boolean(
+      serverDraft.subject?.trim() || serverDraft.body?.trim(),
+    );
+
+    openDraftEditor("outreach", serverDraft);
+    setMessage(
+      hasServerContent
+        ? "Φορτώθηκαν τα αποθηκευμένα δεδομένα από τον server."
+        : "Δεν υπάρχουν ακόμα αποθηκευμένα πεδία στον server — συμπλήρωσε και θα αποθηκευτούν αυτόματα.",
+    );
   };
 
   const handleRecordSubmission = async (event: FormEvent<HTMLFormElement>) => {
@@ -918,18 +1004,49 @@ export const TenderDetailPage = () => {
   );
 
   const renderDraftEditor = (key: DraftKey) => {
-    if (editingDraft !== key) return null;
-    const draft = tender.drafts[key];
+    if (editingDraft !== key || !draftEditorForm) return null;
+    const saveLabel =
+      draftSaveState === "saving"
+        ? "Αποθήκευση στον server…"
+        : draftSaveState === "saved"
+          ? "Αποθηκευμένο στον server"
+          : draftSaveState === "dirty"
+            ? "Μη αποθηκευμένες αλλαγές…"
+            : draftSaveState === "error"
+              ? "Σφάλμα αποθήκευσης"
+              : UI.save;
+
     return (
       <form
-        key={`${key}-${draftEditorKey}-${draft.updatedAt ?? "new"}`}
+        key={`${key}-${draftEditorKey}`}
         className="form-grid"
         style={{ width: "100%", marginTop: 10 }}
         onSubmit={(e) => void handleSaveDraft(e, key)}
       >
+        <p className="muted" style={{ margin: 0 }} role="status" aria-live="polite">
+          {draftSaveState === "saving"
+            ? "Αποθήκευση στον server…"
+            : draftSaveState === "saved"
+              ? "✓ Αποθηκευμένο στον server — θα φορτωθεί ξανά από εκεί."
+              : draftSaveState === "dirty"
+                ? "Αλλαγές σε εξέλιξη — αυτόματη αποθήκευση σε λίγο…"
+                : draftSaveState === "error"
+                  ? `Αποτυχία αποθήκευσης: ${draftSaveError ?? "άγνωστο σφάλμα"}`
+                  : "Οι αλλαγές αποθηκεύονται αυτόματα στον server."}
+        </p>
         <label>
           Κατάσταση
-          <select name="status" defaultValue={draft.status}>
+          <select
+            name="status"
+            value={draftEditorForm.status}
+            onChange={(e) =>
+              updateDraftEditorField(
+                "status",
+                e.target.value as DraftPackage["status"],
+              )
+            }
+            aria-label="Κατάσταση προχείρου"
+          >
             <option value="DRAFT">Πρόχειρο</option>
             <option value="READY">Έτοιμο</option>
             <option value="SENT">Στάλθηκε</option>
@@ -938,15 +1055,31 @@ export const TenderDetailPage = () => {
         </label>
         <label>
           Θέμα
-          <input name="subject" defaultValue={draft.subject ?? ""} />
+          <input
+            name="subject"
+            value={draftEditorForm.subject}
+            onChange={(e) => updateDraftEditorField("subject", e.target.value)}
+            aria-label="Θέμα"
+          />
         </label>
         <label>
           Περιεχόμενο
-          <textarea name="body" defaultValue={draft.body ?? ""} rows={12} />
+          <textarea
+            name="body"
+            value={draftEditorForm.body}
+            onChange={(e) => updateDraftEditorField("body", e.target.value)}
+            rows={12}
+            aria-label="Περιεχόμενο"
+          />
         </label>
         <label>
           Σημειώσεις
-          <textarea name="notes" defaultValue={draft.notes ?? ""} />
+          <textarea
+            name="notes"
+            value={draftEditorForm.notes}
+            onChange={(e) => updateDraftEditorField("notes", e.target.value)}
+            aria-label="Σημειώσεις"
+          />
         </label>
         {key === "economic" ? (
           <label>
@@ -954,21 +1087,42 @@ export const TenderDetailPage = () => {
             <input
               name="amountWithoutVat"
               type="number"
-              defaultValue={draft.amountWithoutVat ?? ""}
+              value={draftEditorForm.amountWithoutVat}
+              onChange={(e) =>
+                updateDraftEditorField("amountWithoutVat", e.target.value)
+              }
+              aria-label="Ποσό χωρίς ΦΠΑ"
             />
           </label>
         ) : null}
         <div className="actions">
-          <button type="submit" className="btn primary">
-            {UI.save}
+          <button
+            type="submit"
+            className="btn primary"
+            disabled={draftSaveState === "saving"}
+          >
+            {saveLabel}
           </button>
           <button
             type="button"
             className="btn"
-            onClick={() => setEditingDraft(null)}
+            onClick={() => void closeDraftEditor()}
           >
             {UI.close}
           </button>
+          {key === "outreach" &&
+          isDesktop() &&
+          driveDocuments.some((d) => OUTREACH_DRIVE_DOC_TYPES.has(d.type)) ? (
+            <button
+              type="button"
+              className="btn"
+              disabled={loadingDriveText}
+              onClick={() => void handleReloadOutreachFromDrive()}
+              aria-label="Φόρτωση από Drive"
+            >
+              {loadingDriveText ? "Φόρτωση από Drive…" : "Φόρτωση από Drive"}
+            </button>
+          ) : null}
         </div>
       </form>
     );
@@ -1675,16 +1829,21 @@ export const TenderDetailPage = () => {
           ) : null}
 
           {renderDraftEditor("outreach")}
-          {editingDraft === "outreach" && outreachDrive ? (
+          {editingDraft === "outreach" ? (
             <p className="muted" style={{ marginTop: 8 }}>
-              Πηγή κειμένου: Google Doc.{" "}
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={() => void openExternalUrl(outreachDrive.driveUrl)}
-              >
-                {UI.openInDrive}
-              </button>
+              Πηγή αλήθειας: server (tenders.tekia.gr).{" "}
+              {outreachDrive ? (
+                <>
+                  Το Google Doc είναι προαιρετικό αντίγραφο —{" "}
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => void openExternalUrl(outreachDrive.driveUrl)}
+                  >
+                    {UI.openInDrive}
+                  </button>
+                </>
+              ) : null}
             </p>
           ) : null}
 
