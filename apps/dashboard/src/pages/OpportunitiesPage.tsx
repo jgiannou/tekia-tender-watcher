@@ -22,6 +22,46 @@ const FILTERS = [
   { id: "proc", label: "PROC" },
 ] as const;
 
+type OpportunityFilterId = (typeof FILTERS)[number]["id"];
+
+const FILTER_STORAGE_KEY = "tekia.opportunities.filter";
+const cacheStorageKey = (filter: OpportunityFilterId) =>
+  `tekia.opportunities.cache.${filter}`;
+
+const isOpportunityFilterId = (value: unknown): value is OpportunityFilterId =>
+  FILTERS.some((item) => item.id === value);
+
+const readStoredFilter = (): OpportunityFilterId => {
+  try {
+    const stored = localStorage.getItem(FILTER_STORAGE_KEY);
+    return isOpportunityFilterId(stored) ? stored : "all";
+  } catch {
+    return "all";
+  }
+};
+
+const readCachedOpportunities = (
+  filter: OpportunityFilterId,
+): OpportunitiesResponse | null => {
+  try {
+    const raw = localStorage.getItem(cacheStorageKey(filter));
+    return raw ? (JSON.parse(raw) as OpportunitiesResponse) : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeCachedOpportunities = (
+  filter: OpportunityFilterId,
+  response: OpportunitiesResponse,
+): void => {
+  try {
+    localStorage.setItem(cacheStorageKey(filter), JSON.stringify(response));
+  } catch {
+    // Storage full or unavailable — cache is best-effort only.
+  }
+};
+
 const outreachLabel = (status: string | null | undefined): string => {
   if (!status || status === "NOT_STARTED") return "—";
   if (status === "SENT") return "ΑΠΟΣΤΑΛΘΗΚΕ";
@@ -29,10 +69,22 @@ const outreachLabel = (status: string | null | undefined): string => {
 };
 
 export const OpportunitiesPage = () => {
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all");
-  const [data, setData] = useState<OpportunitiesResponse | null>(null);
+  const [filter, setFilter] = useState<OpportunityFilterId>(readStoredFilter);
+  const [data, setData] = useState<OpportunitiesResponse | null>(() =>
+    readCachedOpportunities(readStoredFilter()),
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const handleFilterChange = (nextFilter: OpportunityFilterId) => {
+    try {
+      localStorage.setItem(FILTER_STORAGE_KEY, nextFilter);
+    } catch {
+      // Ignore — filter still applies for this session.
+    }
+    setData(readCachedOpportunities(nextFilter));
+    setFilter(nextFilter);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +95,7 @@ export const OpportunitiesPage = () => {
         if (!cancelled) {
           setData(response);
           setError(null);
+          writeCachedOpportunities(filter, response);
         }
       })
       .catch((err: unknown) => {
@@ -92,7 +145,7 @@ export const OpportunitiesPage = () => {
                 key={item.id}
                 type="button"
                 className={`filter-btn${filter === item.id ? " active" : ""}`}
-                onClick={() => setFilter(item.id)}
+                onClick={() => handleFilterChange(item.id)}
                 aria-pressed={filter === item.id}
               >
                 {item.label}
@@ -102,13 +155,18 @@ export const OpportunitiesPage = () => {
         </div>
 
         {error ? <div className="error" style={{ margin: 12 }}>{error}</div> : null}
-        {loading ? (
+        {loading && !data ? (
           <p className="muted" style={{ padding: 16 }}>
             {UI.loading}
           </p>
         ) : null}
+        {loading && data ? (
+          <p className="muted" style={{ padding: "4px 16px", fontSize: 12 }} aria-live="polite">
+            Ανανέωση…
+          </p>
+        ) : null}
 
-        {!loading && data ? (
+        {data ? (
           <div className="table-scroll">
             <table>
               <thead>

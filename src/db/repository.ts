@@ -266,17 +266,27 @@ const isActionableOpportunity = (row: TenderRow): boolean => {
   return false;
 };
 
-const linkedProcSummariesForReq = (
-  reqAdam: string,
-  allRows: TenderRow[],
-) =>
-  allRows
-    .filter(
-      (r) =>
-        r.record_type === "PROC" &&
-        (r.parent_tender_id === reqAdam || r.relation_candidate_id === reqAdam),
-    )
-    .map((proc) => ({
+/** REQ adam → PROC rows linked (parent) or proposed (candidate) for it. */
+type ProcIndex = Map<string, TenderRow[]>;
+
+const buildProcIndex = (allRows: TenderRow[]): ProcIndex => {
+  const index: ProcIndex = new Map();
+  const add = (reqAdam: string | null, proc: TenderRow) => {
+    if (!reqAdam) return;
+    const list = index.get(reqAdam) ?? [];
+    if (!list.includes(proc)) list.push(proc);
+    index.set(reqAdam, list);
+  };
+  for (const row of allRows) {
+    if (row.record_type !== "PROC") continue;
+    add(row.parent_tender_id, row);
+    add(row.relation_candidate_id, row);
+  }
+  return index;
+};
+
+const linkedProcSummariesForReq = (reqAdam: string, procIndex: ProcIndex) =>
+  (procIndex.get(reqAdam) ?? []).map((proc) => ({
       referenceNumber: proc.reference_number,
       linked: proc.parent_tender_id === reqAdam,
       possible:
@@ -285,16 +295,16 @@ const linkedProcSummariesForReq = (
       ourInvitationStatus: proc.our_invitation_status,
     }));
 
-const reqMonitoringState = (row: TenderRow, allRows: TenderRow[]) =>
+const reqMonitoringState = (row: TenderRow, procIndex: ProcIndex) =>
   deriveReqMonitoringState({
     outreachStatus: parseDrafts(row.drafts_json).outreach.status,
-    linkedProcs: linkedProcSummariesForReq(row.reference_number, allRows),
+    linkedProcs: linkedProcSummariesForReq(row.reference_number, procIndex),
   });
 
 const matchesOpportunityFilter = (
   row: TenderRow,
   filter: OpportunityFilter,
-  allRows: TenderRow[],
+  procIndex: ProcIndex,
 ): boolean => {
   const status = (row.current_status ?? "NEW").toUpperCase();
   switch (filter) {
@@ -312,7 +322,7 @@ const matchesOpportunityFilter = (
     case "monitored": {
       if (row.record_type !== "REQ") return false;
       if (!isOutreachSent(parseDrafts(row.drafts_json).outreach)) return false;
-      return isActivelyMonitored(reqMonitoringState(row, allRows));
+      return isActivelyMonitored(reqMonitoringState(row, procIndex));
     }
     case "formal": {
       if (row.record_type === "PROC") {
@@ -322,7 +332,7 @@ const matchesOpportunityFilter = (
         );
       }
       if (row.record_type !== "REQ") return false;
-      return isFormalOpportunityState(reqMonitoringState(row, allRows));
+      return isFormalOpportunityState(reqMonitoringState(row, procIndex));
     }
     case "closed": {
       if (row.record_type === "PROC") {
@@ -332,7 +342,7 @@ const matchesOpportunityFilter = (
         );
       }
       if (row.record_type !== "REQ") return false;
-      return isClosedMonitoringState(reqMonitoringState(row, allRows));
+      return isClosedMonitoringState(reqMonitoringState(row, procIndex));
     }
     default:
       return true;
@@ -550,6 +560,33 @@ export const createRepository = (db: Database.Database) => {
   `);
 
   const listAll = db.prepare("SELECT * FROM tenders ORDER BY score DESC");
+
+  // List views never need the KIMDIS payload; skipping raw_json keeps them fast.
+  const lightColumns = (
+    db.prepare("PRAGMA table_info(tenders)").all() as Array<{ name: string }>
+  )
+    .map((col) => col.name)
+    .filter((name) => name !== "raw_json")
+    .join(", ");
+  const listAllLight = db.prepare(
+    `SELECT ${lightColumns}, NULL AS raw_json FROM tenders ORDER BY score DESC`,
+  );
+
+  const listProcsForReq = db.prepare(
+    `SELECT ${lightColumns}, NULL AS raw_json FROM tenders
+     WHERE record_type = 'PROC'
+       AND (parent_tender_id = @adam OR relation_candidate_id = @adam)
+     ORDER BY score DESC`,
+  );
+
+  const applyAllLedgerRows = (): void => {
+    const ledgerAdams = db
+      .prepare("SELECT reference_number FROM outreach_ledger")
+      .all() as Array<{ reference_number: string }>;
+    for (const row of ledgerAdams) {
+      applyLedgerToTenderRow(row.reference_number);
+    }
+  };
 
   const insertEvent = db.prepare(`
     INSERT INTO tender_events (id, tender_reference_number, event_type, note, created_at)
@@ -830,18 +867,13 @@ export const createRepository = (db: Database.Database) => {
 
     listOpportunities: (filter: OpportunityFilter = "all"): TenderRow[] => {
       // Ensure durable outreach ledger is reflected on tender rows before filtering.
-      const ledgerAdams = db
-        .prepare("SELECT reference_number FROM outreach_ledger")
-        .all() as Array<{ reference_number: string }>;
-      for (const row of ledgerAdams) {
-        applyLedgerToTenderRow(row.reference_number);
-      }
+      applyAllLedgerRows();
 
-      const allRows = listAll.all() as TenderRow[];
-      const actionable = allRows.filter(isActionableOpportunity);
-      return actionable.filter((row) =>
-        matchesOpportunityFilter(row, filter, allRows),
-      );
+      const allRows = listAllLight.all() as TenderRow[];
+      const procIndex = buildProcIndex(allRows);
+      return allRows
+        .filter(isActionableOpportunity)
+        .filter((row) => matchesOpportunityFilter(row, filter, procIndex));
     },
 
     getOpportunityCounters: (): {
@@ -854,12 +886,7 @@ export const createRepository = (db: Database.Database) => {
       formal: number;
       closed: number;
     } => {
-      const ledgerAdams = db
-        .prepare("SELECT reference_number FROM outreach_ledger")
-        .all() as Array<{ reference_number: string }>;
-      for (const row of ledgerAdams) {
-        applyLedgerToTenderRow(row.reference_number);
-      }
+      applyAllLedgerRows();
 
       const now = new Date();
       const monthPrefix = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -868,7 +895,8 @@ export const createRepository = (db: Database.Database) => {
         SubmissionRow & { tender_title?: string }
       >;
 
-      const allRows = listAll.all() as TenderRow[];
+      const allRows = listAllLight.all() as TenderRow[];
+      const procIndex = buildProcIndex(allRows);
       const actionable = allRows.filter(isActionableOpportunity);
 
       return {
@@ -885,13 +913,13 @@ export const createRepository = (db: Database.Database) => {
             isOutreachSent(parseDrafts(r.drafts_json).outreach),
         ).length,
         monitored: actionable.filter((r) =>
-          matchesOpportunityFilter(r, "monitored", allRows),
+          matchesOpportunityFilter(r, "monitored", procIndex),
         ).length,
         formal: actionable.filter((r) =>
-          matchesOpportunityFilter(r, "formal", allRows),
+          matchesOpportunityFilter(r, "formal", procIndex),
         ).length,
         closed: actionable.filter((r) =>
-          matchesOpportunityFilter(r, "closed", allRows),
+          matchesOpportunityFilter(r, "closed", procIndex),
         ).length,
       };
     },
@@ -1301,15 +1329,8 @@ export const createRepository = (db: Database.Database) => {
         .slice(0, limit);
     },
 
-    listLinkedProcsForReq: (reqAdam: string): TenderRow[] => {
-      const rows = listAll.all() as TenderRow[];
-      return rows.filter(
-        (r) =>
-          r.record_type === "PROC" &&
-          (r.parent_tender_id === reqAdam ||
-            r.relation_candidate_id === reqAdam),
-      );
-    },
+    listLinkedProcsForReq: (reqAdam: string): TenderRow[] =>
+      listProcsForReq.all({ adam: reqAdam }) as TenderRow[],
 
     updateRelationAndInvitation: (
       adam: string,
