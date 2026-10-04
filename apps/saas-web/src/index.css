@@ -126,6 +126,21 @@
     background-attachment: fixed;
   }
 
+  /* Interactive affordance: links/actions always show pointer */
+  a[href],
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="menuitem"],
+  [role="option"],
+  summary,
+  label[for],
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="file"],
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
   /*
    * Native date/time picker icons in dark mode.
    * Keep the input on light color-scheme so the glyph starts dark, then invert

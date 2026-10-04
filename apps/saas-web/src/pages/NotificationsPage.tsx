@@ -85,12 +85,17 @@ export const NotificationsPage = () => {
       ) : (
         <div className="space-y-2">
           {paged.pageItems.map((event) => (
-            <Card key={event.id}>
+            <Card key={event.id} className="transition-colors hover:bg-muted/40">
               <CardContent className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex min-w-0 flex-1 items-start gap-2">
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 text-left"
+                  onClick={() => void handleOpen(event)}
+                  aria-label={event.title}
+                >
                   <AttentionEventContent event={event} className="flex-1" />
                   {!event.readAt ? <Badge variant="warning">Νέο</Badge> : null}
-                </div>
+                </button>
                 <div className="flex shrink-0 gap-2">
                   {!event.readAt ? (
                     <Button

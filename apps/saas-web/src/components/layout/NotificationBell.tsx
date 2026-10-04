@@ -97,7 +97,7 @@ export const NotificationBell = () => {
               <button
                 key={event.id}
                 type="button"
-                className="flex w-full items-start gap-2 border-b border-border px-4 py-3 text-left hover:bg-muted/60"
+                className="flex w-full cursor-pointer items-start gap-2 border-b border-border px-4 py-3 text-left hover:bg-muted/60"
                 onClick={() => void handleOpenEvent(event)}
                 aria-label={event.title}
               >
