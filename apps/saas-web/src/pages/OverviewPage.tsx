@@ -28,6 +28,12 @@ const formatRelative = (value?: string | null) => {
   return date.toLocaleString("el-GR");
 };
 
+const formatDay = (value?: string | null) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("el-GR");
+};
+
 const formatMoney = (value: number | null) =>
   value == null
     ? "—"
@@ -125,61 +131,56 @@ export const OverviewPage = () => {
 
   const displayName =
     overview.greetingName || (user?.name || "").split(" ")[0] || "εκεί";
-  const unreadAttention = overview.attention.filter((event) => !event.readAt);
-  const insights = overview.workflowInsights;
   const nextActions = overview.nextActions ?? [];
   const isBrandNew =
     overview.watchUsage.total === 0 &&
     overview.opportunities.length === 0 &&
     overview.metrics.monitoringActive === 0;
+  const digestAttention = overview.attention.filter(
+    (event) => !event.readAt && event.type === "OPPORTUNITY_DIGEST",
+  );
+  const failedScanCount = overview.failedScanCount ?? 0;
 
-  const metrics: Array<{ label: string; value: number; href: string }> = [
+  const metrics: Array<{ label: string; value: number; href: string; hint: string }> = [
     {
       label: "Νέες ευκαιρίες",
       value: overview.metrics.newOpportunities,
       href: "/app/opportunities",
+      hint: "Ευκαιρίες που δεν έχουν προβληθεί ακόμη",
     },
     {
       label: "Παρακολουθούμενα",
       value: overview.metrics.monitoringActive,
       href: "/app/monitoring",
+      hint: "Ενεργά νήματα παρακολούθησης",
     },
     {
       label: "Προθεσμίες",
       value: overview.metrics.deadlinesSoon,
       href: "/app/monitoring",
+      hint: "Καταληκτικές εντός 7 ημερών",
     },
     {
       label: "Υποβολές",
       value: overview.metrics.submissionsActive,
-      href: "/app/monitoring",
+      href: "/app/submissions",
+      hint: "Τυπικές υποβολές σε παρακολούθηση",
     },
   ];
 
-  const insightLines = [
-    insights?.waitingForProc
-      ? `${insights.waitingForProc} ${insights.waitingForProc === 1 ? "αίτημα περιμένει" : "αιτήματα περιμένουν"} επίσημη πρόσκληση`
-      : null,
-    insights?.newRelatedProc
-      ? `${insights.newRelatedProc} ${insights.newRelatedProc === 1 ? "νέα πρόσκληση βρέθηκε" : "νέες προσκλήσεις βρέθηκαν"} για αίτημα που παρακολουθείτε`
-      : null,
-    insights?.submissionWithAward
-      ? `${insights.submissionWithAward} ${insights.submissionWithAward === 1 ? "υποβολή έχει" : "υποβολές έχουν"} νέα απόφαση`
-      : null,
-  ].filter((line): line is string => Boolean(line));
-
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">
             Καλημέρα, {displayName}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            {unreadAttention.length > 0
-              ? `${unreadAttention.length} στοιχεία χρειάζονται την προσοχή σας σήμερα.`
-              : "Όλα ήρεμα — οι αυτόματες αναζητήσεις και η παρακολούθηση συνεχίζονται."}
+            {isBrandNew
+              ? "Δημιουργήστε την πρώτη αποθηκευμένη αναζήτηση ή εξερευνήστε το ΚΗΜΔΗΣ."
+              : nextActions.length > 0
+                ? `${nextActions.length} ενέργειες χρειάζονται την προσοχή σας.`
+                : "Δεν υπάρχουν ενέργειες που απαιτούν την προσοχή σας."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -205,53 +206,12 @@ export const OverviewPage = () => {
         </Card>
       ) : null}
 
-      {/* Attention — only when something real is pending */}
-      {unreadAttention.length > 0 || insightLines.length > 0 ? (
-        <Card>
-          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
-            <div>
-              <CardTitle className="text-base">Χρειάζονται προσοχή</CardTitle>
-              <CardDescription>Τα ίδια γεγονότα με το κουδούνι ειδοποιήσεων.</CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/app/notifications">Όλες</Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {insightLines.map((line) => (
-              <Link
-                key={line}
-                to="/app/monitoring"
-                className="block rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/50"
-              >
-                {line}
-              </Link>
-            ))}
-            {unreadAttention.slice(0, 5).map((event) => (
-              <Link
-                key={event.id}
-                to="/app/notifications"
-                className="flex items-start justify-between gap-3 rounded-md border border-border px-3 py-2.5 hover:bg-muted/50"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">{event.title}</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    {formatRelative(event.createdAt)}
-                  </div>
-                </div>
-                <Badge variant="warning">Νέο</Badge>
-              </Link>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
-
       {isBrandNew ? (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Ξεκινήστε με TEKIA Tender</CardTitle>
+            <CardTitle className="text-base">Ξεκινήστε με ARC Tenders</CardTitle>
             <CardDescription>
-              Δύο βήματα αρκούν για να αρχίσουν οι αυτόματες ευκαιρίες.
+              Δημιουργήστε την πρώτη αποθηκευμένη αναζήτηση ή εξερευνήστε το ΚΗΜΔΗΣ.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
@@ -268,22 +228,26 @@ export const OverviewPage = () => {
         </Card>
       ) : (
         <>
-          {/* Today */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {metrics.map((metric) => (
               <Link
                 key={metric.label}
                 to={metric.href}
+                title={metric.hint}
                 className="rounded-lg border border-border px-4 py-3 transition-colors hover:bg-muted/40"
               >
                 <div className="text-xs text-muted-foreground">{metric.label}</div>
                 <div className="mt-1 text-2xl font-semibold">{metric.value}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">{metric.hint}</div>
               </Link>
             ))}
           </div>
 
-          {/* Main two-column area */}
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div
+            className={`grid gap-4 ${
+              nextActions.length === 0 ? "lg:grid-cols-1" : "lg:grid-cols-2"
+            }`}
+          >
             <Card>
               <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
                 <div>
@@ -297,9 +261,37 @@ export const OverviewPage = () => {
                 </Button>
               </CardHeader>
               <CardContent className="space-y-3">
-                {overview.opportunities.length === 0 ? (
+                {digestAttention.length > 0
+                  ? digestAttention.slice(0, 3).map((event) => (
+                      <div
+                        key={event.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2.5"
+                      >
+                        <div className="min-w-0 text-sm font-medium">{event.title}</div>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" asChild>
+                            <Link to="/app/opportunities">Προβολή ευκαιριών</Link>
+                          </Button>
+                          {!event.readAt ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() =>
+                                void saasApi
+                                  .markAttentionRead(activeOrganization.id, event.id)
+                                  .then(load)
+                              }
+                            >
+                              Σήμανση ως προβεβλημένες
+                            </Button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))
+                  : null}
+                {overview.opportunities.length === 0 && digestAttention.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    Καμία πρόσφατη ευκαιρία — οι αναζητήσεις συνεχίζονται.
+                    Καμία πρόσφατη ευκαιρία.
                   </p>
                 ) : (
                   overview.opportunities.map((opportunity) => {
@@ -309,6 +301,13 @@ export const OverviewPage = () => {
                       meta?.matchedProfiles?.[0]?.name ??
                       opportunity.watchProfile?.name ??
                       "—";
+                    const reasonFromMeta = meta?.matchedProfiles?.[0]?.reasons?.[0];
+                    const reasonFromScore = Array.isArray(opportunity.scoreReasons)
+                      ? opportunity.scoreReasons[0]
+                      : null;
+                    const primaryReason =
+                      reasonFromMeta ||
+                      (reasonFromScore != null ? String(reasonFromScore) : null);
                     return (
                       <div
                         key={opportunity.id}
@@ -328,6 +327,11 @@ export const OverviewPage = () => {
                           {opportunity.tender.contractingAuthority || "—"} ·{" "}
                           {formatMoney(opportunity.tender.budgetWithoutVat)}
                         </div>
+                        {primaryReason ? (
+                          <div className="text-xs text-muted-foreground">
+                            {primaryReason}
+                          </div>
+                        ) : null}
                         <div className="flex flex-wrap items-center gap-2">
                           <IconAction
                             label="Προεπισκόπηση PDF"
@@ -353,25 +357,21 @@ export const OverviewPage = () => {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
-                <div>
-                  <CardTitle className="text-base">Επόμενες ενέργειες</CardTitle>
-                  <CardDescription>
-                    Τι περιμένει εσάς στα παρακολουθούμενα.
-                  </CardDescription>
-                </div>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link to="/app/monitoring">Παρακολουθούμενα</Link>
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {nextActions.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    Καμία ενέργεια σε εκκρεμότητα — παρακολουθούμε το ΚΗΜΔΗΣ για εξελίξεις.
-                  </p>
-                ) : (
-                  nextActions.map((action) => (
+            {nextActions.length > 0 ? (
+              <Card>
+                <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
+                  <div>
+                    <CardTitle className="text-base">Επόμενες ενέργειες</CardTitle>
+                    <CardDescription>
+                      Αποφάσεις και ενέργειες που περιμένουν εσάς.
+                    </CardDescription>
+                  </div>
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link to="/app/monitoring">Παρακολουθούμενα</Link>
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {nextActions.map((action) => (
                     <Link
                       key={action.id}
                       to={tenderHref(action.recordType, action.referenceNumber)}
@@ -384,13 +384,63 @@ export const OverviewPage = () => {
                         {action.recordType} · {action.actionLabel}
                       </div>
                     </Link>
-                  ))
-                )}
-              </CardContent>
-            </Card>
+                  ))}
+                </CardContent>
+              </Card>
+            ) : (
+              <p className="text-sm text-muted-foreground lg:col-span-1">
+                Δεν υπάρχουν ενέργειες που απαιτούν την προσοχή σας.
+              </p>
+            )}
           </div>
 
-          {/* Bottom — only when relevant */}
+          {overview.monitoring.length > 0 ? (
+            <Card>
+              <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
+                <div>
+                  <CardTitle className="text-base">Παρακολουθούμενα</CardTitle>
+                  <CardDescription>
+                    Πού βρισκόμαστε και τι περιμένουμε.
+                  </CardDescription>
+                </div>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to="/app/monitoring">Όλα</Link>
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {overview.monitoring.map((row) => (
+                  <Link
+                    key={row.id}
+                    to={tenderHref(row.tender.recordType, row.tender.referenceNumber)}
+                    className="block space-y-1 rounded-md border border-border px-3 py-2.5 hover:bg-muted/50"
+                  >
+                    <div className="truncate text-sm font-medium">
+                      {row.tender.title || row.tender.referenceNumber}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {row.tender.recordType} · {row.tender.referenceNumber}
+                    </div>
+                    <div className="text-xs">
+                      Στάδιο: {row.stageLabel || row.pipelineStage}
+                    </div>
+                    {row.waitingFor ? (
+                      <div className="text-xs text-muted-foreground">
+                        Αναμένουμε: {row.waitingFor}
+                      </div>
+                    ) : row.nextActionLabel ? (
+                      <div className="text-xs text-muted-foreground">
+                        Επόμενο: {row.nextActionLabel}
+                      </div>
+                    ) : null}
+                    <div className="text-xs text-muted-foreground">
+                      Τελευταία δραστηριότητα: {formatDay(row.latestActivityAt)}
+                    </div>
+                  </Link>
+                ))}
+              </CardContent>
+            </Card>
+          ) : null}
+
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
@@ -401,6 +451,9 @@ export const OverviewPage = () => {
                     {overview.entitlements.maxActiveWatchProfiles} ενεργές · τελευταίος
                     έλεγχος {formatRelative(overview.lastSystemScanAt)} · νεότερη
                     αντιστοίχιση {formatRelative(overview.latestMatchAt)}
+                    {failedScanCount > 0
+                      ? ` · ${failedScanCount} αποτυχημένες σαρώσεις`
+                      : ""}
                   </CardDescription>
                 </div>
                 <Button variant="outline" size="sm" asChild>
@@ -447,7 +500,9 @@ export const OverviewPage = () => {
                 <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
                   <div>
                     <CardTitle className="text-base">Έγγραφα που λήγουν</CardTitle>
-                    <CardDescription>Χρειάζονται ανανέωση πριν την επόμενη υποβολή.</CardDescription>
+                    <CardDescription>
+                      Χρειάζονται ανανέωση πριν την επόμενη υποβολή.
+                    </CardDescription>
                   </div>
                   <Button variant="ghost" size="sm" asChild>
                     <Link to="/app/documents">Έγγραφα</Link>

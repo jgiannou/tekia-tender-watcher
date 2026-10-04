@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "AttentionEventType" ADD VALUE 'OPPORTUNITY_DIGEST';

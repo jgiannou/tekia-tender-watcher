@@ -521,6 +521,9 @@ const fetchAllKimdisItems = async (
 const newOpportunityDedupeKey = (tenderId: string): string =>
   `NEW_OPPORTUNITY:${tenderId}`;
 
+const opportunityDigestDedupeKey = (profileId: string, scannedAt: Date): string =>
+  `OPPORTUNITY_DIGEST:${profileId}:${scannedAt.toISOString().slice(0, 13)}`;
+
 const ensureNewOpportunityAttention = async (
   prisma: PrismaClient,
   input: {
@@ -529,10 +532,16 @@ const ensureNewOpportunityAttention = async (
     tenderId: string;
     profileName: string;
     score: number;
+    tenderTitle?: string | null;
+    referenceNumber?: string | null;
   },
 ) => {
   const dedupeKey = newOpportunityDedupeKey(input.tenderId);
   const type = "NEW_OPPORTUNITY" as AttentionEventType;
+  const adam = input.referenceNumber?.trim();
+  const title = adam
+    ? `${adam}${input.tenderTitle ? ` · ${input.tenderTitle}` : ""}`
+    : attentionTitleFor(type, "CONFIRMED");
   // Upsert (not find-then-create) so concurrent scans of different profiles
   // matching the same tender can never produce a duplicate notification.
   return prisma.organizationAttentionEvent.upsert({
@@ -546,14 +555,74 @@ const ensureNewOpportunityAttention = async (
       organizationId: input.organizationId,
       organizationTenderId: input.organizationTenderId,
       type,
-      title: attentionTitleFor(type, "CONFIRMED"),
+      title,
       dedupeKey,
       metadata: {
         profileName: input.profileName,
         score: input.score,
+        referenceNumber: input.referenceNumber ?? null,
+        tenderTitle: input.tenderTitle ?? null,
       },
     },
     update: {},
+  });
+};
+
+const ensureOpportunityDigestAttention = async (
+  prisma: PrismaClient,
+  input: {
+    organizationId: string;
+    organizationTenderId: string;
+    profileId: string;
+    profileName: string;
+    matchCount: number;
+    newCount: number;
+    scannedAt: Date;
+    topMatches: Array<{
+      referenceNumber: string;
+      title: string | null;
+      score: number;
+    }>;
+  },
+) => {
+  if (input.matchCount <= 0) return null;
+  const dedupeKey = opportunityDigestDedupeKey(input.profileId, input.scannedAt);
+  const type = "OPPORTUNITY_DIGEST" as AttentionEventType;
+  const title =
+    input.matchCount === 1
+      ? `1 νέα ευκαιρία από «${input.profileName}»`
+      : `${input.matchCount} νέες ευκαιρίες από «${input.profileName}»`;
+  return prisma.organizationAttentionEvent.upsert({
+    where: {
+      organizationId_dedupeKey: {
+        organizationId: input.organizationId,
+        dedupeKey,
+      },
+    },
+    create: {
+      organizationId: input.organizationId,
+      organizationTenderId: input.organizationTenderId,
+      type,
+      title,
+      dedupeKey,
+      metadata: {
+        profileId: input.profileId,
+        profileName: input.profileName,
+        matchCount: input.matchCount,
+        newCount: input.newCount,
+        topMatches: input.topMatches.slice(0, 5),
+      },
+    },
+    update: {
+      title,
+      metadata: {
+        profileId: input.profileId,
+        profileName: input.profileName,
+        matchCount: input.matchCount,
+        newCount: input.newCount,
+        topMatches: input.topMatches.slice(0, 5),
+      },
+    },
   });
 };
 
@@ -589,6 +658,7 @@ export const upsertOpportunityFromProfileMatch = async (
     profile: WatchProfile;
     item: KimdisSearchItem;
     match: ReturnType<typeof scoreKimdisItemAgainstProfile>;
+    emitAttention?: boolean;
   },
 ): Promise<OpportunityLinkResult> => {
   const tender = await upsertTenderFromKimdisItem(prisma, input.item);
@@ -597,6 +667,7 @@ export const upsertOpportunityFromProfileMatch = async (
     profile: input.profile,
     tenderId: tender.id,
     match: input.match,
+    emitAttention: input.emitAttention ?? true,
   });
 };
 
@@ -604,6 +675,9 @@ type OpportunityLinkResult = {
   created: boolean;
   organizationTenderId: string;
   tenderId: string;
+  score: number;
+  referenceNumber: string | null;
+  tenderTitle: string | null;
 };
 
 /**
@@ -617,6 +691,8 @@ const linkOpportunityToProfile = async (
     profile: WatchProfile;
     tenderId: string;
     match: ReturnType<typeof scoreKimdisItemAgainstProfile>;
+    /** Initial scan uses a digest instead of per-match notifications. */
+    emitAttention: boolean;
   },
 ): Promise<OpportunityLinkResult> => {
   const { tenderId } = input;
@@ -626,6 +702,10 @@ const linkOpportunityToProfile = async (
     score: input.match.score,
     reasons: input.match.reasons,
   };
+
+  const tender = await prisma.tender.findUnique({ where: { id: tenderId } });
+  const referenceNumber = tender?.referenceNumber ?? null;
+  const tenderTitle = tender?.title ?? null;
 
   const existing = await prisma.organizationTender.findUnique({
     where: {
@@ -651,14 +731,25 @@ const linkOpportunityToProfile = async (
         relevanceStatus: "RELEVANT",
       },
     });
-    await ensureNewOpportunityAttention(prisma, {
-      organizationId: input.organizationId,
+    if (input.emitAttention) {
+      await ensureNewOpportunityAttention(prisma, {
+        organizationId: input.organizationId,
+        organizationTenderId: row.id,
+        tenderId,
+        profileName: input.profile.name,
+        score: input.match.score,
+        tenderTitle,
+        referenceNumber,
+      });
+    }
+    return {
+      created: true,
       organizationTenderId: row.id,
       tenderId,
-      profileName: input.profile.name,
       score: input.match.score,
-    });
-    return { created: true, organizationTenderId: row.id, tenderId };
+      referenceNumber,
+      tenderTitle,
+    };
   }
 
   const prevMeta = parseMatchMeta(existing.matchMeta);
@@ -685,7 +776,14 @@ const linkOpportunityToProfile = async (
     },
   });
 
-  return { created: false, organizationTenderId: existing.id, tenderId };
+  return {
+    created: false,
+    organizationTenderId: existing.id,
+    tenderId,
+    score: matchMeta.highestScore,
+    referenceNumber,
+    tenderTitle,
+  };
 };
 
 /**
@@ -754,8 +852,18 @@ export const runWatchProfileScan = async (
   });
 
   const criteria = criteriaFromWatchProfile(profile);
+  const isInitialScan = !profile.initialScanCompletedAt;
+  const emitPerMatchAttention = !isInitialScan;
   const matchedTenderIds = new Set<string>();
+  const newMatchIds = new Set<string>();
+  const matchSummaries: Array<{
+    organizationTenderId: string;
+    referenceNumber: string | null;
+    tenderTitle: string | null;
+    score: number;
+  }> = [];
   const upstreamErrors: string[] = [];
+  const previousMatchCount = profile.matchCount ?? 0;
 
   try {
     const seenAdam = await scanCanonicalTenders(
@@ -763,11 +871,19 @@ export const runWatchProfileScan = async (
       profile,
       async (tenderId, match) => {
         matchedTenderIds.add(tenderId);
-        await linkOpportunityToProfile(prisma, {
+        const result = await linkOpportunityToProfile(prisma, {
           organizationId: profile.organizationId,
           profile,
           tenderId,
           match,
+          emitAttention: emitPerMatchAttention,
+        });
+        if (result.created) newMatchIds.add(result.tenderId);
+        matchSummaries.push({
+          organizationTenderId: result.organizationTenderId,
+          referenceNumber: result.referenceNumber,
+          tenderTitle: result.tenderTitle,
+          score: result.score,
         });
       },
     );
@@ -799,8 +915,16 @@ export const runWatchProfileScan = async (
             profile,
             item,
             match,
+            emitAttention: emitPerMatchAttention,
           });
           matchedTenderIds.add(result.tenderId);
+          if (result.created) newMatchIds.add(result.tenderId);
+          matchSummaries.push({
+            organizationTenderId: result.organizationTenderId,
+            referenceNumber: result.referenceNumber,
+            tenderTitle: result.tenderTitle,
+            score: result.score,
+          });
         }
       }
       // Every upstream query failed. COMPLETED with zero matches would claim
@@ -814,6 +938,28 @@ export const runWatchProfileScan = async (
 
     const now = new Date();
     const partial = upstreamErrors.length > 0;
+
+    if (isInitialScan && matchSummaries.length > 0) {
+      const topMatches = [...matchSummaries]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5)
+        .map((row) => ({
+          referenceNumber: row.referenceNumber ?? "—",
+          title: row.tenderTitle,
+          score: row.score,
+        }));
+      await ensureOpportunityDigestAttention(prisma, {
+        organizationId: profile.organizationId,
+        organizationTenderId: matchSummaries[0]!.organizationTenderId,
+        profileId: profile.id,
+        profileName: profile.name,
+        matchCount: matchedTenderIds.size,
+        newCount: newMatchIds.size,
+        scannedAt: now,
+        topMatches,
+      });
+    }
+
     return prisma.watchProfile.update({
       where: { id: profileId },
       data: {
@@ -825,6 +971,9 @@ export const runWatchProfileScan = async (
         customFilters: mergeCustomFilters(profile, {
           lastScanError: partial ? (upstreamErrors[0] ?? null) : null,
           lastScanPartial: partial,
+          lastScanNewCount: newMatchIds.size,
+          lastScanPreviousMatchCount: previousMatchCount,
+          lastScanEvaluatedCount: matchedTenderIds.size,
         }),
       },
     });
@@ -843,6 +992,9 @@ export const runWatchProfileScan = async (
         customFilters: mergeCustomFilters(profile, {
           lastScanError: message,
           lastScanPartial: upstreamErrors.length > 0,
+          lastScanNewCount: newMatchIds.size,
+          lastScanPreviousMatchCount: previousMatchCount,
+          lastScanEvaluatedCount: matchedTenderIds.size,
         }),
       },
     });
@@ -888,6 +1040,8 @@ export type WatchProfileDto = WatchProfile & {
   source: WatchProfileSource;
   scanError: string | null;
   scanPartial: boolean;
+  scanNewCount: number | null;
+  scanEvaluatedCount: number | null;
 };
 
 const readCustomFilters = (profile: WatchProfile): Record<string, unknown> =>
@@ -904,6 +1058,12 @@ export const toWatchProfileDto = (profile: WatchProfile): WatchProfileDto => {
     source: WATCH_PROFILE_SOURCES.includes(source) ? source : "MANUAL",
     scanError: typeof meta.lastScanError === "string" ? meta.lastScanError : null,
     scanPartial: meta.lastScanPartial === true,
+    scanNewCount:
+      typeof meta.lastScanNewCount === "number" ? meta.lastScanNewCount : null,
+    scanEvaluatedCount:
+      typeof meta.lastScanEvaluatedCount === "number"
+        ? meta.lastScanEvaluatedCount
+        : null,
   };
 };
 

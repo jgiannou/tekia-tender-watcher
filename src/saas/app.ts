@@ -455,6 +455,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
         contractType: z.string().optional(),
         dateFrom: z.string().optional(),
         dateTo: z.string().optional(),
+        searchAllHistory: z.boolean().optional(),
         totalCostFrom: z.number().optional(),
         totalCostTo: z.number().optional(),
         requestKind: z.enum(["initial", "approved", "approval"]).optional(),

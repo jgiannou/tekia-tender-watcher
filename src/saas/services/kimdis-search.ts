@@ -52,6 +52,8 @@ export type KimdisSearchFilters = {
   contractType?: string;
   dateFrom?: string;
   dateTo?: string;
+  /** When true and no explicit dates, search from 2010-01-01 instead of last 30 days. */
+  searchAllHistory?: boolean;
   totalCostFrom?: number;
   totalCostTo?: number;
   requestKind?: KimdisRequestKind;
@@ -134,6 +136,14 @@ const defaultDateWindow = (): { dateFrom: string; dateTo: string } => {
   const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   return { dateFrom: formatDateOnly(from), dateTo: formatDateOnly(now) };
 };
+
+const allHistoryDateWindow = (): { dateFrom: string; dateTo: string } => ({
+  dateFrom: "2010-01-01",
+  dateTo: formatDateOnly(new Date()),
+});
+
+const upstreamSortParam = (sort: KimdisSearchSort): string =>
+  sort === "date_asc" ? "submissionDate,asc" : "submissionDate,desc";
 
 const requestKindFlags = (
   requestKind?: KimdisRequestKind,
@@ -291,6 +301,8 @@ export const searchKimdis = async (
     dates = { dateFrom: filters.dateFrom, dateTo: filters.dateTo };
   } else if (filters.dateFrom || filters.dateTo) {
     throw badRequest("dateFrom and dateTo must be provided together");
+  } else if (filters.searchAllHistory) {
+    dates = allHistoryDateWindow();
   } else {
     dates = defaultDateWindow();
   }
@@ -299,6 +311,7 @@ export const searchKimdis = async (
   const organizations = filters.organization?.trim()
     ? [filters.organization.trim()]
     : undefined;
+  const sortParam = upstreamSortParam(sort);
 
   try {
     if (filters.recordFamily === "REQ") {
@@ -326,7 +339,7 @@ export const searchKimdis = async (
         ...(filters.cancelDateTo ? { cancelDateTo: filters.cancelDateTo } : {}),
       };
 
-      const result = await kimdis.searchRequestsPage(body, page);
+      const result = await kimdis.searchRequestsPage(body, page, sortParam);
       const items = applySort(
         (result.content ?? []).map((record) =>
           normalizeItem(kimdis, record, "REQ"),
@@ -371,7 +384,7 @@ export const searchKimdis = async (
         : {}),
     };
 
-    const result = await kimdis.searchNoticesPage(body, page);
+    const result = await kimdis.searchNoticesPage(body, page, sortParam);
     const items = applySort(
       (result.content ?? []).map((record) =>
         normalizeItem(kimdis, record, "PROC"),

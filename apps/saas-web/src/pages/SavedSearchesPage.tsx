@@ -82,17 +82,25 @@ const humanScanError = (error?: string | null) => {
 };
 
 const scanLabel = (profile: WatchProfile) => {
+  const evaluated =
+    typeof profile.scanEvaluatedCount === "number"
+      ? profile.scanEvaluatedCount
+      : profile.matchCount;
+  const newCount =
+    typeof profile.scanNewCount === "number" ? profile.scanNewCount : null;
   switch ((profile.scanState ?? "PENDING").toUpperCase()) {
     case "RUNNING":
-      return "Αρχική σάρωση σε εξέλιξη…";
+      return "Σάρωση σε εξέλιξη…";
     case "FAILED":
       return profile.scanError
         ? `Αποτυχία σάρωσης · ${humanScanError(profile.scanError)}`
         : "Αποτυχία σάρωσης";
-    case "COMPLETED":
-      return profile.matchCount
-        ? `${profile.matchCount} αντιστοιχίσεις`
-        : "Ολοκληρώθηκε · χωρίς αποτελέσματα";
+    case "COMPLETED": {
+      if (!evaluated) return "Ολοκληρώθηκε · χωρίς αποτελέσματα";
+      const base = `${evaluated} αντιστοιχίσεις`;
+      if (newCount == null) return base;
+      return `${base} · ${newCount} νέες`;
+    }
     default:
       return "Εκκρεμεί σάρωση";
   }
@@ -362,6 +370,11 @@ export const SavedSearchesPage = () => {
 
   const handleRescan = async (profile: WatchProfile) => {
     if (!activeOrganization) return;
+    const state = (profile.scanState ?? "").toUpperCase();
+    if (state === "PENDING" || state === "RUNNING") {
+      toast.message("Η σάρωση είναι ήδη σε εξέλιξη");
+      return;
+    }
     try {
       await saasApi.scanWatchProfile(activeOrganization.id, profile.id);
       toast.success("Η σάρωση ξεκίνησε");
@@ -441,7 +454,7 @@ export const SavedSearchesPage = () => {
       {profiles.length === 0 ? (
         <EmptyState
           title="Καμία αποθηκευμένη αναζήτηση"
-          description="Χωρίς ενεργό WatchProfile οι αυτόματες ευκαιρίες παραμένουν κενές. Μπορείτε να αποθηκεύσετε κριτήρια από την Αναζήτηση ΚΗΜΔΗΣ."
+          description="Χωρίς ενεργή αποθηκευμένη αναζήτηση οι αυτόματες ευκαιρίες παραμένουν κενές. Μπορείτε να αποθηκεύσετε κριτήρια από την Αναζήτηση ΚΗΜΔΗΣ."
         />
       ) : (
         <div className="space-y-3">
@@ -487,7 +500,13 @@ export const SavedSearchesPage = () => {
                           >
                             {profile.enabled ? "Παύση" : "Ενεργοποίηση"}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => void handleRescan(profile)}>
+                          <DropdownMenuItem
+                            disabled={
+                              (profile.scanState ?? "").toUpperCase() === "PENDING" ||
+                              (profile.scanState ?? "").toUpperCase() === "RUNNING"
+                            }
+                            onClick={() => void handleRescan(profile)}
+                          >
                             Επανασάρωση
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>

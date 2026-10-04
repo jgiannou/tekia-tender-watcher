@@ -27,6 +27,8 @@ export const attentionTitleFor = (
   switch (type) {
     case "NEW_OPPORTUNITY":
       return "Νέα ευκαιρία από αποθηκευμένη αναζήτηση";
+    case "OPPORTUNITY_DIGEST":
+      return "Νέες ευκαιρίες από αποθηκευμένη αναζήτηση";
     case "OUTREACH_RECORDED":
       return "Καταχωρήθηκε εκδήλωση ενδιαφέροντος";
     case "SUBMISSION_RECORDED":

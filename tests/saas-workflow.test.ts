@@ -327,6 +327,11 @@ describe("SaaS request → outreach → submission workflow", () => {
       await prisma.organizationAttentionEvent.count({
         where: { organizationId: organization.id, type: "NEW_OPPORTUNITY" },
       }),
-    ).toBe(1);
+    ).toBe(0);
+    expect(
+      await prisma.organizationAttentionEvent.count({
+        where: { organizationId: organization.id, type: "OPPORTUNITY_DIGEST" },
+      }),
+    ).toBe(2);
   });
 });

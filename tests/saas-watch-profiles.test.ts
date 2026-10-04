@@ -150,13 +150,17 @@ describe("saas watch profiles", () => {
     expect(opps.json.opportunities[0]?.score).toBeGreaterThanOrEqual(45);
 
     const attention = await prisma.organizationAttentionEvent.findMany({
-      where: { organizationId, type: "NEW_OPPORTUNITY" },
+      where: { organizationId, type: "OPPORTUNITY_DIGEST" },
     });
     expect(attention).toHaveLength(1);
-    const tender = await prisma.tender.findFirst({
-      where: { referenceNumber: "26REQ888777666" },
+    expect(attention[0]?.title).toContain("1 νέα ευκαιρία");
+    expect(attention[0]?.dedupeKey).toContain(
+      `OPPORTUNITY_DIGEST:${created.json.profile.id}`,
+    );
+    const perMatch = await prisma.organizationAttentionEvent.count({
+      where: { organizationId, type: "NEW_OPPORTUNITY" },
     });
-    expect(attention[0]?.dedupeKey).toBe(`NEW_OPPORTUNITY:${tender?.id}`);
+    expect(perMatch).toBe(0);
   });
 
   it("two profiles matching same tender yield one org tender and one attention event", async () => {
@@ -214,10 +218,14 @@ describe("saas watch profiles", () => {
       new Set(["Keywords profile", "CPV profile"]),
     );
 
-    const attention = await prisma.organizationAttentionEvent.count({
+    const perMatch = await prisma.organizationAttentionEvent.count({
       where: { organizationId, type: "NEW_OPPORTUNITY" },
     });
-    expect(attention).toBe(1);
+    expect(perMatch).toBe(0);
+    const digests = await prisma.organizationAttentionEvent.count({
+      where: { organizationId, type: "OPPORTUNITY_DIGEST" },
+    });
+    expect(digests).toBe(2);
   });
 
   it("paused profile skips scan discovery", async () => {
@@ -444,7 +452,12 @@ describe("saas watch profiles", () => {
       await prisma.organizationAttentionEvent.count({
         where: { organizationId, type: "NEW_OPPORTUNITY" },
       }),
-    ).toBe(1);
+    ).toBe(0);
+    expect(
+      await prisma.organizationAttentionEvent.count({
+        where: { organizationId, type: "OPPORTUNITY_DIGEST" },
+      }),
+    ).toBe(2);
   });
 
   it("total upstream failure marks scan FAILED instead of completed with zero matches", async () => {
@@ -520,6 +533,11 @@ describe("saas watch profiles", () => {
     expect(
       await prisma.organizationAttentionEvent.count({
         where: { organizationId, type: "NEW_OPPORTUNITY" },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.organizationAttentionEvent.count({
+        where: { organizationId, type: "OPPORTUNITY_DIGEST" },
       }),
     ).toBe(1);
   });

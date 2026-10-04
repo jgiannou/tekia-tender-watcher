@@ -72,7 +72,7 @@ const expectedDevelopmentFor = (input: {
 const pipelineLabel = (stage: PipelineStage): string => {
   switch (stage) {
     case "OUTREACH_SENT":
-      return "Εκδήλωση ενδιαφέροντος εστάλη";
+      return "Εκδήλωση ενδιαφέροντος καταγράφηκε";
     case "PREPARING":
       return "Προετοιμασία";
     case "SUBMITTED":
@@ -555,8 +555,18 @@ export const listMonitoringPipeline = async (
       relatedAwardCount,
       recordType: row.tender.recordType,
     });
+    const OFFICIAL_ATTENTION = new Set([
+      "RELATED_PROC_DISCOVERED",
+      "RELATED_AWARD_DISCOVERED",
+      "RELATED_APPROVED_REQUEST_DISCOVERED",
+      "RELATED_CONTRACT_DISCOVERED",
+      "DEADLINE_CHANGED",
+    ]);
+    const officialAttention = row.attentionEvents.filter((event) =>
+      OFFICIAL_ATTENTION.has(event.type),
+    );
     const latestDevelopment =
-      row.attentionEvents[0]?.title ??
+      officialAttention[0]?.title ??
       (relatedProcCount > 0
         ? "Εντοπίστηκε σχετική επίσημη πρόσκληση"
         : null);
@@ -573,11 +583,7 @@ export const listMonitoringPipeline = async (
     const hasRelatedDevelopment =
       relatedProcCount > 0 ||
       relatedAwardCount > 0 ||
-      row.attentionEvents.some(
-        (event) =>
-          event.type === "RELATED_PROC_DISCOVERED" ||
-          event.type === "RELATED_AWARD_DISCOVERED",
-      );
+      officialAttention.length > 0;
 
     if (row.pipelineStage === "WON" || row.pipelineStage === "LOST" || row.pipelineStage === "CLOSED") {
       filterBucket = "COMPLETED";
@@ -612,7 +618,7 @@ export const listMonitoringPipeline = async (
       hasSubmission,
       relatedProcCount,
       relatedAwardCount,
-      unreadAttentionCount: row.attentionEvents.length,
+      unreadAttentionCount: officialAttention.length,
       tender: row.tender,
       outreachLedger: row.outreachLedger,
       latestSubmission: row.submissions[0] ?? null,

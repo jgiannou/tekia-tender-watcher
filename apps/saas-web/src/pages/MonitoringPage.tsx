@@ -11,7 +11,7 @@ import { saasApi, type MonitoringPipelineRow } from "@/lib/api";
 const FILTERS: Array<{ id: string; label: string }> = [
   { id: "ALL", label: "Όλα" },
   { id: "FOLLOWING", label: "Παρακολουθούνται" },
-  { id: "OUTREACH_SENT", label: "Έχει σταλεί ενδιαφέρον" },
+  { id: "OUTREACH_SENT", label: "Ενδιαφέρον καταγεγραμμένο" },
   { id: "WAITING_PROC", label: "Αναμονή πρόσκλησης" },
   { id: "PREPARING", label: "Προετοιμασία" },
   { id: "SUBMITTED", label: "Υποβλήθηκαν" },

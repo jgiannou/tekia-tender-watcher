@@ -42,6 +42,14 @@ const formatDate = (value: string | null) => {
   return Number.isNaN(date.getTime()) ? value.slice(0, 10) : date.toLocaleDateString("el-GR");
 };
 
+const formatDateOnly = (date: Date) => date.toISOString().slice(0, 10);
+
+const defaultRecentDates = () => {
+  const to = new Date();
+  const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+  return { dateFrom: formatDateOnly(from), dateTo: formatDateOnly(to) };
+};
+
 type SearchFormState = {
   type: "REQ" | "PROC";
   q: string;
@@ -53,6 +61,7 @@ type SearchFormState = {
   procedureType: string;
   dateFrom: string;
   dateTo: string;
+  allHistory: boolean;
   amountMin: string;
   amountMax: string;
   finalFrom: string;
@@ -69,26 +78,34 @@ const parseState = (params: URLSearchParams): SearchFormState => {
     requestKindRaw === "approved" || requestKindRaw === "approval"
       ? requestKindRaw
       : "initial";
+  const allHistory = params.get("allHistory") === "1";
+  const recent = defaultRecentDates();
+  const hasExplicitDates = Boolean(params.get("dateFrom") || params.get("dateTo"));
   return {
-  type: params.get("type") === "PROC" ? "PROC" : "REQ",
-  q: params.get("q") ?? "",
-  adam: params.get("adam") ?? "",
-  cpv: params.get("cpv") ?? "",
-  authority: params.get("authority") ?? "",
-  contractType: params.get("contractType") ?? "",
-  requestKind,
-  procedureType: params.get("procedureType") ?? "",
-  dateFrom: params.get("dateFrom") ?? "",
-  dateTo: params.get("dateTo") ?? "",
-  amountMin: params.get("amountMin") ?? "",
-  amountMax: params.get("amountMax") ?? "",
-  finalFrom: params.get("finalFrom") ?? "",
-  finalTo: params.get("finalTo") ?? "",
-  signer: params.get("signer") ?? "",
-  sort: params.get("sort") === "date_asc" ? "date_asc" : "date_desc",
-  page: Math.max(1, Number(params.get("page") ?? "1") || 1),
-  run: params.get("run") === "1",
-};
+    type: params.get("type") === "PROC" ? "PROC" : "REQ",
+    q: params.get("q") ?? "",
+    adam: params.get("adam") ?? "",
+    cpv: params.get("cpv") ?? "",
+    authority: params.get("authority") ?? "",
+    contractType: params.get("contractType") ?? "",
+    requestKind,
+    procedureType: params.get("procedureType") ?? "",
+    dateFrom: allHistory
+      ? ""
+      : params.get("dateFrom") ?? (hasExplicitDates ? "" : recent.dateFrom),
+    dateTo: allHistory
+      ? ""
+      : params.get("dateTo") ?? (hasExplicitDates ? "" : recent.dateTo),
+    allHistory,
+    amountMin: params.get("amountMin") ?? "",
+    amountMax: params.get("amountMax") ?? "",
+    finalFrom: params.get("finalFrom") ?? "",
+    finalTo: params.get("finalTo") ?? "",
+    signer: params.get("signer") ?? "",
+    sort: params.get("sort") === "date_asc" ? "date_asc" : "date_desc",
+    page: Math.max(1, Number(params.get("page") ?? "1") || 1),
+    run: params.get("run") === "1",
+  };
 };
 
 const toSearchParams = (state: SearchFormState): URLSearchParams => {
@@ -105,8 +122,12 @@ const toSearchParams = (state: SearchFormState): URLSearchParams => {
   if (state.type === "PROC" && state.procedureType) {
     params.set("procedureType", state.procedureType);
   }
-  if (state.dateFrom) params.set("dateFrom", state.dateFrom);
-  if (state.dateTo) params.set("dateTo", state.dateTo);
+  if (state.allHistory) {
+    params.set("allHistory", "1");
+  } else {
+    if (state.dateFrom) params.set("dateFrom", state.dateFrom);
+    if (state.dateTo) params.set("dateTo", state.dateTo);
+  }
   if (state.amountMin) params.set("amountMin", state.amountMin);
   if (state.amountMax) params.set("amountMax", state.amountMax);
   if (state.type === "PROC" && state.finalFrom) params.set("finalFrom", state.finalFrom);
@@ -128,8 +149,9 @@ const toApiFilters = (state: SearchFormState): KimdisSearchFilters => ({
   cpv: state.cpv.trim() || undefined,
   organization: state.authority.trim() || undefined,
   contractType: state.contractType || undefined,
-  dateFrom: state.dateFrom || undefined,
-  dateTo: state.dateTo || undefined,
+  dateFrom: state.allHistory ? undefined : state.dateFrom || undefined,
+  dateTo: state.allHistory ? undefined : state.dateTo || undefined,
+  searchAllHistory: state.allHistory || undefined,
   totalCostFrom: state.amountMin ? Number(state.amountMin) : undefined,
   totalCostTo: state.amountMax ? Number(state.amountMax) : undefined,
   requestKind: state.type === "REQ" ? state.requestKind : undefined,
@@ -138,6 +160,20 @@ const toApiFilters = (state: SearchFormState): KimdisSearchFilters => ({
   finalSubmissionDateTo: state.type === "PROC" && state.finalTo ? state.finalTo : undefined,
   signer: state.signer.trim() || undefined,
 });
+
+const activeCriteriaSummary = (state: SearchFormState): string => {
+  const parts = [
+    state.type,
+    state.q.trim() ? `«${state.q.trim()}»` : null,
+    state.allHistory
+      ? "όλο το ιστορικό"
+      : state.dateFrom && state.dateTo
+        ? `${state.dateFrom} – ${state.dateTo}`
+        : "τελευταίες 30 ημέρες",
+    state.sort === "date_asc" ? "παλαιότερα πρώτα" : "νεότερα πρώτα",
+  ].filter(Boolean);
+  return parts.join(" · ");
+};
 
 export const SearchPage = () => {
   const { activeOrganization } = useSessionContext();
@@ -453,9 +489,14 @@ export const SearchPage = () => {
               <Label>Καταχώριση από</Label>
               <Input
                 type="date"
+                disabled={draft.allHistory}
                 value={draft.dateFrom}
                 onChange={(e) =>
-                  setDraft((prev) => ({ ...prev, dateFrom: e.target.value }))
+                  setDraft((prev) => ({
+                    ...prev,
+                    allHistory: false,
+                    dateFrom: e.target.value,
+                  }))
                 }
               />
             </div>
@@ -463,9 +504,40 @@ export const SearchPage = () => {
               <Label>Καταχώριση έως</Label>
               <Input
                 type="date"
+                disabled={draft.allHistory}
                 value={draft.dateTo}
-                onChange={(e) => setDraft((prev) => ({ ...prev, dateTo: e.target.value }))}
+                onChange={(e) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    allHistory: false,
+                    dateTo: e.target.value,
+                  }))
+                }
               />
+            </div>
+            <div className="flex items-end pb-2 md:col-span-2 lg:col-span-3">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={draft.allHistory}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setDraft((prev) => {
+                      if (checked) {
+                        return { ...prev, allHistory: true, dateFrom: "", dateTo: "" };
+                      }
+                      const recent = defaultRecentDates();
+                      return {
+                        ...prev,
+                        allHistory: false,
+                        dateFrom: recent.dateFrom,
+                        dateTo: recent.dateTo,
+                      };
+                    });
+                  }}
+                />
+                Αναζήτηση όλου του ιστορικού (μπορεί να επιστρέψει χιλιάδες αποτελέσματα)
+              </label>
             </div>
             <div className="space-y-2">
               <Label>Ποσό από</Label>
@@ -545,6 +617,15 @@ export const SearchPage = () => {
 
       {urlState.run && !error ? (
         <div className="space-y-3">
+          <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+            Ενεργά κριτήρια: {activeCriteriaSummary(urlState)}
+            {urlState.allHistory ? (
+              <span className="mt-1 block text-amber-700 dark:text-amber-400">
+                Προσοχή: η αναζήτηση καλύπτει όλο το ιστορικό — προτιμήστε φίλτρο ημερομηνιών
+                όταν είναι δυνατό.
+              </span>
+            ) : null}
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">
               {totalElements} αποτελέσματα

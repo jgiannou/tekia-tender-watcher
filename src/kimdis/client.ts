@@ -76,12 +76,16 @@ const fetchSearchPage = async <T>(
   body: unknown,
   page: number,
   timeoutMs: number,
-): Promise<KimdisPage<T>> =>
-  fetchJson<KimdisPage<T>>(`${baseUrl}${path}?page=${page}`, {
+  sort?: string,
+): Promise<KimdisPage<T>> => {
+  const params = new URLSearchParams({ page: String(page) });
+  if (sort) params.set("sort", sort);
+  return fetchJson<KimdisPage<T>>(`${baseUrl}${path}?${params.toString()}`, {
     method: "POST",
     body,
     timeoutMs,
   });
+};
 
 const fetchAllPages = async <T>(
   baseUrl: string,
@@ -122,10 +126,12 @@ export type KimdisClient = {
   searchRequestsPage: (
     body: RequestSearchBody,
     page: number,
+    sort?: string,
   ) => Promise<KimdisPage<KimdisRequestRecord>>;
   searchNoticesPage: (
     body: NoticeSearchBody,
     page: number,
+    sort?: string,
   ) => Promise<KimdisPage<KimdisNoticeRecord>>;
   searchRequests: (body: RequestSearchBody) => Promise<KimdisRequestRecord[]>;
   searchNotices: (body: NoticeSearchBody) => Promise<KimdisNoticeRecord[]>;
@@ -141,22 +147,24 @@ export const createKimdisClient = (
   const normalizedBase = baseUrl.replace(/\/$/, "");
 
   return {
-    searchRequestsPage: (body, page) =>
+    searchRequestsPage: (body, page, sort) =>
       fetchSearchPage<KimdisRequestRecord>(
         normalizedBase,
         "/khmdhs-opendata/request",
         body,
         page,
         timeoutMs,
+        sort,
       ),
 
-    searchNoticesPage: (body, page) =>
+    searchNoticesPage: (body, page, sort) =>
       fetchSearchPage<KimdisNoticeRecord>(
         normalizedBase,
         "/khmdhs-opendata/notice",
         body,
         page,
         timeoutMs,
+        sort,
       ),
 
     searchRequests: (body) =>

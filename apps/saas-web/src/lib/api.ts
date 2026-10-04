@@ -120,6 +120,8 @@ export type WatchProfile = {
   source?: "MANUAL" | "SAVED_FROM_SEARCH" | "SETUP_RECOMMENDATION" | string;
   scanError?: string | null;
   scanPartial?: boolean;
+  scanNewCount?: number | null;
+  scanEvaluatedCount?: number | null;
   authority?: string | null;
   contractType?: string | null;
   procedureType?: string | null;
@@ -197,7 +199,23 @@ export type AttentionEvent = {
   title: string;
   createdAt: string;
   readAt: string | null;
-  relatedTender?: { id: string; referenceNumber: string; title: string | null } | null;
+  organizationTenderId?: string | null;
+  metadata?: unknown;
+  relatedTender?: {
+    id: string;
+    referenceNumber: string;
+    title: string | null;
+    recordType?: string;
+  } | null;
+  organizationTender?: {
+    id: string;
+    tender?: {
+      id: string;
+      referenceNumber: string;
+      title: string | null;
+      recordType?: string;
+    } | null;
+  } | null;
 };
 
 export type SaasEntitlementsResponse = {
@@ -225,6 +243,10 @@ export type SaasOverviewMonitoringItem = {
   following: boolean;
   monitoringActive: boolean;
   pipelineStage: string;
+  stageLabel?: string;
+  nextActionLabel?: string;
+  latestActivityAt?: string | null;
+  waitingFor?: string | null;
   tender: {
     id: string;
     referenceNumber: string;
@@ -264,6 +286,7 @@ export type SaasOverview = {
   entitlements: { maxActiveWatchProfiles: number };
   watchUsage: { active: number; total: number };
   scanningProfiles: number;
+  failedScanCount?: number;
   lastSystemScanAt: string | null;
   latestMatchAt: string | null;
   attention: AttentionEvent[];
@@ -498,6 +521,9 @@ const composeOverviewFromEndpoints = async (
   const scanningProfiles = profiles.filter(
     (p) => p.enabled && (p.scanState ?? "").toUpperCase() === "RUNNING",
   ).length;
+  const failedScanCount = profiles.filter(
+    (p) => p.enabled && (p.scanState ?? "").toUpperCase() === "FAILED",
+  ).length;
 
   const entitlements = entitlementsRes?.entitlements ?? {
     maxActiveWatchProfiles: DEFAULT_MAX_ACTIVE_WATCH_PROFILES,
@@ -541,23 +567,39 @@ const composeOverviewFromEndpoints = async (
   const monitoring: SaasOverviewMonitoringItem[] = organizationTenders
     .filter((row) => row.following || row.monitoringActive)
     .slice(0, 5)
-    .map((row) => ({
-      id: row.id,
-      following: row.following,
-      monitoringActive: row.monitoringActive,
-      pipelineStage: row.pipelineStage,
-      tender: {
-        id: row.tender?.id ?? row.tenderId,
-        referenceNumber: row.tender?.referenceNumber ?? "—",
-        title: row.tender?.title ?? null,
-        recordType: row.tender?.recordType,
-        contractingAuthority: row.tender?.contractingAuthority ?? null,
-        finalSubmissionDate: row.tender?.finalSubmissionDate ?? null,
-      },
-    }));
+    .map((row) => {
+      const waitingFor =
+        row.nextAction.code === "WAIT_PROC"
+          ? "Επίσημη πρόσκληση"
+          : row.nextAction.code === "WAIT_RESULT"
+            ? "Απόφαση / αποτέλεσμα"
+            : row.nextAction.code === "MONITOR"
+              ? row.nextAction.label
+              : null;
+      return {
+        id: row.id,
+        following: row.following,
+        monitoringActive: row.monitoringActive,
+        pipelineStage: row.pipelineStage,
+        stageLabel: row.stageLabel,
+        nextActionLabel: row.nextAction.label,
+        latestActivityAt: row.latestRelatedActAt ?? row.updatedAt ?? null,
+        waitingFor,
+        tender: {
+          id: row.tender?.id ?? row.tenderId,
+          referenceNumber: row.tender?.referenceNumber ?? "—",
+          title: row.tender?.title ?? null,
+          recordType: row.tender?.recordType,
+          contractingAuthority: row.tender?.contractingAuthority ?? null,
+          finalSubmissionDate: row.tender?.finalSubmissionDate ?? null,
+        },
+      };
+    });
 
   const unreadNewOpportunity = attentionRes.events.filter(
-    (event) => !event.readAt && event.type === "NEW_OPPORTUNITY",
+    (event) =>
+      !event.readAt &&
+      (event.type === "NEW_OPPORTUNITY" || event.type === "OPPORTUNITY_DIGEST"),
   ).length;
 
   const documentsAttention: SaasOverviewDocumentAttention[] = documentsRes.documents
@@ -628,6 +670,7 @@ const composeOverviewFromEndpoints = async (
     entitlements,
     watchUsage,
     scanningProfiles,
+    failedScanCount,
     lastSystemScanAt: maxIso(profiles.map((p) => p.lastScannedAt)),
     latestMatchAt: maxIso(profiles.map((p) => p.lastMatchAt)),
     attention: sortAttentionEvents(attentionRes.events).slice(0, 8),
@@ -675,6 +718,7 @@ export type KimdisSearchFilters = {
   contractType?: string;
   dateFrom?: string;
   dateTo?: string;
+  searchAllHistory?: boolean;
   totalCostFrom?: number;
   totalCostTo?: number;
   requestKind?: "initial" | "approved" | "approval";

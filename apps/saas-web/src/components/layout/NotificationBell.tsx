@@ -8,6 +8,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { attentionEventHref } from "@/lib/attention-routing";
 import { saasApi, type AttentionEvent } from "@/lib/api";
 
 const relativeTime = (iso: string) => {
@@ -54,7 +55,7 @@ export const NotificationBell = () => {
       await load();
     }
     setOpen(false);
-    navigate("/app/monitoring");
+    navigate(attentionEventHref(event));
   };
 
   const handleMarkAll = async () => {

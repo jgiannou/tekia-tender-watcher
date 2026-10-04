@@ -6,6 +6,7 @@ import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { attentionEventHref } from "@/lib/attention-routing";
 import { saasApi, type AttentionEvent } from "@/lib/api";
 
 export const NotificationsPage = () => {
@@ -82,9 +83,6 @@ export const NotificationsPage = () => {
                     <div className="text-sm font-medium">{event.title}</div>
                     {!event.readAt ? <Badge variant="warning">Νέο</Badge> : null}
                   </div>
-                  <div className="mt-1 font-mono text-xs text-muted-foreground">
-                    {event.type}
-                  </div>
                   <div className="mt-1 text-xs text-muted-foreground">
                     {new Date(event.createdAt).toLocaleString("el-GR")}
                   </div>
@@ -100,10 +98,13 @@ export const NotificationsPage = () => {
                           .then(load)
                       }
                     >
-                      Αναγνωσμένο
+                      Σήμανση ως αναγνωσμένο
                     </Button>
                   ) : null}
-                  <Button size="sm" onClick={() => navigate("/app/monitoring")}>
+                  <Button
+                    size="sm"
+                    onClick={() => navigate(attentionEventHref(event))}
+                  >
                     Προβολή
                   </Button>
                 </div>
