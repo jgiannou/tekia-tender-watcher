@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSessionContext } from "@/auth/SessionProvider";
+import { AttentionEventContent } from "@/components/AttentionEventContent";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,14 @@ export const NotificationsPage = () => {
   }
   if (error) return <ErrorState description={error} onRetry={() => void load()} />;
 
+  const handleOpen = async (event: AttentionEvent) => {
+    if (!event.readAt) {
+      await saasApi.markAttentionRead(activeOrganization.id, event.id).catch(() => null);
+      await load();
+    }
+    navigate(attentionEventHref(event));
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -77,17 +86,12 @@ export const NotificationsPage = () => {
         <div className="space-y-2">
           {paged.pageItems.map((event) => (
             <Card key={event.id}>
-              <CardContent className="flex items-start justify-between gap-3 px-4 py-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-sm font-medium">{event.title}</div>
-                    {!event.readAt ? <Badge variant="warning">Νέο</Badge> : null}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {new Date(event.createdAt).toLocaleString("el-GR")}
-                  </div>
+              <CardContent className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 flex-1 items-start gap-2">
+                  <AttentionEventContent event={event} className="flex-1" />
+                  {!event.readAt ? <Badge variant="warning">Νέο</Badge> : null}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex shrink-0 gap-2">
                   {!event.readAt ? (
                     <Button
                       size="sm"
@@ -101,10 +105,7 @@ export const NotificationsPage = () => {
                       Σήμανση ως αναγνωσμένο
                     </Button>
                   ) : null}
-                  <Button
-                    size="sm"
-                    onClick={() => navigate(attentionEventHref(event))}
-                  >
+                  <Button size="sm" onClick={() => void handleOpen(event)}>
                     Προβολή
                   </Button>
                 </div>

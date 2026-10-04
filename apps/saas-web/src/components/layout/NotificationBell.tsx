@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell } from "lucide-react";
 import { useSessionContext } from "@/auth/SessionProvider";
+import { AttentionEventContent } from "@/components/AttentionEventContent";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -10,15 +11,6 @@ import {
 } from "@/components/ui/popover";
 import { attentionEventHref } from "@/lib/attention-routing";
 import { saasApi, type AttentionEvent } from "@/lib/api";
-
-const relativeTime = (iso: string) => {
-  const diff = Date.now() - new Date(iso).getTime();
-  const minutes = Math.max(1, Math.round(diff / 60000));
-  if (minutes < 60) return `${minutes} λεπτά πριν`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours} ώρες πριν`;
-  return new Date(iso).toLocaleString("el-GR");
-};
 
 export const NotificationBell = () => {
   const navigate = useNavigate();
@@ -81,7 +73,7 @@ export const NotificationBell = () => {
           ) : null}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[360px] p-0">
+      <PopoverContent className="w-[380px] p-0">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div>
             <div className="text-sm font-semibold">Ειδοποιήσεις</div>
@@ -95,7 +87,7 @@ export const NotificationBell = () => {
             </Button>
           ) : null}
         </div>
-        <div className="max-h-80 overflow-y-auto">
+        <div className="max-h-96 overflow-y-auto">
           {recent.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
               Δεν υπάρχουν ειδοποιήσεις ακόμη.
@@ -105,18 +97,14 @@ export const NotificationBell = () => {
               <button
                 key={event.id}
                 type="button"
-                className="w-full border-b border-border px-4 py-3 text-left hover:bg-muted/60"
+                className="flex w-full items-start gap-2 border-b border-border px-4 py-3 text-left hover:bg-muted/60"
                 onClick={() => void handleOpenEvent(event)}
+                aria-label={event.title}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="text-sm font-medium">{event.title}</div>
-                  {!event.readAt ? (
-                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
-                  ) : null}
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {relativeTime(event.createdAt)}
-                </div>
+                <AttentionEventContent event={event} className="flex-1" />
+                {!event.readAt ? (
+                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                ) : null}
               </button>
             ))
           )}

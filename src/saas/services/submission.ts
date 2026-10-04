@@ -63,6 +63,7 @@ export const recordFormalSubmission = async (
         tenderId: input.tenderId,
       },
     },
+    include: { tender: true },
   });
   if (!orgTender) throw notFound("organization_tender_not_found");
 
@@ -142,16 +143,25 @@ export const recordFormalSubmission = async (
 
     const type = "SUBMISSION_RECORDED" as AttentionEventType;
     const dedupeKey = `SUBMISSION_RECORDED:${submission.id}`;
+    const tenderTitle =
+      orgTender.tender.title?.trim() ||
+      orgTender.tender.referenceNumber ||
+      attentionTitleFor(type, "CONFIRMED");
     await tx.organizationAttentionEvent.create({
       data: {
         organizationId: input.organizationId,
         organizationTenderId: orgTender.id,
         type,
-        title: attentionTitleFor(type, "CONFIRMED"),
+        title: tenderTitle,
         dedupeKey,
         metadata: {
           submissionId: submission.id,
           method: input.submissionMethod,
+          externalReference: input.externalReference ?? null,
+          tenderTitle: orgTender.tender.title ?? null,
+          referenceNumber: orgTender.tender.referenceNumber,
+          recordType: orgTender.tender.recordType,
+          authority: orgTender.tender.contractingAuthority ?? null,
         },
       },
     });

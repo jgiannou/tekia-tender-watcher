@@ -540,18 +540,20 @@ const ensureNewOpportunityAttention = async (
     organizationId: string;
     organizationTenderId: string;
     tenderId: string;
+    profileId: string;
     profileName: string;
     score: number;
     tenderTitle?: string | null;
     referenceNumber?: string | null;
+    recordType?: string | null;
+    authority?: string | null;
   },
 ) => {
   const dedupeKey = newOpportunityDedupeKey(input.tenderId);
   const type = "NEW_OPPORTUNITY" as AttentionEventType;
-  const adam = input.referenceNumber?.trim();
-  const title = adam
-    ? `${adam}${input.tenderTitle ? ` · ${input.tenderTitle}` : ""}`
-    : attentionTitleFor(type, "CONFIRMED");
+  const title = (input.tenderTitle?.trim() ||
+    input.referenceNumber?.trim() ||
+    attentionTitleFor(type, "CONFIRMED")) as string;
   // Upsert (not find-then-create) so concurrent scans of different profiles
   // matching the same tender can never produce a duplicate notification.
   return prisma.organizationAttentionEvent.upsert({
@@ -568,10 +570,13 @@ const ensureNewOpportunityAttention = async (
       title,
       dedupeKey,
       metadata: {
+        profileId: input.profileId,
         profileName: input.profileName,
         score: input.score,
         referenceNumber: input.referenceNumber ?? null,
         tenderTitle: input.tenderTitle ?? null,
+        recordType: input.recordType ?? null,
+        authority: input.authority ?? null,
       },
     },
     update: {},
@@ -599,12 +604,11 @@ const ensureOpportunityDigestAttention = async (
   const dedupeKey = opportunityDigestDedupeKey(input.profileId, input.scannedAt);
   const type = "OPPORTUNITY_DIGEST" as AttentionEventType;
   const fresh = Math.max(0, input.newCount);
+  const count = fresh > 0 ? fresh : input.matchCount;
   const title =
-    fresh === 0
-      ? `${input.matchCount} αντιστοιχίσεις από «${input.profileName}»`
-      : fresh === 1
-        ? `1 νέα ευκαιρία από «${input.profileName}»`
-        : `${fresh} νέες ευκαιρίες από «${input.profileName}»`;
+    count === 1
+      ? `1 ευκαιρία από την αναζήτηση «${input.profileName}»`
+      : `${count} ευκαιρίες από την αναζήτηση «${input.profileName}»`;
   return prisma.organizationAttentionEvent.upsert({
     where: {
       organizationId_dedupeKey: {
@@ -697,6 +701,8 @@ const linkOpportunityToProfile = async (
   const tender = await prisma.tender.findUnique({ where: { id: tenderId } });
   const referenceNumber = tender?.referenceNumber ?? null;
   const tenderTitle = tender?.title ?? null;
+  const recordType = tender?.recordType ?? null;
+  const authority = tender?.contractingAuthority ?? null;
 
   const existing = await prisma.organizationTender.findUnique({
     where: {
@@ -727,10 +733,13 @@ const linkOpportunityToProfile = async (
         organizationId: input.organizationId,
         organizationTenderId: row.id,
         tenderId,
+        profileId: input.profile.id,
         profileName: input.profile.name,
         score: input.match.score,
         tenderTitle,
         referenceNumber,
+        recordType,
+        authority,
       });
     }
     return {

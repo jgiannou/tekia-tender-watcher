@@ -87,6 +87,9 @@ export const monitorFollowedThreads = async (
 
   for (const sourceTenderId of sourceIds) {
     upstreamOperations += 1;
+    const sourceTender = await prisma.tender.findUnique({
+      where: { id: sourceTenderId },
+    });
 
     const candidates: Array<{
       targetTender: Tender;
@@ -195,6 +198,10 @@ export const monitorFollowedThreads = async (
       );
 
       const affected = active.filter((row) => row.tenderId === sourceTenderId);
+      const relatedTitle =
+        candidate.targetTender.title?.trim() ||
+        candidate.targetTender.referenceNumber ||
+        attentionTitleFor(type, link.confidence);
       const createResult = await prisma.organizationAttentionEvent.createMany({
         data: affected.map((orgTender) => ({
           organizationId: orgTender.organizationId,
@@ -202,7 +209,7 @@ export const monitorFollowedThreads = async (
           relatedTenderId: candidate.targetTender.id,
           relatedActLinkId: link.id,
           type,
-          title: attentionTitleFor(type, link.confidence),
+          title: relatedTitle,
           dedupeKey,
           metadata: {
             sourceTenderId,
@@ -211,6 +218,10 @@ export const monitorFollowedThreads = async (
             confidence: link.confidence,
             detectionMethod: candidate.detectionMethod,
             referenceNumber: candidate.targetTender.referenceNumber,
+            recordType: candidate.targetTender.recordType,
+            relatedTenderTitle: candidate.targetTender.title ?? null,
+            authority: candidate.targetTender.contractingAuthority ?? null,
+            sourceTenderTitle: sourceTender?.title ?? null,
           },
         })),
         skipDuplicates: true,

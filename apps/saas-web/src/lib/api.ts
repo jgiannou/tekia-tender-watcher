@@ -206,6 +206,7 @@ export type AttentionEvent = {
     referenceNumber: string;
     title: string | null;
     recordType?: string;
+    contractingAuthority?: string | null;
   } | null;
   organizationTender?: {
     id: string;
@@ -214,6 +215,7 @@ export type AttentionEvent = {
       referenceNumber: string;
       title: string | null;
       recordType?: string;
+      contractingAuthority?: string | null;
     } | null;
   } | null;
 };
