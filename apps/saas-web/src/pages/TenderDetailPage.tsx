@@ -106,6 +106,8 @@ export const TenderDetailPage = () => {
     setLoading(true);
     setError(null);
     try {
+      // Record payload is local-first on the API — paint the page before
+      // workflow / opportunity enrichment so REQ/PROC detail opens quickly.
       const data = await saasApi.getKimdisRecord(
         activeOrganization.id,
         recordType,
@@ -113,6 +115,7 @@ export const TenderDetailPage = () => {
       );
       setItem(data.item);
       setTenderId(data.tender.id);
+      setLoading(false);
 
       const [oppData, workflowData] = await Promise.all([
         saasApi.listOpportunities(activeOrganization.id).catch(() => ({
@@ -140,7 +143,6 @@ export const TenderDetailPage = () => {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης πράξης");
       setItem(null);
-    } finally {
       setLoading(false);
     }
   };

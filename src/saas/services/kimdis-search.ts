@@ -1,3 +1,4 @@
+import type { PrismaClient, Tender } from "@prisma/client";
 import type { KimdisClient } from "../../kimdis/client.js";
 import { formatDateOnly } from "../../kimdis/client.js";
 import type {
@@ -56,7 +57,8 @@ export type KimdisSearchFilters = {
   searchAllHistory?: boolean;
   totalCostFrom?: number;
   totalCostTo?: number;
-  requestKind?: KimdisRequestKind;
+  /** Omit / undefined = initial only (manual search default). `"any"` = all REQ kinds. */
+  requestKind?: KimdisRequestKind | "any";
   procedureType?: string;
   finalSubmissionDateFrom?: string;
   finalSubmissionDateTo?: string;
@@ -146,9 +148,11 @@ const upstreamSortParam = (sort: KimdisSearchSort): string =>
   sort === "date_asc" ? "submissionDate,asc" : "submissionDate,desc";
 
 const requestKindFlags = (
-  requestKind?: KimdisRequestKind,
+  requestKind?: KimdisRequestKind | "any",
 ): { isInitial: boolean; isApproved: boolean; isApproval: boolean } => {
   switch (requestKind) {
+    case "any":
+      return { isInitial: true, isApproved: true, isApproval: true };
     case "approved":
       return { isInitial: false, isApproved: true, isApproval: false };
     case "approval":
@@ -250,25 +254,89 @@ export const buildKimdisSearchMeta = () => ({
  * Ordering comes only from the upstream `sort` query parameter.
  */
 
+/** Adapt a canonical Tender row to the search/detail item shape. */
+export const kimdisItemFromTender = (tender: Tender): KimdisSearchItem => ({
+  adam: tender.referenceNumber,
+  recordType: (tender.recordType === "PROC" ? "PROC" : "REQ") as RecordType,
+  title: tender.title ?? "",
+  contractingAuthority: tender.contractingAuthority ?? "",
+  cpvs: Array.isArray(tender.cpvs)
+    ? tender.cpvs.map((cpv) => String(cpv))
+    : [],
+  budgetWithoutVat: tender.budgetWithoutVat,
+  budgetWithVat: tender.budgetWithVat,
+  submissionDate: tender.submissionDate?.toISOString() ?? null,
+  signedDate: tender.signedDate?.toISOString() ?? null,
+  finalSubmissionDate: tender.finalSubmissionDate?.toISOString() ?? null,
+  procedureType: null,
+  contractTypeLabel: null,
+  cancelled: false,
+  publicKimdisUrl: tender.publicKimdisUrl ?? "",
+  officialPdfUrl: tender.officialPdfUrl ?? "",
+  openState: computeOpenState(
+    tender.recordType === "PROC" ? "PROC" : "REQ",
+    false,
+    tender.finalSubmissionDate?.toISOString() ?? null,
+  ),
+});
+
+const pickExactAdam = (
+  items: KimdisSearchItem[],
+  adam: string,
+): KimdisSearchItem | null =>
+  items.find((item) => item.adam === adam) ?? null;
+
 /**
- * Load a single KIMDIS record by ADAM via official search (referenceNumber).
- * Used for dedicated tender detail pages.
+ * Load a single KIMDIS record by ADAM for tender detail pages.
+ * Prefers the local DB (instant) so followed/known acts open without waiting
+ * on upstream. Live lookup uses referenceNumber and only widens the date
+ * window when the recent window misses.
  */
 export const getKimdisRecordByAdam = async (
   kimdis: KimdisClient,
   input: { recordType: RecordType; adam: string },
+  options?: { prisma?: PrismaClient },
 ): Promise<KimdisSearchItem | null> => {
   const adam = input.adam.trim();
   if (!adam) throw badRequest("adam_required");
-  const result = await searchKimdis(kimdis, {
+
+  if (options?.prisma) {
+    const local = await options.prisma.tender.findUnique({
+      where: { referenceNumber: adam },
+    });
+    if (local) {
+      const localType =
+        local.recordType === "PROC" ? "PROC" : local.recordType === "REQ" ? "REQ" : null;
+      if (!localType || localType === input.recordType) {
+        return kimdisItemFromTender(local);
+      }
+    }
+  }
+
+  const requestKind =
+    input.recordType === "REQ" ? ("any" as const) : undefined;
+
+  // Recent window first — exact ADAM lookups are normally fast here.
+  const recent = await searchKimdis(kimdis, {
     recordFamily: input.recordType,
     referenceNumber: adam,
     page: 0,
     sort: "date_desc",
+    requestKind,
   });
-  const exact =
-    result.items.find((item) => item.adam === adam) ?? result.items[0] ?? null;
-  return exact;
+  const recentHit = pickExactAdam(recent.items, adam);
+  if (recentHit) return recentHit;
+
+  // Older acts: widen once. referenceNumber keeps the payload small.
+  const historical = await searchKimdis(kimdis, {
+    recordFamily: input.recordType,
+    referenceNumber: adam,
+    page: 0,
+    sort: "date_desc",
+    searchAllHistory: true,
+    requestKind,
+  });
+  return pickExactAdam(historical.items, adam);
 };
 
 export const searchKimdis = async (

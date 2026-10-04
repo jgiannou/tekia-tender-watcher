@@ -281,7 +281,7 @@ export const AuthenticatedPdfViewer = ({
             </p>
             {actions}
             {!embedRequested && browserCanEmbedPdf() ? (
-              <Button size="sm" variant="link" onClick={handleTryEmbed}>
+              <Button size="sm" variant="ghost" onClick={handleTryEmbed}>
                 Δοκιμή ενσωματωμένης προεπισκόπησης
               </Button>
             ) : null}

@@ -485,7 +485,11 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       );
       const recordType = z.enum(["REQ", "PROC"]).parse(c.req.param("recordType"));
       const adam = decodeURIComponent(c.req.param("adam"));
-      const item = await getKimdisRecordByAdam(deps.kimdis, { recordType, adam });
+      const item = await getKimdisRecordByAdam(
+        deps.kimdis,
+        { recordType, adam },
+        { prisma: deps.prisma },
+      );
       if (!item) throw notFound("kimdis_record_not_found");
       const tender = await upsertTenderFromKimdisItem(deps.prisma, item);
       return c.json({ item, tender: { id: tender.id, referenceNumber: tender.referenceNumber } });

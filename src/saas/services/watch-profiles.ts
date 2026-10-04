@@ -12,6 +12,7 @@ import { requireOrgMembership } from "../auth/org-context.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import { attentionTitleFor } from "./attention.js";
 import {
+  kimdisItemFromTender,
   searchKimdis,
   type KimdisSearchFilters,
   type KimdisSearchItem,
@@ -629,30 +630,8 @@ const ensureOpportunityDigestAttention = async (
   });
 };
 
-/**
- * Scoring works on the KIMDIS search shape, so canonical rows are adapted
- * instead of duplicating the matcher.
- */
-const searchItemFromTender = (tender: Tender): KimdisSearchItem => ({
-  adam: tender.referenceNumber,
-  recordType: (tender.recordType === "PROC" ? "PROC" : "REQ") as RecordType,
-  title: tender.title ?? "",
-  contractingAuthority: tender.contractingAuthority ?? "",
-  cpvs: Array.isArray(tender.cpvs)
-    ? tender.cpvs.map((cpv) => String(cpv))
-    : [],
-  budgetWithoutVat: tender.budgetWithoutVat,
-  budgetWithVat: tender.budgetWithVat,
-  submissionDate: tender.submissionDate?.toISOString() ?? null,
-  signedDate: tender.signedDate?.toISOString() ?? null,
-  finalSubmissionDate: tender.finalSubmissionDate?.toISOString() ?? null,
-  procedureType: null,
-  contractTypeLabel: null,
-  cancelled: false,
-  publicKimdisUrl: tender.publicKimdisUrl ?? "",
-  officialPdfUrl: tender.officialPdfUrl ?? "",
-  openState: "UNKNOWN",
-});
+/** Scoring works on the KIMDIS search shape — reuse the shared adapter. */
+const searchItemFromTender = kimdisItemFromTender;
 
 export const upsertOpportunityFromProfileMatch = async (
   prisma: PrismaClient,
