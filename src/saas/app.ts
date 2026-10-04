@@ -8,6 +8,7 @@ import { loadSaasConfig, type SaasConfig } from "./config.js";
 import {
   SaasError,
   badRequest,
+  kimdisUpstreamError,
   notFound,
   serviceUnavailable,
   unauthorized,
@@ -34,7 +35,7 @@ import {
   getTenderWorkspace,
   removeWorkspaceDocument,
 } from "./services/workspace.js";
-import { recordFormalSubmission } from "./services/submission.js";
+import { listFormalSubmissions, recordFormalSubmission } from "./services/submission.js";
 import {
   getOrganizationTenderWorkflow,
   listMonitoringPipeline,
@@ -63,6 +64,7 @@ import {
   getWatchProfile,
   listWatchProfiles,
   setWatchProfileEnabled,
+  toWatchProfileDto,
   triggerWatchProfileScanForRoute,
   updateWatchProfile,
 } from "./services/watch-profiles.js";
@@ -506,14 +508,19 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       const adam = c.req.param("adam");
       const inline = c.req.query("inline") !== "0";
       const bytes = await deps.kimdis.downloadAttachment(recordType, adam);
-      if (!bytes) {
+      if (!bytes || bytes.length < 5) {
         throw notFound("pdf_not_found");
       }
+      if (!bytes.subarray(0, 5).toString("latin1").startsWith("%PDF")) {
+        throw kimdisUpstreamError("official_document_is_not_a_pdf");
+      }
+      const filename = encodeURIComponent(`${adam}.pdf`);
       return new Response(new Uint8Array(bytes), {
         status: 200,
         headers: {
           "Content-Type": "application/pdf",
-          "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(adam)}.pdf`,
+          "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${adam}.pdf"; filename*=UTF-8''${filename}`,
+          "X-Content-Type-Options": "nosniff",
           "Cache-Control": "private, no-store",
         },
       });
@@ -573,7 +580,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       userId: c.get("userId"),
       organizationId: resolveOrgId(c),
     });
-    return c.json({ profiles });
+    return c.json({ profiles: profiles.map(toWatchProfileDto) });
   });
 
   app.get("/api/saas/vault/folders", requireSession, async (c) => {
@@ -804,7 +811,10 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     authority: z.string().nullable().optional(),
     contractType: z.string().nullable().optional(),
     procedureType: z.string().nullable().optional(),
+    dateFrom: z.string().nullable().optional(),
+    dateTo: z.string().nullable().optional(),
     skipSimilarCheck: z.boolean().optional(),
+    source: z.enum(["MANUAL", "SAVED_FROM_SEARCH", "SETUP_RECOMMENDATION"]).optional(),
   });
 
   app.get("/api/saas/opportunities", requireSession, async (c) => {
@@ -821,7 +831,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       organizationId: resolveOrgId(c),
       profileId: c.req.param("id"),
     });
-    return c.json({ profile });
+    return c.json({ profile: toWatchProfileDto(profile) });
   });
 
   app.post("/api/saas/watch-profiles/check-similar", requireSession, async (c) => {
@@ -851,7 +861,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       organizationId: resolveOrgId(c),
       ...body,
     });
-    return c.json({ profile }, 201);
+    return c.json({ profile: toWatchProfileDto(profile) }, 201);
   });
 
   app.patch("/api/saas/watch-profiles/:id", requireSession, async (c) => {
@@ -862,7 +872,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       profileId: c.req.param("id"),
       ...body,
     });
-    return c.json({ profile });
+    return c.json({ profile: toWatchProfileDto(profile) });
   });
 
   app.patch("/api/saas/watch-profiles/:id/enabled", requireSession, async (c) => {
@@ -873,7 +883,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       profileId: c.req.param("id"),
       enabled: body.enabled,
     });
-    return c.json({ profile });
+    return c.json({ profile: toWatchProfileDto(profile) });
   });
 
   app.delete("/api/saas/watch-profiles/:id", requireSession, async (c) => {
@@ -895,7 +905,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
         profileId: c.req.param("id"),
       },
     );
-    return c.json({ profile });
+    return c.json({ profile: toWatchProfileDto(profile) });
   });
 
   app.post("/api/saas/organizations", requireSession, async (c) => {
@@ -978,6 +988,14 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       return c.json({ organizationTender: row });
     },
   );
+
+  app.get("/api/saas/submissions", requireSession, async (c) => {
+    const submissions = await listFormalSubmissions(deps.prisma, {
+      userId: c.get("userId"),
+      organizationId: resolveOrgId(c),
+    });
+    return c.json({ submissions });
+  });
 
   app.post(
     "/api/saas/tenders/:tenderId/submissions",

@@ -12,11 +12,11 @@ export default defineConfig({
   },
   server: {
     host: "127.0.0.1",
-    port: 5174,
+    port: Number(process.env.SAAS_WEB_PORT ?? 5174),
     strictPort: true,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:3000",
+        target: process.env.SAAS_API_PROXY ?? "http://127.0.0.1:3000",
         changeOrigin: true,
       },
     },

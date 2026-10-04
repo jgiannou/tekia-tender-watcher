@@ -41,14 +41,16 @@ export const PdfPreviewModal = ({
         {actions ? <div className="flex flex-wrap gap-2 pt-1">{actions}</div> : null}
       </DialogHeader>
       <div className="min-h-0 flex-1 overflow-hidden">
-        <AuthenticatedPdfViewer
-          organizationId={organizationId}
-          pdfPath={`/api/saas/kimdis/pdf/${recordType}/${encodeURIComponent(adam)}`}
-          downloadName={`${adam}.pdf`}
-          officialUrl={officialUrl}
-          iframeClassName="h-full min-h-[70vh]"
-          className="flex h-full flex-col"
-        />
+        {open && adam ? (
+          <AuthenticatedPdfViewer
+            organizationId={organizationId}
+            pdfPath={`/api/saas/kimdis/pdf/${recordType}/${encodeURIComponent(adam)}`}
+            downloadName={`${adam}.pdf`}
+            officialUrl={officialUrl}
+            iframeClassName="h-full min-h-[70vh]"
+            className="flex h-full flex-col"
+          />
+        ) : null}
       </div>
     </DialogContent>
   </Dialog>

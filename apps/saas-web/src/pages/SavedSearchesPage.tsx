@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Eye, MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
@@ -75,12 +75,20 @@ const notificationLabel = (value?: string) => {
   }
 };
 
+const humanScanError = (error?: string | null) => {
+  if (!error) return "";
+  if (error === "kimdis_not_configured") return "το ΚΗΜΔΗΣ δεν ήταν διαθέσιμο";
+  return error.length > 180 ? `${error.slice(0, 180)}…` : error;
+};
+
 const scanLabel = (profile: WatchProfile) => {
   switch ((profile.scanState ?? "PENDING").toUpperCase()) {
     case "RUNNING":
       return "Αρχική σάρωση σε εξέλιξη…";
     case "FAILED":
-      return "Αποτυχία σάρωσης";
+      return profile.scanError
+        ? `Αποτυχία σάρωσης · ${humanScanError(profile.scanError)}`
+        : "Αποτυχία σάρωσης";
     case "COMPLETED":
       return profile.matchCount
         ? `${profile.matchCount} αντιστοιχίσεις`
@@ -103,6 +111,8 @@ const emptyForm = (): WatchProfileInput & { id?: string } => ({
   procedureType: null,
   minBudget: null,
   maxBudget: null,
+  dateFrom: null,
+  dateTo: null,
   enabled: true,
 });
 
@@ -126,6 +136,8 @@ const profileToForm = (profile: WatchProfile): WatchProfileInput & { id: string 
   procedureType: profile.procedureType ?? null,
   minBudget: profile.minBudget ?? null,
   maxBudget: profile.maxBudget ?? null,
+  dateFrom: profile.dateFrom ?? null,
+  dateTo: profile.dateTo ?? null,
   enabled: profile.enabled,
 });
 
@@ -147,14 +159,14 @@ export const SavedSearchesPage = () => {
     null,
   );
   const paged = usePaginatedList(profiles);
+  const hasLoadedRef = useRef(false);
 
-  const load = async () => {
+  const load = async (opts?: { silent?: boolean }) => {
     if (!activeOrganization) {
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setError(null);
+    if (!opts?.silent) setLoading(true);
     try {
       const [data, ent] = await Promise.all([
         saasApi.listWatchProfiles(activeOrganization.id),
@@ -162,16 +174,36 @@ export const SavedSearchesPage = () => {
       ]);
       setProfiles(data.profiles);
       setEntitlements(ent);
+      setError(null);
+      hasLoadedRef.current = true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης");
+      const message = err instanceof Error ? err.message : "Αποτυχία φόρτωσης";
+      if (hasLoadedRef.current || opts?.silent) {
+        toast.error(message);
+      } else {
+        setError(message);
+      }
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   };
 
   useEffect(() => {
+    hasLoadedRef.current = false;
     void load();
   }, [activeOrganization?.id]);
+
+  const scanInFlight = profiles.some((profile) =>
+    ["PENDING", "RUNNING"].includes((profile.scanState ?? "").toUpperCase()),
+  );
+
+  useEffect(() => {
+    if (!activeOrganization || !scanInFlight) return;
+    const timer = window.setInterval(() => {
+      void load({ silent: true });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [activeOrganization?.id, scanInFlight]);
 
   const maxActive =
     entitlements?.entitlements.maxActiveWatchProfiles ?? 20;
@@ -244,6 +276,7 @@ export const SavedSearchesPage = () => {
         keywords,
         negativeKeywords: parseList(excludeText),
         cpvs,
+        source: editForm.id ? undefined : "MANUAL",
       };
       if (editForm.id) {
         await saasApi.updateWatchProfile(activeOrganization.id, editForm.id, payload);
@@ -424,6 +457,9 @@ export const SavedSearchesPage = () => {
                       <CardTitle className="text-base">{profile.name}</CardTitle>
                       <CardDescription className="mt-1">
                         {scanLabel(profile)}
+                        {profile.scanState === "COMPLETED" && profile.scanPartial
+                          ? ` · μερική σάρωση (${humanScanError(profile.scanError)})`
+                          : ""}
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
@@ -496,6 +532,12 @@ export const SavedSearchesPage = () => {
                       <span className="text-muted-foreground">Ειδοποιήσεις: </span>
                       {notificationLabel(profile.notificationOverride)}
                     </div>
+                    <div className="md:col-span-2">
+                      <span className="text-muted-foreground">Ημερομηνίες καταχώρισης: </span>
+                      {profile.dateFrom && profile.dateTo
+                        ? `${profile.dateFrom} – ${profile.dateTo}`
+                        : "Τελευταίες 30 ημέρες (προεπιλογή)"}
+                    </div>
                   </div>
                   {keywords.length ? (
                     <div>
@@ -559,6 +601,12 @@ export const SavedSearchesPage = () => {
                 <div>Αρχή: {viewProfile.authority || "—"}</div>
                 <div>
                   Ποσό: {viewProfile.minBudget ?? "—"} – {viewProfile.maxBudget ?? "—"}
+                </div>
+                <div>
+                  Ημερομηνίες:{" "}
+                  {viewProfile.dateFrom && viewProfile.dateTo
+                    ? `${viewProfile.dateFrom} – ${viewProfile.dateTo}`
+                    : "Τελευταίες 30 ημέρες"}
                 </div>
                 <div className="flex flex-wrap gap-2 pt-2">
                   <Button size="sm" onClick={() => openEdit(viewProfile)}>
@@ -749,7 +797,39 @@ export const SavedSearchesPage = () => {
                       }
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="date-from">Καταχώριση από</Label>
+                    <Input
+                      id="date-from"
+                      type="date"
+                      value={editForm.dateFrom ?? ""}
+                      onChange={(e) =>
+                        setEditForm((prev) =>
+                          prev
+                            ? { ...prev, dateFrom: e.target.value || null }
+                            : prev,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="date-to">Καταχώριση έως</Label>
+                    <Input
+                      id="date-to"
+                      type="date"
+                      value={editForm.dateTo ?? ""}
+                      onChange={(e) =>
+                        setEditForm((prev) =>
+                          prev ? { ...prev, dateTo: e.target.value || null } : prev,
+                        )
+                      }
+                    />
+                  </div>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Αν δεν ορίσετε ημερομηνίες, η σάρωση χρησιμοποιεί τις τελευταίες 30 ημέρες.
+                  Οι δύο ημερομηνίες πρέπει να συμπληρωθούν μαζί.
+                </p>
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setEditForm(null)}>
                     Ακύρωση

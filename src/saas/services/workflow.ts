@@ -116,18 +116,23 @@ export const resolveNextAction = (input: {
       description: "Παρακολουθούμε το ΚΗΜΔΗΣ για ανάθεση / σύμβαση.",
     };
   }
-  if (input.relatedProcCount > 0 && input.pipelineStage === "PREPARING") {
+  const procReady =
+    input.recordType === "PROC" || input.relatedProcCount > 0;
+  if (procReady && input.pipelineStage === "PREPARING") {
     return {
       code: "RECORD_SUBMISSION",
       label: "Καταγραφή υποβολής",
       description: "Όταν υποβάλετε επίσημα, καταγράψτε την υποβολή εδώ.",
     };
   }
-  if (input.relatedProcCount > 0) {
+  if (procReady && (input.following || input.relatedProcCount > 0)) {
     return {
       code: "START_PREPARATION",
       label: "Έναρξη προετοιμασίας",
-      description: "Εντοπίστηκε επίσημη πρόσκληση — ξεκινήστε προετοιμασία.",
+      description:
+        input.recordType === "PROC"
+          ? "Ενεργή πρόσκληση — ετοιμάστε τον φάκελο και καταγράψτε την υποβολή."
+          : "Εντοπίστηκε επίσημη πρόσκληση — ξεκινήστε προετοιμασία.",
     };
   }
   if (input.hasOutreach || input.pipelineStage === "OUTREACH_SENT") {
@@ -222,6 +227,7 @@ export const getOrganizationTenderWorkflow = async (
       }),
       expectedDevelopment: null,
       outreach: null,
+      latestSubmission: null,
       workspaceDocumentCount: 0,
       stageLabel: pipelineLabel("NEW"),
     };
@@ -305,7 +311,9 @@ export const getOrganizationTenderWorkflow = async (
           ? [outreachMethod, organizationTender.outreachLedger?.recipient]
               .filter(Boolean)
               .join(" · ") || null
-          : null,
+          : event.eventType === "SUBMITTED"
+            ? submissionSubtitle(organizationTender.submissions[0])
+            : null,
       at: event.createdAt.toISOString(),
     });
   }
@@ -340,6 +348,17 @@ export const getOrganizationTenderWorkflow = async (
       recordType: organizationTender.tender.recordType,
       monitoringActive: organizationTender.monitoringActive,
     }),
+    latestSubmission: organizationTender.submissions[0]
+      ? {
+          id: organizationTender.submissions[0].id,
+          submittedAt: organizationTender.submissions[0].submittedAt,
+          submissionMethod: organizationTender.submissions[0].submissionMethod,
+          externalReference: organizationTender.submissions[0].externalReference,
+          amountWithoutVat: organizationTender.submissions[0].amountWithoutVat,
+          notes: organizationTender.submissions[0].notes,
+          submittedByUserId: organizationTender.submissions[0].submittedByUserId,
+        }
+      : null,
     outreach: organizationTender.outreachLedger
       ? {
           sentAt: organizationTender.outreachLedger.sentAt,
@@ -362,6 +381,26 @@ type OutreachPayload = {
   method?: string | null;
   externalReference?: string | null;
   documents?: Array<{ documentId: string; name: string; version: number | null }>;
+};
+
+const submissionSubtitle = (
+  submission:
+    | {
+        submissionMethod: string;
+        externalReference: string | null;
+        amountWithoutVat: number | null;
+      }
+    | undefined,
+): string | null => {
+  if (!submission) return null;
+  const amount =
+    submission.amountWithoutVat == null
+      ? null
+      : `${submission.amountWithoutVat} €`;
+  const parts = [submission.submissionMethod, submission.externalReference, amount].filter(
+    Boolean,
+  );
+  return parts.length ? parts.join(" · ") : null;
 };
 
 const outreachPayload = (
@@ -403,6 +442,22 @@ export const startPreparation = async (
     name: tender.referenceNumber,
   });
 
+  const alreadyStarted = await prisma.tenderEvent.findFirst({
+    where: {
+      organizationTenderId: orgTender.id,
+      eventType: "PREPARATION_STARTED",
+    },
+  });
+  const lockedStage =
+    orgTender.pipelineStage === "SUBMITTED" ||
+    orgTender.pipelineStage === "WON" ||
+    orgTender.pipelineStage === "LOST" ||
+    orgTender.pipelineStage === "CLOSED";
+  if (alreadyStarted || lockedStage) {
+    if (lockedStage) return orgTender;
+    if (orgTender.pipelineStage === "PREPARING") return orgTender;
+  }
+
   return prisma.$transaction(async (tx) => {
     const row = await tx.organizationTender.update({
       where: { id: orgTender.id },
@@ -417,14 +472,16 @@ export const startPreparation = async (
         monitoringStoppedAt: null,
       },
     });
-    await tx.tenderEvent.create({
-      data: {
-        organizationId,
-        organizationTenderId: orgTender.id,
-        eventType: "PREPARATION_STARTED",
-        note: "User started preparation for related PROC",
-      },
-    });
+    if (!alreadyStarted) {
+      await tx.tenderEvent.create({
+        data: {
+          organizationId,
+          organizationTenderId: orgTender.id,
+          eventType: "PREPARATION_STARTED",
+          note: "User started preparation",
+        },
+      });
+    }
     return row;
   });
 };

@@ -122,6 +122,50 @@ describe("SaaS request → outreach → submission workflow", () => {
     expect(afterOutreach.nextAction.code).toBe("WAIT_PROC");
   });
 
+  it("directly followed PROC offers Start preparation as next action", async () => {
+    const { user, organization } = await seedUserOrg("proc@example.com", "PROC Co");
+    const proc = await upsertCanonicalTender(prisma, {
+      referenceNumber: "26PROC100099",
+      recordType: "PROC",
+      title: "Ενεργή πρόσκληση ιστοσελίδας",
+    });
+    await followTender(prisma, {
+      userId: user.id,
+      organizationId: organization.id,
+      tenderId: proc.id,
+    });
+
+    const afterFollow = await getOrganizationTenderWorkflow(prisma, {
+      userId: user.id,
+      organizationId: organization.id,
+      tenderId: proc.id,
+    });
+    expect(afterFollow.nextAction.code).toBe("START_PREPARATION");
+    expect(afterFollow.nextAction.label).toBe("Έναρξη προετοιμασίας");
+
+    await startPreparation(prisma, {
+      userId: user.id,
+      organizationId: organization.id,
+      tenderId: proc.id,
+    });
+    // Idempotent workspace / preparation event.
+    await startPreparation(prisma, {
+      userId: user.id,
+      organizationId: organization.id,
+      tenderId: proc.id,
+    });
+
+    const afterPrepare = await getOrganizationTenderWorkflow(prisma, {
+      userId: user.id,
+      organizationId: organization.id,
+      tenderId: proc.id,
+    });
+    expect(afterPrepare.nextAction.code).toBe("RECORD_SUBMISSION");
+    expect(
+      afterPrepare.timeline.filter((entry) => entry.title === "Ξεκίνησε η προετοιμασία"),
+    ).toHaveLength(1);
+  });
+
   it("preparation creates the tender workspace and reuses vault documents", async () => {
     const { user, organization } = await seedUserOrg("ws@example.com", "WS Co");
     const proc = await upsertCanonicalTender(prisma, {
@@ -206,6 +250,7 @@ describe("SaaS request → outreach → submission workflow", () => {
 
     expect(organizationTender.pipelineStage).toBe("SUBMITTED");
     expect(organizationTender.monitoringActive).toBe(true);
+    expect(submission.submittedByUserId).toBe(user.id);
 
     const snapshots = await prisma.submissionDocumentSnapshot.findMany({
       where: { submissionId: submission.id },

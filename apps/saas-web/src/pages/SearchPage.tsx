@@ -233,6 +233,9 @@ export const SearchPage = () => {
     procedureType: urlState.procedureType || null,
     minBudget: urlState.amountMin ? Number(urlState.amountMin) : null,
     maxBudget: urlState.amountMax ? Number(urlState.amountMax) : null,
+    dateFrom: urlState.dateFrom || null,
+    dateTo: urlState.dateTo || null,
+    source: "SAVED_FROM_SEARCH",
     skipSimilarCheck,
   });
 

@@ -117,9 +117,14 @@ export type WatchProfile = {
   initialScanCompletedAt?: string | null;
   lastMatchAt?: string | null;
   matchCount?: number;
+  source?: "MANUAL" | "SAVED_FROM_SEARCH" | "SETUP_RECOMMENDATION" | string;
+  scanError?: string | null;
+  scanPartial?: boolean;
   authority?: string | null;
   contractType?: string | null;
   procedureType?: string | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
   createdAt: string;
   updatedAt?: string;
 };
@@ -138,6 +143,9 @@ export type WatchProfileInput = {
   authority?: string | null;
   contractType?: string | null;
   procedureType?: string | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  source?: "MANUAL" | "SAVED_FROM_SEARCH" | "SETUP_RECOMMENDATION";
   skipSimilarCheck?: boolean;
 };
 
@@ -356,8 +364,39 @@ export type TenderWorkflow = {
   nextAction: WorkflowNextAction;
   expectedDevelopment: WorkflowExpectedDevelopment;
   outreach: WorkflowOutreach | null;
+  latestSubmission: {
+    id: string;
+    submittedAt: string;
+    submissionMethod: string;
+    externalReference: string | null;
+    amountWithoutVat: number | null;
+    notes: string | null;
+    submittedByUserId: string | null;
+  } | null;
   workspaceDocumentCount: number;
   stageLabel: string;
+};
+
+export type FormalSubmissionRow = {
+  id: string;
+  submittedAt: string;
+  submissionMethod: string;
+  recipient: string | null;
+  amountWithoutVat: number | null;
+  amountWithVat: number | null;
+  externalReference: string | null;
+  notes: string | null;
+  result: string;
+  submittedByUserId: string | null;
+  submittedBy: { id: string; name: string; email: string } | null;
+  monitoringActive: boolean;
+  tender: {
+    id: string;
+    referenceNumber: string;
+    recordType: string;
+    title: string | null;
+    contractingAuthority: string | null;
+  };
 };
 
 export type MonitoringPipelineRow = {
@@ -1080,6 +1119,10 @@ export const saasApi = {
       `/api/saas/tenders/${tenderId}/prepare`,
       { method: "POST", organizationId },
     ),
+  listSubmissions: (organizationId: string) =>
+    request<{ submissions: FormalSubmissionRow[] }>("/api/saas/submissions", {
+      organizationId,
+    }),
   recordSubmission: (
     organizationId: string,
     tenderId: string,

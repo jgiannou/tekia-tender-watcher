@@ -56,6 +56,9 @@ export type WatchProfileInput = {
   authority?: string | null;
   contractType?: string | null;
   procedureType?: string | null;
+  /** Inclusive KIMDIS publication window (YYYY-MM-DD). Both or neither. */
+  dateFrom?: string | null;
+  dateTo?: string | null;
   source?: WatchProfileSource;
   skipSimilarCheck?: boolean;
 };
@@ -90,6 +93,20 @@ const normalizeRecordTypes = (values: string[] | undefined): string[] => {
   return allowed.length ? [...allowed] : [...ALL_RECORD_TYPES];
 };
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+const normalizeDateOnly = (value: string | null | undefined): string | null => {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!DATE_ONLY.test(trimmed)) {
+    throw badRequest("watch_profile_date_must_be_yyyy_mm_dd");
+  }
+  const ms = Date.parse(`${trimmed}T00:00:00.000Z`);
+  if (Number.isNaN(ms)) throw badRequest("watch_profile_date_invalid");
+  return trimmed;
+};
+
 export type NormalizedWatchProfileCriteria = {
   keywords: string[];
   negativeKeywords: string[];
@@ -101,6 +118,8 @@ export type NormalizedWatchProfileCriteria = {
   authority: string | null;
   contractType: string | null;
   procedureType: string | null;
+  dateFrom: string | null;
+  dateTo: string | null;
 };
 
 /**
@@ -110,18 +129,30 @@ export type NormalizedWatchProfileCriteria = {
  */
 export const normalizeWatchProfileCriteria = (
   input: WatchProfileInput,
-): NormalizedWatchProfileCriteria => ({
-  keywords: dedupeTokens(trimStrings(input.keywords)),
-  negativeKeywords: dedupeTokens(trimStrings(input.negativeKeywords)),
-  cpvs: dedupeTokens(trimStrings(input.cpvs)),
-  minBudget: input.minBudget ?? null,
-  maxBudget: input.maxBudget ?? null,
-  recordTypes: normalizeRecordTypes(input.recordTypes),
-  matchingMode: (input.matchingMode ?? "BALANCED").toUpperCase(),
-  authority: input.authority?.trim() || null,
-  contractType: input.contractType?.trim() || null,
-  procedureType: input.procedureType?.trim() || null,
-});
+): NormalizedWatchProfileCriteria => {
+  const dateFrom = normalizeDateOnly(input.dateFrom);
+  const dateTo = normalizeDateOnly(input.dateTo);
+  if ((dateFrom && !dateTo) || (!dateFrom && dateTo)) {
+    throw badRequest("watch_profile_date_from_and_to_required_together");
+  }
+  if (dateFrom && dateTo && dateFrom > dateTo) {
+    throw badRequest("watch_profile_date_from_after_date_to");
+  }
+  return {
+    keywords: dedupeTokens(trimStrings(input.keywords)),
+    negativeKeywords: dedupeTokens(trimStrings(input.negativeKeywords)),
+    cpvs: dedupeTokens(trimStrings(input.cpvs)),
+    minBudget: input.minBudget ?? null,
+    maxBudget: input.maxBudget ?? null,
+    recordTypes: normalizeRecordTypes(input.recordTypes),
+    matchingMode: (input.matchingMode ?? "BALANCED").toUpperCase(),
+    authority: input.authority?.trim() || null,
+    contractType: input.contractType?.trim() || null,
+    procedureType: input.procedureType?.trim() || null,
+    dateFrom,
+    dateTo,
+  };
+};
 
 const criteriaFingerprint = (criteria: NormalizedWatchProfileCriteria): string => {
   const sort = (arr: string[]) => [...arr].map(normalizeToken).sort();
@@ -135,6 +166,8 @@ const criteriaFingerprint = (criteria: NormalizedWatchProfileCriteria): string =
     contractType: criteria.contractType?.toLowerCase() ?? null,
     procedureType: criteria.procedureType?.toLowerCase() ?? null,
     recordTypes: sort(criteria.recordTypes),
+    dateFrom: criteria.dateFrom,
+    dateTo: criteria.dateTo,
   });
 };
 
@@ -153,6 +186,8 @@ const criteriaFromPersisted = (
     authority: profile.authority,
     contractType: profile.contractType,
     procedureType: profile.procedureType,
+    dateFrom: profile.dateFrom,
+    dateTo: profile.dateTo,
   });
 
 export const findSimilarWatchProfiles = async (
@@ -300,8 +335,10 @@ export const createWatchProfile = async (
     },
   });
 
-  await runWatchProfileScan(prisma, kimdis, profile.id);
-  return prisma.watchProfile.findUniqueOrThrow({ where: { id: profile.id } });
+  // The route returns as soon as the profile is PENDING. Every creation source
+  // enqueues this same scan; none of them wait for KIMDIS.
+  enqueueWatchProfileScan(prisma, kimdis, profile.id);
+  return profile;
 };
 
 export const updateWatchProfile = async (
@@ -346,8 +383,7 @@ export const updateWatchProfile = async (
   });
 
   if (material && profile.enabled) {
-    await runWatchProfileScan(prisma, kimdis, profile.id);
-    return prisma.watchProfile.findUniqueOrThrow({ where: { id: profile.id } });
+    enqueueWatchProfileScan(prisma, kimdis, profile.id);
   }
   return profile;
 };
@@ -397,16 +433,26 @@ export const deleteWatchProfile = async (
   return { deleted: true, id: existing.id };
 };
 
-const scanDateWindow = (): { dateFrom: string; dateTo: string } => {
+const DEFAULT_SCAN_LOOKBACK_DAYS = 30;
+
+/** Profile date window when set; otherwise a rolling lookback for continuous scans. */
+export const scanDateWindowForProfile = (
+  profile: Pick<WatchProfile, "dateFrom" | "dateTo">,
+): { dateFrom: string; dateTo: string } => {
+  if (profile.dateFrom && profile.dateTo) {
+    return { dateFrom: profile.dateFrom, dateTo: profile.dateTo };
+  }
   const now = new Date();
-  const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const from = new Date(
+    now.getTime() - DEFAULT_SCAN_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+  );
   return { dateFrom: formatDateOnly(from), dateTo: formatDateOnly(now) };
 };
 
 const buildScanFilterVariants = (
   profile: WatchProfile,
 ): KimdisSearchFilters[] => {
-  const dates = scanDateWindow();
+  const dates = scanDateWindowForProfile(profile);
   const criteria = criteriaFromWatchProfile(profile);
   const recordTypes = recordTypesForScan(criteria.recordTypes);
   const base = {
@@ -642,8 +688,6 @@ const linkOpportunityToProfile = async (
   return { created: false, organizationTenderId: existing.id, tenderId };
 };
 
-const SCAN_WINDOW_DAYS = 30;
-
 /**
  * Phase 1 of a scan: already-ingested canonical tenders. Keeps Opportunities
  * useful even when KIMDIS is slow, rate-limited or returns nothing.
@@ -654,11 +698,16 @@ const scanCanonicalTenders = async (
   onMatch: (tenderId: string, match: WatchMatchResult) => Promise<void>,
 ): Promise<Set<string>> => {
   const criteria = criteriaFromWatchProfile(profile);
-  const since = new Date(Date.now() - SCAN_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const dates = scanDateWindowForProfile(profile);
+  const since = new Date(`${dates.dateFrom}T00:00:00.000Z`);
+  const until = new Date(`${dates.dateTo}T23:59:59.999Z`);
   const tenders = await prisma.tender.findMany({
     where: {
       recordType: { in: recordTypesForScan(criteria.recordTypes) },
-      OR: [{ submissionDate: { gte: since } }, { firstSeenAt: { gte: since } }],
+      OR: [
+        { submissionDate: { gte: since, lte: until } },
+        { firstSeenAt: { gte: since, lte: until } },
+      ],
     },
     orderBy: { firstSeenAt: "desc" },
     take: 2000,
@@ -723,8 +772,10 @@ export const runWatchProfileScan = async (
       },
     );
 
+    let variantsAttempted = 0;
     if (kimdis) {
       for (const filters of buildScanFilterVariants(profile)) {
+        variantsAttempted += 1;
         let items: KimdisSearchItem[] = [];
         try {
           items = await fetchAllKimdisItems(kimdis, filters);
@@ -752,11 +803,17 @@ export const runWatchProfileScan = async (
           matchedTenderIds.add(result.tenderId);
         }
       }
+      // Every upstream query failed. COMPLETED with zero matches would claim
+      // "nothing matched" when we never saw the registry.
+      if (variantsAttempted > 0 && upstreamErrors.length === variantsAttempted) {
+        throw new Error(upstreamErrors[0] ?? "kimdis_scan_failed");
+      }
     } else {
       upstreamErrors.push("kimdis_not_configured");
     }
 
     const now = new Date();
+    const partial = upstreamErrors.length > 0;
     return prisma.watchProfile.update({
       where: { id: profileId },
       data: {
@@ -766,22 +823,53 @@ export const runWatchProfileScan = async (
         lastMatchAt: matchedTenderIds.size > 0 ? now : profile.lastMatchAt,
         matchCount: matchedTenderIds.size,
         customFilters: mergeCustomFilters(profile, {
-          lastScanError: upstreamErrors[0] ?? null,
-          lastScanPartial: upstreamErrors.length > 0,
+          lastScanError: partial ? (upstreamErrors[0] ?? null) : null,
+          lastScanPartial: partial,
         }),
       },
     });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "watch_profile_scan_failed";
+    const now = new Date();
     return prisma.watchProfile.update({
       where: { id: profileId },
       data: {
         scanState: "FAILED",
-        lastScannedAt: new Date(),
-        customFilters: mergeCustomFilters(profile, { lastScanError: message }),
+        lastScannedAt: now,
+        ...(matchedTenderIds.size > 0
+          ? { matchCount: matchedTenderIds.size, lastMatchAt: now }
+          : {}),
+        customFilters: mergeCustomFilters(profile, {
+          lastScanError: message,
+          lastScanPartial: upstreamErrors.length > 0,
+        }),
       },
     });
+  }
+};
+
+const inflightScans = new Map<string, Promise<WatchProfile>>();
+
+/** Starts a scan without awaiting it. A second call for the same profile joins it. */
+export const enqueueWatchProfileScan = (
+  prisma: PrismaClient,
+  kimdis: KimdisClient | undefined,
+  profileId: string,
+): Promise<WatchProfile> => {
+  const existing = inflightScans.get(profileId);
+  if (existing) return existing;
+  const job = runWatchProfileScan(prisma, kimdis, profileId).finally(() => {
+    if (inflightScans.get(profileId) === job) inflightScans.delete(profileId);
+  });
+  inflightScans.set(profileId, job);
+  return job;
+};
+
+/** Used by tests so a database reset cannot race an in-flight scan. */
+export const waitForWatchProfileScans = async (): Promise<void> => {
+  while (inflightScans.size > 0) {
+    await Promise.allSettled([...inflightScans.values()]);
   }
 };
 
@@ -796,6 +884,29 @@ const mergeCustomFilters = (
     ...patch,
   }) as Prisma.InputJsonValue;
 
+export type WatchProfileDto = WatchProfile & {
+  source: WatchProfileSource;
+  scanError: string | null;
+  scanPartial: boolean;
+};
+
+const readCustomFilters = (profile: WatchProfile): Record<string, unknown> =>
+  typeof profile.customFilters === "object" && profile.customFilters
+    ? (profile.customFilters as Record<string, unknown>)
+    : {};
+
+/** Scan diagnostics the Saved Searches card renders. Source never changes scoring. */
+export const toWatchProfileDto = (profile: WatchProfile): WatchProfileDto => {
+  const meta = readCustomFilters(profile);
+  const source = String(meta.source ?? "MANUAL") as WatchProfileSource;
+  return {
+    ...profile,
+    source: WATCH_PROFILE_SOURCES.includes(source) ? source : "MANUAL",
+    scanError: typeof meta.lastScanError === "string" ? meta.lastScanError : null,
+    scanPartial: meta.lastScanPartial === true,
+  };
+};
+
 export const triggerWatchProfileScanForRoute = async (
   prisma: PrismaClient,
   kimdis: KimdisClient | undefined,
@@ -805,6 +916,9 @@ export const triggerWatchProfileScanForRoute = async (
     profileId: string;
   },
 ) => {
-  await getWatchProfile(prisma, input);
-  return runWatchProfileScan(prisma, kimdis, input.profileId);
+  const profile = await getWatchProfile(prisma, input);
+  if (profile.enabled) {
+    enqueueWatchProfileScan(prisma, kimdis, profile.id);
+  }
+  return prisma.watchProfile.findUniqueOrThrow({ where: { id: profile.id } });
 };

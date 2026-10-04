@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import type { KimdisClient } from "../../src/kimdis/client.js";
 import { createSaasApp } from "../../src/saas/app.js";
+import { waitForWatchProfileScans } from "../../src/saas/services/watch-profiles.js";
 import type { SaasConfig } from "../../src/saas/config.js";
 
 /**
@@ -34,6 +35,7 @@ export const getSaasTestPrisma = (): PrismaClient => {
 };
 
 export const resetSaasDatabase = async (prisma: PrismaClient) => {
+  await waitForWatchProfileScans();
   await prisma.submissionDocumentSnapshot.deleteMany();
   await prisma.tenderWorkspaceDocumentRef.deleteMany();
   await prisma.vaultDocumentVersion.deleteMany();

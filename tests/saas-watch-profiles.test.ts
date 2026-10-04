@@ -41,6 +41,20 @@ const cpvOnlyRequest = (): KimdisRequestRecord => ({
   title: "Ανάπτυξη ιστοσελίδας δήμου",
 });
 
+const waitForProfile = async (
+  prisma: ReturnType<typeof getSaasTestPrisma>,
+  profileId: string,
+) => {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const row = await prisma.watchProfile.findUniqueOrThrow({
+      where: { id: profileId },
+    });
+    if (row.scanState === "COMPLETED" || row.scanState === "FAILED") return row;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`scan did not finish for ${profileId}`);
+};
+
 const createMockKimdis = (handlers: {
   searchRequestsPage?: (
     body: RequestSearchBody,
@@ -104,7 +118,9 @@ describe("saas watch profiles", () => {
       createMockKimdis({ searchRequestsPage }),
     );
 
-    const created = await authedJson<{ profile: { scanState: string; matchCount: number } }>(
+    const created = await authedJson<{
+      profile: { id: string; scanState: string; matchCount: number };
+    }>(
       app,
       "/api/saas/watch-profiles",
       {
@@ -119,8 +135,10 @@ describe("saas watch profiles", () => {
     );
 
     expect(created.status).toBe(201);
-    expect(created.json.profile.scanState).toBe("COMPLETED");
-    expect(created.json.profile.matchCount).toBe(1);
+    expect(created.json.profile.scanState).toBe("PENDING");
+    const finished = await waitForProfile(prisma, created.json.profile.id);
+    expect(finished.scanState).toBe("COMPLETED");
+    expect(finished.matchCount).toBe(1);
 
     const opps = await authedJson<{
       opportunities: Array<{ score: number; tender: { referenceNumber: string } }>;
@@ -153,25 +171,35 @@ describe("saas watch profiles", () => {
       createMockKimdis({ searchRequestsPage }),
     );
 
-    await authedJson(app, "/api/saas/watch-profiles", {
-      cookie,
-      organizationId,
-      body: {
-        name: "Keywords profile",
-        keywords: ["ιστοσελίδα"],
-        cpvs: ["72000000-5"],
+    const first = await authedJson<{ profile: { id: string } }>(
+      app,
+      "/api/saas/watch-profiles",
+      {
+        cookie,
+        organizationId,
+        body: {
+          name: "Keywords profile",
+          keywords: ["ιστοσελίδα"],
+          cpvs: ["72000000-5"],
+        },
       },
-    });
+    );
 
-    await authedJson(app, "/api/saas/watch-profiles", {
-      cookie,
-      organizationId,
-      body: {
-        name: "CPV profile",
-        cpvs: ["72000000-5"],
-        keywords: ["δήμου"],
+    const second = await authedJson<{ profile: { id: string } }>(
+      app,
+      "/api/saas/watch-profiles",
+      {
+        cookie,
+        organizationId,
+        body: {
+          name: "CPV profile",
+          cpvs: ["72000000-5"],
+          keywords: ["δήμου"],
+        },
       },
-    });
+    );
+    await waitForProfile(prisma, first.json.profile.id);
+    await waitForProfile(prisma, second.json.profile.id);
 
     const orgTenders = await prisma.organizationTender.findMany({
       where: { organizationId },
@@ -236,6 +264,8 @@ describe("saas watch profiles", () => {
         },
       },
     );
+    await waitForProfile(prisma, created.json.profile.id);
+    const callsAfterCreate = searchRequestsPage.mock.calls.length;
 
     await authedJson(app, `/api/saas/watch-profiles/${created.json.profile.id}/enabled`, {
       method: "PATCH",
@@ -248,7 +278,7 @@ describe("saas watch profiles", () => {
 
     const opps = await prisma.organizationTender.count({ where: { organizationId } });
     expect(opps).toBe(1);
-    expect(searchRequestsPage).toHaveBeenCalledTimes(1);
+    expect(searchRequestsPage).toHaveBeenCalledTimes(callsAfterCreate);
   });
 
   it("delete profile does not remove followed organization tender", async () => {
@@ -277,6 +307,7 @@ describe("saas watch profiles", () => {
       },
     );
 
+    await waitForProfile(prisma, created.json.profile.id);
     const tender = await prisma.tender.findFirstOrThrow({
       where: { referenceNumber: "26REQ888777666" },
     });
@@ -350,6 +381,183 @@ describe("saas watch profiles", () => {
     );
     expect(duplicate.status).toBe(409);
     expect(duplicate.json.error).toBe("conflict");
+  });
+
+  it("MANUAL and SAVED_FROM_SEARCH with same criteria produce equivalent matches", async () => {
+    const searchRequestsPage = vi.fn(async () => ({
+      content: [matchingRequest()],
+      last: true,
+      totalElements: 1,
+      totalPages: 1,
+      number: 0,
+    }));
+    const { app, cookie, organizationId } = await signInWithKimdis(
+      createMockKimdis({ searchRequestsPage }),
+    );
+
+    const manual = await authedJson<{ profile: { id: string } }>(
+      app,
+      "/api/saas/watch-profiles",
+      {
+        cookie,
+        organizationId,
+        body: {
+          name: "Manual path",
+          keywords: ["ιστοσελίδα"],
+          recordTypes: ["REQ", "PROC"],
+          matchingMode: "BALANCED",
+          source: "MANUAL",
+          skipSimilarCheck: true,
+        },
+      },
+    );
+    const fromSearch = await authedJson<{ profile: { id: string } }>(
+      app,
+      "/api/saas/watch-profiles",
+      {
+        cookie,
+        organizationId,
+        body: {
+          name: "Search save path",
+          keywords: ["ιστοσελίδα"],
+          recordTypes: ["REQ", "PROC"],
+          matchingMode: "BALANCED",
+          source: "SAVED_FROM_SEARCH",
+          skipSimilarCheck: true,
+        },
+      },
+    );
+    expect(manual.status).toBe(201);
+    expect(fromSearch.status).toBe(201);
+    const finishedManual = await waitForProfile(prisma, manual.json.profile.id);
+    const finishedSearch = await waitForProfile(prisma, fromSearch.json.profile.id);
+    expect(finishedManual.scanState).toBe("COMPLETED");
+    expect(finishedSearch.scanState).toBe("COMPLETED");
+    expect(finishedManual.matchCount).toBe(finishedSearch.matchCount);
+    expect(finishedManual.matchCount).toBeGreaterThan(0);
+
+    const opps = await prisma.organizationTender.findMany({
+      where: { organizationId },
+    });
+    expect(opps).toHaveLength(1);
+    expect(
+      await prisma.organizationAttentionEvent.count({
+        where: { organizationId, type: "NEW_OPPORTUNITY" },
+      }),
+    ).toBe(1);
+  });
+
+  it("total upstream failure marks scan FAILED instead of completed with zero matches", async () => {
+    const searchRequestsPage = vi.fn(async () => {
+      throw new Error("KIMDIS HTTP 502 for /khmdhs-opendata/request");
+    });
+    const { app, cookie, organizationId } = await signInWithKimdis(
+      createMockKimdis({ searchRequestsPage }),
+    );
+
+    const created = await authedJson<{ profile: { id: string; scanState: string } }>(
+      app,
+      "/api/saas/watch-profiles",
+      {
+        cookie,
+        organizationId,
+        body: {
+          name: "Failing scan",
+          keywords: ["ιστοσελίδα"],
+          recordTypes: ["REQ"],
+        },
+      },
+    );
+    expect(created.status).toBe(201);
+    expect(created.json.profile.scanState).toBe("PENDING");
+    const finished = await waitForProfile(prisma, created.json.profile.id);
+    expect(finished.scanState).toBe("FAILED");
+    expect(finished.matchCount).toBe(0);
+    const dto = await authedJson<{ profile: { scanError: string | null } }>(
+      app,
+      `/api/saas/watch-profiles/${created.json.profile.id}`,
+      { cookie, organizationId },
+    );
+    expect(dto.json.profile.scanError).toMatch(/KIMDIS HTTP 502/);
+  });
+
+  it("rescan does not duplicate opportunities or attention events", async () => {
+    const searchRequestsPage = vi.fn(async () => ({
+      content: [matchingRequest()],
+      last: true,
+      totalElements: 1,
+      totalPages: 1,
+      number: 0,
+    }));
+    const { app, cookie, organizationId } = await signInWithKimdis(
+      createMockKimdis({ searchRequestsPage }),
+    );
+
+    const created = await authedJson<{ profile: { id: string } }>(
+      app,
+      "/api/saas/watch-profiles",
+      {
+        cookie,
+        organizationId,
+        body: {
+          name: "Rescanable",
+          keywords: ["ιστοσελίδα"],
+          cpvs: ["72000000-5"],
+        },
+      },
+    );
+    await waitForProfile(prisma, created.json.profile.id);
+
+    const rescan = await authedJson<{ profile: { scanState: string } }>(
+      app,
+      `/api/saas/watch-profiles/${created.json.profile.id}/scan`,
+      { method: "POST", cookie, organizationId },
+    );
+    expect(rescan.status).toBe(200);
+    await waitForProfile(prisma, created.json.profile.id);
+
+    expect(await prisma.organizationTender.count({ where: { organizationId } })).toBe(1);
+    expect(
+      await prisma.organizationAttentionEvent.count({
+        where: { organizationId, type: "NEW_OPPORTUNITY" },
+      }),
+    ).toBe(1);
+  });
+
+  it("persists date range and uses it for the KIMDIS scan window", async () => {
+    const searchRequestsPage = vi.fn(async (body: RequestSearchBody) => {
+      expect(body.dateFrom).toBe("2026-09-01");
+      expect(body.dateTo).toBe("2026-09-30");
+      return {
+        content: [matchingRequest()],
+        last: true,
+        totalElements: 1,
+        totalPages: 1,
+        number: 0,
+      };
+    });
+    const { app, cookie, organizationId } = await signInWithKimdis(
+      createMockKimdis({ searchRequestsPage }),
+    );
+
+    const created = await authedJson<{
+      profile: { id: string; dateFrom: string | null; dateTo: string | null };
+    }>(app, "/api/saas/watch-profiles", {
+      cookie,
+      organizationId,
+      body: {
+        name: "Dated search",
+        keywords: ["ιστοσελίδα"],
+        recordTypes: ["REQ"],
+        dateFrom: "2026-09-01",
+        dateTo: "2026-09-30",
+      },
+    });
+    expect(created.status).toBe(201);
+    expect(created.json.profile.dateFrom).toBe("2026-09-01");
+    expect(created.json.profile.dateTo).toBe("2026-09-30");
+    await waitForProfile(prisma, created.json.profile.id);
+    expect(searchRequestsPage).toHaveBeenCalled();
   });
 
   it("PDF proxy returns application/pdf from mock downloadAttachment", async () => {

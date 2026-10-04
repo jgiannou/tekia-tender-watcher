@@ -251,6 +251,9 @@ model WatchProfile {
   authority             String?
   contractType          String?
   procedureType         String?
+  /// Optional KIMDIS publication window (YYYY-MM-DD). Null = rolling default lookback.
+  dateFrom              String?
+  dateTo                String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -458,6 +461,8 @@ model Submission {
   amountWithVat          Float?
   attachments            Json?
   externalReference      String?
+  /// User who recorded the submission. The app does not submit to the authority.
+  submittedByUserId      String?
   result                 SubmissionResult @default(PENDING)
   notes                  String?
   createdAt              DateTime         @default(now())

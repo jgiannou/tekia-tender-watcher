@@ -434,7 +434,9 @@ export const TenderDetailPage = () => {
                   </div>
                   <div>
                     <span className="text-muted-foreground">Υποβολή: </span>
-                    {isSubmitted ? "Καταγράφηκε" : "Δεν έχει καταγραφεί"}
+                    {workflow?.latestSubmission
+                      ? `${formatDateTime(workflow.latestSubmission.submittedAt)} · ${workflow.latestSubmission.submissionMethod}${workflow.latestSubmission.externalReference ? ` · ${workflow.latestSubmission.externalReference}` : ""}`
+                      : "Δεν έχει καταγραφεί"}
                   </div>
                 </div>
                 {workflow?.expectedDevelopment ? (

@@ -86,6 +86,7 @@ export const recordFormalSubmission = async (
         amountWithoutVat: input.amountWithoutVat ?? null,
         amountWithVat: input.amountWithVat ?? null,
         externalReference: input.externalReference ?? null,
+        submittedByUserId: input.userId,
         notes: input.notes ?? null,
         attachments: documents.map((doc) => ({
           documentId: doc.documentId,
@@ -150,4 +151,62 @@ export const recordFormalSubmission = async (
 
     return { submission, organizationTender };
   });
+};
+
+export const listFormalSubmissions = async (
+  prisma: PrismaClient,
+  input: { userId: string; organizationId: string | null },
+) => {
+  const { organizationId } = await requireOrgMembership(
+    prisma,
+    input.userId,
+    input.organizationId,
+  );
+  const rows = await prisma.submission.findMany({
+    where: { organizationId },
+    orderBy: { submittedAt: "desc" },
+    include: {
+      organizationTender: { include: { tender: true } },
+    },
+  });
+  const userIds = [
+    ...new Set(
+      rows
+        .map((row) => row.submittedByUserId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const users =
+    userIds.length === 0
+      ? []
+      : await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true, email: true },
+        });
+  const userById = new Map(users.map((user) => [user.id, user]));
+
+  return rows.map((row) => ({
+    id: row.id,
+    submittedAt: row.submittedAt,
+    submissionMethod: row.submissionMethod,
+    recipient: row.recipient,
+    amountWithoutVat: row.amountWithoutVat,
+    amountWithVat: row.amountWithVat,
+    externalReference: row.externalReference,
+    notes: row.notes,
+    result: row.result,
+    attachments: row.attachments,
+    submittedByUserId: row.submittedByUserId,
+    submittedBy: row.submittedByUserId
+      ? (userById.get(row.submittedByUserId) ?? null)
+      : null,
+    tender: {
+      id: row.organizationTender.tender.id,
+      referenceNumber: row.organizationTender.tender.referenceNumber,
+      recordType: row.organizationTender.tender.recordType,
+      title: row.organizationTender.tender.title,
+      contractingAuthority: row.organizationTender.tender.contractingAuthority,
+    },
+    monitoringActive: row.organizationTender.monitoringActive,
+  }));
 };

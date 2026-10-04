@@ -232,6 +232,7 @@ export const SetupPage = () => {
         name,
         keywords,
         cpvs: selectedCpvs,
+        source: "SETUP_RECOMMENDATION",
       });
       if (user?.email) {
         await saasApi.updateNotifications(activeOrganization.id, {
