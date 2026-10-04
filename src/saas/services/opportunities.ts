@@ -15,6 +15,13 @@ export const listOpportunities = async (
   const rows = await prisma.organizationTender.findMany({
     where: {
       organizationId,
+      pipelineStage: { not: "DISMISSED" },
+      NOT: {
+        OR: [
+          { relevanceStatus: "EXPIRED" },
+          { ignoreReason: { in: ["user_marked_expired", "user_dismissed"] } },
+        ],
+      },
       OR: [
         { score: { not: null } },
         { watchProfileId: { not: null } },

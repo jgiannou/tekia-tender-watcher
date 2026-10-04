@@ -13,7 +13,7 @@ import {
   serviceUnavailable,
   unauthorized,
 } from "./errors.js";
-import { followTender, unfollowTender } from "./services/follow.js";
+import { dismissTender, followTender, unfollowTender } from "./services/follow.js";
 import {
   followKimdisSearchItem,
   upsertTenderFromKimdisItem,
@@ -958,6 +958,27 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       userId: c.get("userId"),
       organizationId: organizationId!,
       tenderId: c.req.param("tenderId"),
+    });
+    return c.json({ organizationTender: row });
+  });
+
+  app.post("/api/saas/tenders/:tenderId/dismiss", requireSession, async (c) => {
+    const organizationId = resolveOrgId(c);
+    const body = await c.req
+      .json()
+      .then((value) =>
+        z
+          .object({
+            reason: z.enum(["EXPIRED", "NOT_INTERESTED"]).optional(),
+          })
+          .parse(value ?? {}),
+      )
+      .catch(() => ({ reason: "EXPIRED" as const }));
+    const row = await dismissTender(deps.prisma, {
+      userId: c.get("userId"),
+      organizationId: organizationId!,
+      tenderId: c.req.param("tenderId"),
+      reason: body.reason,
     });
     return c.json({ organizationTender: row });
   });

@@ -181,6 +181,41 @@ export const TenderDetailPage = () => {
     }
   };
 
+  const isDeadlineExpired = (() => {
+    if (!item?.finalSubmissionDate) return false;
+    const date = new Date(item.finalSubmissionDate);
+    if (Number.isNaN(date.getTime())) return false;
+    return date.getTime() < Date.now();
+  })();
+
+  const handleDismiss = async () => {
+    if (!activeOrganization || !tenderId) return;
+    const confirmed = window.confirm(
+      isDeadlineExpired
+        ? "Να σημανθεί ως ληγμένο και να μην εμφανίζεται ξανά στις ευκαιρίες;"
+        : "Να αποκρυφτεί αυτή η πράξη ώστε να μην εμφανίζεται ξανά στις ευκαιρίες;",
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      await saasApi.dismissTender(
+        activeOrganization.id,
+        tenderId,
+        isDeadlineExpired ? "EXPIRED" : "NOT_INTERESTED",
+      );
+      toast.success(
+        isDeadlineExpired
+          ? "Σημάνθηκε ως ληγμένο και αποκρύφτηκε."
+          : "Η πράξη αποκρύφτηκε από τις ευκαιρίες.",
+      );
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία απόκρυψης");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleOutreach = async () => {
     if (!activeOrganization || !tenderId) return;
     setBusy(true);
@@ -381,6 +416,15 @@ export const TenderDetailPage = () => {
           {primaryAction ? (
             <Button disabled={busy} onClick={primaryAction.onClick}>
               {primaryAction.label}
+            </Button>
+          ) : null}
+          {tenderId ? (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => void handleDismiss()}
+            >
+              {isDeadlineExpired ? "Σήμανση ως ληγμένο" : "Απόκρυψη από ευκαιρίες"}
             </Button>
           ) : null}
         </div>

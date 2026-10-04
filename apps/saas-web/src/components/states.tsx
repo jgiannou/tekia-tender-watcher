@@ -2,6 +2,7 @@ import { AlertCircle, Inbox, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { humanSaasError } from "@/lib/labels";
 
 export const PageLoading = ({ label = "Φόρτωση…" }: { label?: string }) => (
   <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-muted-foreground">
@@ -64,7 +65,9 @@ export const ErrorState = ({
       <AlertCircle className="h-5 w-5 text-destructive" />
       <div className="space-y-1">
         <h3 className="text-base font-semibold">{title}</h3>
-        <p className="max-w-md text-sm text-muted-foreground">{description}</p>
+        <p className="max-w-md text-sm text-muted-foreground">
+          {humanSaasError(description)}
+        </p>
       </div>
       {onRetry ? (
         <Button variant="outline" onClick={onRetry}>

@@ -32,7 +32,9 @@ const readErrorMessage = async (response: Response): Promise<string> => {
   } catch {
     // The body is not JSON.
   }
-  return `HTTP ${response.status}`;
+  if (response.status >= 500) return "Προσωρινό σφάλμα διακομιστή. Δοκιμάστε ξανά.";
+  if (response.status === 404) return "Το PDF δεν βρέθηκε.";
+  return "Αποτυχία λήψης PDF.";
 };
 
 const fetchPdfBlob = async (

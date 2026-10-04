@@ -173,7 +173,11 @@ const activeCriteriaSummary = (state: SearchFormState): string => {
       ? "όλο το ιστορικό"
       : state.dateFrom && state.dateTo
         ? `${state.dateFrom} – ${state.dateTo}`
-        : "τελευταίες 30 ημέρες",
+        : state.dateFrom
+          ? `από ${state.dateFrom}`
+          : state.dateTo
+            ? `έως ${state.dateTo}`
+            : "τελευταίες 30 ημέρες",
     state.sort === "date_asc" ? "παλαιότερα πρώτα" : "νεότερα πρώτα",
   ].filter(Boolean);
   return parts.join(" · ");

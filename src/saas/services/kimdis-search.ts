@@ -377,8 +377,11 @@ export const searchKimdis = async (
   let dates: { dateFrom: string; dateTo: string };
   if (filters.dateFrom && filters.dateTo) {
     dates = { dateFrom: filters.dateFrom, dateTo: filters.dateTo };
-  } else if (filters.dateFrom || filters.dateTo) {
-    throw badRequest("dateFrom and dateTo must be provided together");
+  } else if (filters.dateFrom) {
+    dates = { dateFrom: filters.dateFrom, dateTo: formatDateOnly(new Date()) };
+  } else if (filters.dateTo) {
+    const defaults = defaultDateWindow();
+    dates = { dateFrom: defaults.dateFrom, dateTo: filters.dateTo };
   } else if (filters.searchAllHistory) {
     dates = allHistoryDateWindow();
   } else {

@@ -55,7 +55,7 @@ export const followTender = async (
         organizationId: input.organizationId,
         organizationTenderId: row.id,
         eventType: "FOLLOWED",
-        note: "User started following tender",
+        note: "Ξεκίνησε παρακολούθηση",
       },
     });
 
@@ -91,6 +91,74 @@ export const unfollowTender = async (
       monitoringActive: false,
       monitoringStoppedAt: now,
     },
+  });
+};
+
+/**
+ * Hide an opportunity/tender from the org app surface (esp. expired requests).
+ * Keeps the row for history but excludes it from Opportunities and stops monitoring.
+ */
+export const dismissTender = async (
+  prisma: PrismaClient,
+  input: {
+    userId: string;
+    organizationId: string;
+    tenderId: string;
+    reason?: "EXPIRED" | "NOT_INTERESTED";
+  },
+) => {
+  await requireOrgMembership(prisma, input.userId, input.organizationId);
+
+  const tender = await prisma.tender.findUnique({ where: { id: input.tenderId } });
+  if (!tender) throw notFound("tender_not_found");
+
+  const reason = input.reason ?? "EXPIRED";
+  const now = new Date();
+  const ignoreReason =
+    reason === "EXPIRED" ? "user_marked_expired" : "user_dismissed";
+
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.organizationTender.upsert({
+      where: {
+        organizationId_tenderId: {
+          organizationId: input.organizationId,
+          tenderId: input.tenderId,
+        },
+      },
+      create: {
+        organizationId: input.organizationId,
+        tenderId: input.tenderId,
+        following: false,
+        monitoringActive: false,
+        monitoringStoppedAt: now,
+        relevanceStatus: reason === "EXPIRED" ? "EXPIRED" : "IRRELEVANT",
+        ignoreReason,
+        pipelineStage: "DISMISSED",
+        operationalStatus: "LOST",
+      },
+      update: {
+        following: false,
+        monitoringActive: false,
+        monitoringStoppedAt: now,
+        relevanceStatus: reason === "EXPIRED" ? "EXPIRED" : "IRRELEVANT",
+        ignoreReason,
+        pipelineStage: "DISMISSED",
+      },
+    });
+
+    await tx.tenderEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        organizationTenderId: row.id,
+        eventType: "DISMISSED",
+        note:
+          reason === "EXPIRED"
+            ? "Σήμανση ως ληγμένο — απόκρυψη από τις ευκαιρίες"
+            : "Απόκρυψη από τις ευκαιρίες",
+      },
+    });
+
+    return row;
   });
 };
 

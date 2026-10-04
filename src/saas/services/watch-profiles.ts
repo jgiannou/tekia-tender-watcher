@@ -134,9 +134,7 @@ export const normalizeWatchProfileCriteria = (
 ): NormalizedWatchProfileCriteria => {
   const dateFrom = normalizeDateOnly(input.dateFrom);
   const dateTo = normalizeDateOnly(input.dateTo);
-  if ((dateFrom && !dateTo) || (!dateFrom && dateTo)) {
-    throw badRequest("watch_profile_date_from_and_to_required_together");
-  }
+  // dateFrom-only and dateTo-only are both valid; the scan window fills the open end.
   if (dateFrom && dateTo && dateFrom > dateTo) {
     throw badRequest("watch_profile_date_from_after_date_to");
   }
@@ -441,14 +439,25 @@ const DEFAULT_SCAN_LOOKBACK_DAYS = 30;
 export const scanDateWindowForProfile = (
   profile: Pick<WatchProfile, "dateFrom" | "dateTo">,
 ): { dateFrom: string; dateTo: string } => {
+  const today = formatDateOnly(new Date());
   if (profile.dateFrom && profile.dateTo) {
     return { dateFrom: profile.dateFrom, dateTo: profile.dateTo };
+  }
+  if (profile.dateFrom) {
+    return { dateFrom: profile.dateFrom, dateTo: today };
+  }
+  if (profile.dateTo) {
+    const until = new Date(`${profile.dateTo}T00:00:00.000Z`);
+    const from = new Date(
+      until.getTime() - DEFAULT_SCAN_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+    );
+    return { dateFrom: formatDateOnly(from), dateTo: profile.dateTo };
   }
   const now = new Date();
   const from = new Date(
     now.getTime() - DEFAULT_SCAN_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
   );
-  return { dateFrom: formatDateOnly(from), dateTo: formatDateOnly(now) };
+  return { dateFrom: formatDateOnly(from), dateTo: today };
 };
 
 /** Cap union variants so construction-style profiles stay within a practical scan budget. */
@@ -766,6 +775,23 @@ const linkOpportunityToProfile = async (
       organizationTenderId: row.id,
       tenderId,
       score: input.match.score,
+      referenceNumber,
+      tenderTitle,
+    };
+  }
+
+  // User-hidden / expired rows must not reappear after a later scan match.
+  if (
+    existing.pipelineStage === "DISMISSED" ||
+    existing.relevanceStatus === "EXPIRED" ||
+    existing.ignoreReason === "user_marked_expired" ||
+    existing.ignoreReason === "user_dismissed"
+  ) {
+    return {
+      created: false,
+      organizationTenderId: existing.id,
+      tenderId,
+      score: existing.score ?? input.match.score,
       referenceNumber,
       tenderTitle,
     };

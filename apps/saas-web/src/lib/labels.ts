@@ -40,5 +40,26 @@ export const humanSaasError = (message: string): string => {
   if (message.includes("watch_profile_requires_keywords_or_cpvs")) {
     return "Απαιτείται τουλάχιστον μία λέξη-κλειδί ή CPV.";
   }
+  if (message.includes("watch_profile_date_from_after_date_to")) {
+    return "Η ημερομηνία «από» πρέπει να είναι πριν από την «έως».";
+  }
+  if (
+    message.includes("watch_profile_date_from_and_to_required_together") ||
+    message.includes("dateFrom and dateTo must be provided together")
+  ) {
+    return "Μπορείτε να ορίσετε μόνο «από», μόνο «έως», ή και τις δύο ημερομηνίες.";
+  }
+  if (message.startsWith("HTTP 500") || message.includes("internal_error")) {
+    return "Προσωρινό σφάλμα διακομιστή. Δοκιμάστε ξανά.";
+  }
+  if (message.startsWith("HTTP 404") || message.includes("not_found")) {
+    return "Δεν βρέθηκε.";
+  }
+  if (message.startsWith("HTTP 401") || message.includes("unauthorized")) {
+    return "Απαιτείται σύνδεση.";
+  }
+  if (message.startsWith("HTTP ")) {
+    return "Προέκυψε σφάλμα. Δοκιμάστε ξανά.";
+  }
   return message;
 };

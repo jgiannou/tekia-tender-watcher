@@ -83,7 +83,7 @@ export const NotificationsSettingsPage = () => {
       <CardHeader>
         <CardTitle>Ειδοποιήσεις</CardTitle>
         <CardDescription>
-          Email μέσω Brevo. Το Slack της εσωτερικής TEKIA δεν εμφανίζεται εδώ.
+          Ειδοποιήσεις μέσω email. Το εσωτερικό Slack της TEKIA δεν εμφανίζεται εδώ.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">

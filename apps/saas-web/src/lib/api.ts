@@ -799,7 +799,11 @@ const errorMessageFromPayload = (data: unknown, status: number): string => {
   ) {
     return (data as { message: string }).message;
   }
-  return `HTTP ${status}`;
+  if (status === 401 || status === 403) return "Δεν έχετε δικαίωμα πρόσβασης.";
+  if (status === 404) return "Δεν βρέθηκε.";
+  if (status === 429) return "Πάρα πολλά αιτήματα. Δοκιμάστε ξανά σε λίγο.";
+  if (status >= 500) return "Προσωρινό σφάλμα διακομιστή. Δοκιμάστε ξανά.";
+  return `Σφάλμα αιτήματος (${status})`;
 };
 
 const errorCodeFromPayload = (data: unknown): string | undefined => {
@@ -885,7 +889,12 @@ export const saasApi = {
         organizationId,
       });
     } catch (err) {
-      if (err instanceof SaasRequestError && err.message.startsWith("HTTP 404")) {
+      if (
+        err instanceof SaasRequestError &&
+        (err.message.startsWith("HTTP 404") ||
+          err.message === "Δεν βρέθηκε." ||
+          err.code === "not_found")
+      ) {
         const { profiles } = await saasApi.listWatchProfiles(organizationId);
         return {
           entitlements: { maxActiveWatchProfiles: DEFAULT_MAX_ACTIVE_WATCH_PROFILES },
@@ -1124,6 +1133,19 @@ export const saasApi = {
       `/api/saas/tenders/${tenderId}/follow`,
       { method: "POST", organizationId },
     ),
+  dismissTender: (
+    organizationId: string,
+    tenderId: string,
+    reason: "EXPIRED" | "NOT_INTERESTED" = "EXPIRED",
+  ) =>
+    request<{ organizationTender: unknown }>(
+      `/api/saas/tenders/${tenderId}/dismiss`,
+      {
+        method: "POST",
+        organizationId,
+        body: JSON.stringify({ reason }),
+      },
+    ),
   followKimdisItem: (organizationId: string, item: KimdisSearchItem) =>
     request<{ tender: { id: string; referenceNumber: string } }>(
       "/api/saas/kimdis/follow",
@@ -1282,7 +1304,12 @@ export const saasApi = {
       message?: string;
     };
     if (!response.ok) {
-      throw new Error(data.message || `HTTP ${response.status}`);
+      throw new Error(
+        data.message ||
+          (response.status >= 500
+            ? "Προσωρινό σφάλμα διακομιστή. Δοκιμάστε ξανά."
+            : "Αποτυχία μεταφόρτωσης."),
+      );
     }
     return data as { document: VaultDocument };
   },
@@ -1307,7 +1334,12 @@ export const saasApi = {
       message?: string;
     };
     if (!response.ok) {
-      throw new Error(data.message || `HTTP ${response.status}`);
+      throw new Error(
+        data.message ||
+          (response.status >= 500
+            ? "Προσωρινό σφάλμα διακομιστή. Δοκιμάστε ξανά."
+            : "Αποτυχία νέας έκδοσης."),
+      );
     }
     return data as { document: VaultDocument };
   },

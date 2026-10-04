@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell } from "lucide-react";
+import { Bell, Check } from "lucide-react";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { AttentionEventContent } from "@/components/AttentionEventContent";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,12 @@ export const NotificationBell = () => {
     navigate(attentionEventHref(event));
   };
 
+  const handleMarkRead = async (event: AttentionEvent) => {
+    if (!activeOrganization || event.readAt) return;
+    await saasApi.markAttentionRead(activeOrganization.id, event.id).catch(() => null);
+    await load();
+  };
+
   const handleMarkAll = async () => {
     if (!activeOrganization) return;
     await saasApi.markAllAttentionRead(activeOrganization.id);
@@ -79,7 +85,9 @@ export const NotificationBell = () => {
           <div>
             <div className="text-sm font-semibold">Ειδοποιήσεις</div>
             <div className="text-xs text-muted-foreground">
-              {unread.length} μη αναγνωσμένες
+              {unread.length === 1
+                ? "1 μη αναγνωσμένη"
+                : `${unread.length} μη αναγνωσμένες`}
             </div>
           </div>
           {unread.length > 0 ? (
@@ -95,18 +103,38 @@ export const NotificationBell = () => {
             </div>
           ) : (
             recent.map((event) => (
-              <button
+              <div
                 key={event.id}
-                type="button"
-                className="flex w-full cursor-pointer items-start gap-2 border-b border-border px-4 py-3 text-left hover:bg-muted/60"
-                onClick={() => void handleOpenEvent(event)}
-                aria-label={attentionEventViewModel(event).primaryFull}
+                className="flex w-full items-start gap-1 border-b border-border px-2 py-2 hover:bg-muted/60"
               >
-                <AttentionEventContent event={event} className="flex-1" />
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 px-2 py-1 text-left"
+                  onClick={() => void handleOpenEvent(event)}
+                  aria-label={attentionEventViewModel(event).primaryFull}
+                >
+                  <AttentionEventContent event={event} className="flex-1" />
+                  {!event.readAt ? (
+                    <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                  ) : null}
+                </button>
                 {!event.readAt ? (
-                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="mt-1 h-8 w-8 shrink-0"
+                    aria-label="Σήμανση ως αναγνωσμένο"
+                    title="Σήμανση ως αναγνωσμένο"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleMarkRead(event);
+                    }}
+                  >
+                    <Check className="h-4 w-4" />
+                  </Button>
                 ) : null}
-              </button>
+              </div>
             ))
           )}
         </div>

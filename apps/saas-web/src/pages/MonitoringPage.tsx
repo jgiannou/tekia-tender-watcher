@@ -51,7 +51,7 @@ export const MonitoringPage = () => {
       const result = await saasApi.monitoringState(activeOrganization.id);
       setRows(result.organizationTenders);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load monitoring");
+      setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης παρακολουθούμενων");
     } finally {
       setLoading(false);
     }

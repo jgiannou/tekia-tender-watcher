@@ -52,7 +52,7 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       const next = await saasApi.me();
       setMe(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load session");
+      setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης συνεδρίας");
       setMe(null);
     } finally {
       setLoading(false);

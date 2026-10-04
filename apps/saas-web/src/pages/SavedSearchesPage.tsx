@@ -623,7 +623,11 @@ export const SavedSearchesPage = () => {
                       <span className="text-muted-foreground">Ημερομηνίες καταχώρισης: </span>
                       {profile.dateFrom && profile.dateTo
                         ? `${profile.dateFrom} – ${profile.dateTo}`
-                        : "Τελευταίες 30 ημέρες (προεπιλογή)"}
+                        : profile.dateFrom
+                          ? `Από ${profile.dateFrom}`
+                          : profile.dateTo
+                            ? `Έως ${profile.dateTo}`
+                            : "Τελευταίες 30 ημέρες (προεπιλογή)"}
                     </div>
                   </div>
                   {keywords.length ? (
@@ -693,7 +697,11 @@ export const SavedSearchesPage = () => {
                   Ημερομηνίες:{" "}
                   {viewProfile.dateFrom && viewProfile.dateTo
                     ? `${viewProfile.dateFrom} – ${viewProfile.dateTo}`
-                    : "Τελευταίες 30 ημέρες"}
+                    : viewProfile.dateFrom
+                      ? `Από ${viewProfile.dateFrom}`
+                      : viewProfile.dateTo
+                        ? `Έως ${viewProfile.dateTo}`
+                        : "Τελευταίες 30 ημέρες"}
                 </div>
                 <div className="flex flex-wrap gap-2 pt-2">
                   <Button size="sm" onClick={() => openEdit(viewProfile)}>
@@ -918,8 +926,8 @@ export const SavedSearchesPage = () => {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Αν δεν ορίσετε ημερομηνίες, η σάρωση χρησιμοποιεί τις τελευταίες 30 ημέρες.
-                  Οι δύο ημερομηνίες πρέπει να συμπληρωθούν μαζί.
+                  Μπορείτε να ορίσετε μόνο «από», μόνο «έως», ή και τις δύο. Αν δεν ορίσετε
+                  ημερομηνίες, η σάρωση χρησιμοποιεί τις τελευταίες 30 ημέρες.
                 </p>
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setEditForm(null)}>

@@ -35,6 +35,13 @@ const formatDate = (value: string | null) => {
   return Number.isNaN(date.getTime()) ? value.slice(0, 10) : date.toLocaleDateString("el-GR");
 };
 
+const isExpiredDeadline = (value?: string | null) => {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getTime() < Date.now();
+};
+
 const parseMatchMeta = (value: unknown): Opportunity["matchMeta"] => {
   if (!value || typeof value !== "object") return null;
   const meta = value as Opportunity["matchMeta"];
@@ -116,6 +123,32 @@ export const OpportunitiesPage = () => {
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Αποτυχία παρακολούθησης");
+    }
+  };
+
+  const handleDismiss = async (opportunity: Opportunity) => {
+    if (!activeOrganization) return;
+    const expired = isExpiredDeadline(opportunity.tender.finalSubmissionDate);
+    const confirmed = window.confirm(
+      expired
+        ? "Να σημανθεί ως ληγμένο και να μην εμφανίζεται ξανά στις ευκαιρίες;"
+        : "Να αποκρυφτεί αυτή η ευκαιρία ώστε να μην εμφανίζεται ξανά;",
+    );
+    if (!confirmed) return;
+    try {
+      await saasApi.dismissTender(
+        activeOrganization.id,
+        opportunity.tender.id,
+        expired ? "EXPIRED" : "NOT_INTERESTED",
+      );
+      toast.success(
+        expired
+          ? "Σημάνθηκε ως ληγμένο και αποκρύφτηκε."
+          : "Η ευκαιρία αποκρύφτηκε.",
+      );
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία απόκρυψης");
     }
   };
 
@@ -321,6 +354,15 @@ export const OpportunitiesPage = () => {
                     ) : (
                       <Badge variant="success">Παρακολουθείται</Badge>
                     )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void handleDismiss(opportunity)}
+                    >
+                      {isExpiredDeadline(opportunity.tender.finalSubmissionDate)
+                        ? "Σήμανση ως ληγμένο"
+                        : "Απόκρυψη"}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
