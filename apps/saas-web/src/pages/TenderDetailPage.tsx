@@ -29,6 +29,7 @@ import {
   type TenderWorkspaceResponse,
   type VaultDocument,
 } from "@/lib/api";
+import { outreachMethodLabel, submissionMethodLabel } from "@/lib/labels";
 
 const formatMoney = (value: number | null) =>
   value == null
@@ -435,7 +436,7 @@ export const TenderDetailPage = () => {
                   <div>
                     <span className="text-muted-foreground">Υποβολή: </span>
                     {workflow?.latestSubmission
-                      ? `${formatDateTime(workflow.latestSubmission.submittedAt)} · ${workflow.latestSubmission.submissionMethod}${workflow.latestSubmission.externalReference ? ` · ${workflow.latestSubmission.externalReference}` : ""}`
+                      ? `${formatDateTime(workflow.latestSubmission.submittedAt)} · ${submissionMethodLabel(workflow.latestSubmission.submissionMethod)}${workflow.latestSubmission.externalReference ? ` · ${workflow.latestSubmission.externalReference}` : ""}`
                       : "Δεν έχει καταγραφεί"}
                   </div>
                 </div>
@@ -459,7 +460,8 @@ export const TenderDetailPage = () => {
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Εκδήλωση Ενδιαφέροντος</CardTitle>
                 <CardDescription>
-                  {formatDateTime(outreach?.sentAt)} · {outreach?.method ?? "—"}
+                  {formatDateTime(outreach?.sentAt)} ·{" "}
+                  {outreachMethodLabel(outreach?.method)}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
@@ -727,7 +729,7 @@ export const TenderDetailPage = () => {
               >
                 {OUTREACH_METHODS.map((method) => (
                   <option key={method} value={method}>
-                    {method}
+                    {outreachMethodLabel(method)}
                   </option>
                 ))}
               </Select>
@@ -833,7 +835,7 @@ export const TenderDetailPage = () => {
               >
                 {SUBMISSION_METHODS.map((method) => (
                   <option key={method} value={method}>
-                    {method}
+                    {submissionMethodLabel(method)}
                   </option>
                 ))}
               </Select>

@@ -596,10 +596,9 @@ const composeOverviewFromEndpoints = async (
       };
     });
 
-  const unreadNewOpportunity = attentionRes.events.filter(
-    (event) =>
-      !event.readAt &&
-      (event.type === "NEW_OPPORTUNITY" || event.type === "OPPORTUNITY_DIGEST"),
+  // Distinct unfollowed opportunities — not unread attention/digest counts.
+  const unfollowedOpportunities = opportunitiesRes.opportunities.filter(
+    (opportunity) => !opportunity.following,
   ).length;
 
   const documentsAttention: SaasOverviewDocumentAttention[] = documentsRes.documents
@@ -661,8 +660,7 @@ const composeOverviewFromEndpoints = async (
   return {
     greetingName: greetingName ?? null,
     metrics: {
-      newOpportunities:
-        unreadNewOpportunity > 0 ? unreadNewOpportunity : opportunitiesRes.opportunities.length,
+      newOpportunities: unfollowedOpportunities,
       monitoringActive,
       deadlinesSoon: deadlines.length,
       submissionsActive,

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Eye } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
@@ -42,14 +42,34 @@ const parseMatchMeta = (value: unknown): Opportunity["matchMeta"] => {
   return meta;
 };
 
+const matchesProfile = (opportunity: Opportunity, profileId: string): boolean => {
+  if (opportunity.watchProfileId === profileId) return true;
+  if (opportunity.watchProfile?.id === profileId) return true;
+  const meta = parseMatchMeta(opportunity.matchMeta);
+  return Boolean(meta?.matchedProfiles.some((profile) => profile.id === profileId));
+};
+
 export const OpportunitiesPage = () => {
   const { activeOrganization } = useSessionContext();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const profileFilter = searchParams.get("profile")?.trim() || null;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [profiles, setProfiles] = useState<WatchProfile[]>([]);
   const [selected, setSelected] = useState<Opportunity | null>(null);
-  const paged = usePaginatedList(opportunities);
+
+  const filtered = useMemo(() => {
+    if (!profileFilter) return opportunities;
+    return opportunities.filter((row) => matchesProfile(row, profileFilter));
+  }, [opportunities, profileFilter]);
+
+  const filterProfileName =
+    profiles.find((profile) => profile.id === profileFilter)?.name ?? null;
+
+  const paged = usePaginatedList(filtered, {
+    resetKey: `${profileFilter ?? "all"}:${filtered.length}`,
+  });
 
   const load = async () => {
     if (!activeOrganization) {
@@ -107,8 +127,8 @@ export const OpportunitiesPage = () => {
   const scanning = profiles.some(
     (p) => p.enabled && (p.scanState ?? "").toUpperCase() === "RUNNING",
   );
-  const highScore = opportunities.filter((o) => (o.score ?? 0) >= 70).length;
-  const following = opportunities.filter((o) => o.following).length;
+  const highScore = filtered.filter((o) => (o.score ?? 0) >= 70).length;
+  const following = filtered.filter((o) => o.following).length;
 
   type EmptyVariant = "no-active" | "scanning" | "none-found";
   let emptyVariant: EmptyVariant = "none-found";
@@ -133,13 +153,22 @@ export const OpportunitiesPage = () => {
         "Αξιολογούμε πρόσφατες πράξεις ΚΗΜΔΗΣ με βάση τις ενεργές αποθηκευμένες αναζητήσεις σας.",
     },
     "none-found": {
-      title: "Δεν βρέθηκαν πρόσφατες σχετικές ευκαιρίες.",
-      description:
-        "Οι αναζητήσεις παραμένουν ενεργές — θα ενημερωθείτε όταν εμφανιστεί κάτι σχετικό.",
-      showMonitoringNote: true,
+      title: profileFilter
+        ? "Καμία ευκαιρία για αυτή την αποθηκευμένη αναζήτηση"
+        : "Δεν βρέθηκαν πρόσφατες σχετικές ευκαιρίες.",
+      description: profileFilter
+        ? "Το φίλτρο προφίλ εφαρμόζεται· καθαρίστε το για όλες τις ευκαιρίες ή περιμένετε νέο match."
+        : "Οι αναζητήσεις παραμένουν ενεργές — θα ενημερωθείτε όταν εμφανιστεί κάτι σχετικό.",
+      showMonitoringNote: !profileFilter,
     },
   };
   const empty = emptyCopy[emptyVariant];
+
+  const handleClearProfileFilter = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("profile");
+    setSearchParams(next, { replace: true });
+  };
 
   return (
     <div className="space-y-6">
@@ -156,9 +185,22 @@ export const OpportunitiesPage = () => {
         </div>
       </div>
 
+      {profileFilter ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+          <span>
+            Φίλτρο αποθηκευμένης αναζήτησης:{" "}
+            <strong>{filterProfileName || profileFilter}</strong> · {filtered.length}{" "}
+            αποτελέσματα
+          </span>
+          <Button size="sm" variant="outline" onClick={handleClearProfileFilter}>
+            Καθαρισμός φίλτρου
+          </Button>
+        </div>
+      ) : null}
+
       <div className="grid gap-3 md:grid-cols-4">
         {[
-          ["Νέα", String(opportunities.length)],
+          ["Νέα", String(filtered.length)],
           ["Υψηλή συνάφεια", String(highScore)],
           ["Παρακολουθούμενα", String(following)],
           ["Ενεργές αναζητήσεις", String(enabledProfiles.length)],
@@ -172,7 +214,7 @@ export const OpportunitiesPage = () => {
         ))}
       </div>
 
-      {opportunities.length === 0 ? (
+      {filtered.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center gap-4 px-6 py-12 text-center">
             <div className="space-y-2">

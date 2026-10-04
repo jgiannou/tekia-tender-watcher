@@ -588,10 +588,13 @@ const ensureOpportunityDigestAttention = async (
   if (input.matchCount <= 0) return null;
   const dedupeKey = opportunityDigestDedupeKey(input.profileId, input.scannedAt);
   const type = "OPPORTUNITY_DIGEST" as AttentionEventType;
+  const fresh = Math.max(0, input.newCount);
   const title =
-    input.matchCount === 1
-      ? `1 νέα ευκαιρία από «${input.profileName}»`
-      : `${input.matchCount} νέες ευκαιρίες από «${input.profileName}»`;
+    fresh === 0
+      ? `${input.matchCount} αντιστοιχίσεις από «${input.profileName}»`
+      : fresh === 1
+        ? `1 νέα ευκαιρία από «${input.profileName}»`
+        : `${fresh} νέες ευκαιρίες από «${input.profileName}»`;
   return prisma.organizationAttentionEvent.upsert({
     where: {
       organizationId_dedupeKey: {
@@ -799,15 +802,22 @@ const scanCanonicalTenders = async (
   const dates = scanDateWindowForProfile(profile);
   const since = new Date(`${dates.dateFrom}T00:00:00.000Z`);
   const until = new Date(`${dates.dateTo}T23:59:59.999Z`);
+  // Date window is publication/submission semantics — never firstSeenAt alone,
+  // or recently ingested old acts would qualify outside the Καταχώριση range.
   const tenders = await prisma.tender.findMany({
     where: {
       recordType: { in: recordTypesForScan(criteria.recordTypes) },
       OR: [
         { submissionDate: { gte: since, lte: until } },
-        { firstSeenAt: { gte: since, lte: until } },
+        {
+          AND: [
+            { submissionDate: null },
+            { signedDate: { gte: since, lte: until } },
+          ],
+        },
       ],
     },
-    orderBy: { firstSeenAt: "desc" },
+    orderBy: [{ submissionDate: "desc" }, { signedDate: "desc" }],
     take: 2000,
   });
 

@@ -148,11 +148,12 @@ export const CompanyDocumentPicker = ({
                       <div className="text-sm font-medium">{doc.name}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <Badge variant="outline">{statusLabel(doc.status)}</Badge>
-                        <span>
-                          {doc.expiryDate
-                            ? `Λήγει ${new Date(doc.expiryDate).toLocaleDateString("el-GR")}`
-                            : "Δεν λήγει"}
-                        </span>
+                        {doc.expiryDate ? (
+                          <span>
+                            Λήγει {new Date(doc.expiryDate).toLocaleDateString("el-GR")}
+                          </span>
+                        ) : null}
+                        <span>έκδ. {doc.version}</span>
                       </div>
                     </div>
                     {!multiple ? (

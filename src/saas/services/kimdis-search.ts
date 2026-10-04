@@ -244,20 +244,11 @@ export const buildKimdisSearchMeta = () => ({
   requestKinds: KIMDIS_REQUEST_KINDS,
 });
 
-const itemDateMs = (item: KimdisSearchItem): number => {
-  const raw = item.submissionDate || item.signedDate;
-  if (!raw) return 0;
-  const ms = new Date(raw).getTime();
-  return Number.isNaN(ms) ? 0 : ms;
-};
-
-const applySort = (
-  items: KimdisSearchItem[],
-  sort: KimdisSearchSort,
-): KimdisSearchItem[] => {
-  const sorted = [...items].sort((a, b) => itemDateMs(b) - itemDateMs(a));
-  return sort === "date_asc" ? sorted.reverse() : sorted;
-};
+/**
+ * Do not re-sort a single upstream page locally — that masquerades as global
+ * sort while page boundaries stay in KIMDIS default (usually newest-first) order.
+ * Ordering comes only from the upstream `sort` query parameter.
+ */
 
 /**
  * Load a single KIMDIS record by ADAM via official search (referenceNumber).
@@ -340,11 +331,8 @@ export const searchKimdis = async (
       };
 
       const result = await kimdis.searchRequestsPage(body, page, sortParam);
-      const items = applySort(
-        (result.content ?? []).map((record) =>
-          normalizeItem(kimdis, record, "REQ"),
-        ),
-        sort,
+      const items = (result.content ?? []).map((record) =>
+        normalizeItem(kimdis, record, "REQ"),
       );
       return {
         items,
@@ -385,11 +373,8 @@ export const searchKimdis = async (
     };
 
     const result = await kimdis.searchNoticesPage(body, page, sortParam);
-    const items = applySort(
-      (result.content ?? []).map((record) =>
-        normalizeItem(kimdis, record, "PROC"),
-      ),
-      sort,
+    const items = (result.content ?? []).map((record) =>
+      normalizeItem(kimdis, record, "PROC"),
     );
     return {
       items,

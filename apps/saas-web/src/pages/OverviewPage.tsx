@@ -43,6 +43,19 @@ const formatMoney = (value: number | null) =>
         maximumFractionDigits: 0,
       }).format(value);
 
+const formatDate = (value?: string | null) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value.slice(0, 10) : date.toLocaleDateString("el-GR");
+};
+
+const isExpiredDeadline = (value?: string | null) => {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date.getTime() < Date.now();
+};
+
 const tenderHref = (recordType: string | undefined, referenceNumber: string) => {
   const type = recordType === "PROC" || recordType === "REQ" ? recordType : "REQ";
   return `/app/tenders/${type}/${encodeURIComponent(referenceNumber)}`;
@@ -146,7 +159,7 @@ export const OverviewPage = () => {
       label: "Νέες ευκαιρίες",
       value: overview.metrics.newOpportunities,
       href: "/app/opportunities",
-      hint: "Ευκαιρίες που δεν έχουν προβληθεί ακόμη",
+      hint: "Ευκαιρίες που δεν παρακολουθούνται ακόμη",
     },
     {
       label: "Παρακολουθούμενα",
@@ -282,7 +295,7 @@ export const OverviewPage = () => {
                                   .then(load)
                               }
                             >
-                              Σήμανση ως προβεβλημένες
+                              Σήμανση ειδοποίησης ως αναγνωσμένης
                             </Button>
                           ) : null}
                         </div>
@@ -326,6 +339,27 @@ export const OverviewPage = () => {
                         <div className="text-sm text-muted-foreground">
                           {opportunity.tender.contractingAuthority || "—"} ·{" "}
                           {formatMoney(opportunity.tender.budgetWithoutVat)}
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          {formatDate(opportunity.tender.submissionDate) ? (
+                            <span>
+                              Καταχώριση: {formatDate(opportunity.tender.submissionDate)}
+                            </span>
+                          ) : null}
+                          {opportunity.tender.finalSubmissionDate ? (
+                            <span
+                              className={
+                                isExpiredDeadline(opportunity.tender.finalSubmissionDate)
+                                  ? "font-medium text-destructive"
+                                  : undefined
+                              }
+                            >
+                              {isExpiredDeadline(opportunity.tender.finalSubmissionDate)
+                                ? "Έληξε: "
+                                : "Καταληκτική: "}
+                              {formatDate(opportunity.tender.finalSubmissionDate)}
+                            </span>
+                          ) : null}
                         </div>
                         {primaryReason ? (
                           <div className="text-xs text-muted-foreground">

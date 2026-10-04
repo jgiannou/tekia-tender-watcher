@@ -118,6 +118,7 @@ describe("saas kimdis search", () => {
         dateTo: "2026-01-31",
       }),
       0,
+      "submissionDate,desc",
     );
     expect(response.json.items[0]?.adam).toBe("24REQ012345678");
     expect(response.json.items[0]?.cpvs).toEqual(["72000000-5"]);
@@ -156,6 +157,7 @@ describe("saas kimdis search", () => {
         dateTo: "2026-02-28",
       }),
       2,
+      "submissionDate,desc",
     );
     expect(response.json.page).toBe(2);
   });
@@ -235,6 +237,7 @@ describe("saas kimdis search", () => {
         isApproval: false,
       }),
       0,
+      "submissionDate,desc",
     );
   });
 
@@ -264,6 +267,7 @@ describe("saas kimdis search", () => {
         finalSubmissionDateTo: "2026-04-30",
       }),
       0,
+      "submissionDate,desc",
     );
   });
 

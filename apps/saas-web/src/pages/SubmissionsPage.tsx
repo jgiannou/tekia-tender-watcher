@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { saasApi, type FormalSubmissionRow } from "@/lib/api";
+import { submissionMethodLabel } from "@/lib/labels";
 
 const formatDateTime = (value: string) => {
   const date = new Date(value);
@@ -104,7 +105,8 @@ export const SubmissionsPage = () => {
                     {row.tender.contractingAuthority || "—"}
                   </div>
                   <div className="text-sm text-muted-foreground">
-                    {formatDateTime(row.submittedAt)} · {row.submissionMethod}
+                    {formatDateTime(row.submittedAt)} ·{" "}
+                    {submissionMethodLabel(row.submissionMethod)}
                     {row.externalReference ? ` · ${row.externalReference}` : ""}
                     {row.amountWithoutVat != null
                       ? ` · ${formatMoney(row.amountWithoutVat)}`

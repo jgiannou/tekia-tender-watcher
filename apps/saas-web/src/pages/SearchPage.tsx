@@ -4,7 +4,11 @@ import { Eye } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { IconAction } from "@/components/IconAction";
-import { PAGE_SIZE, Pagination } from "@/components/Pagination";
+import { Pagination } from "@/components/Pagination";
+import { humanSaasError } from "@/lib/labels";
+
+/** Matches KIMDIS upstream page size used by the API client. */
+const KIMDIS_PAGE_SIZE = 50;
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -142,7 +146,7 @@ const toSearchParams = (state: SearchFormState): URLSearchParams => {
 const toApiFilters = (state: SearchFormState): KimdisSearchFilters => ({
   recordFamily: state.type,
   page: Math.max(0, state.page - 1),
-  pageSize: PAGE_SIZE,
+  pageSize: KIMDIS_PAGE_SIZE,
   sort: state.sort,
   title: state.q.trim() || undefined,
   referenceNumber: state.adam.trim() || undefined,
@@ -303,12 +307,9 @@ export const SearchPage = () => {
       toast.success("Η αποθηκευμένη αναζήτηση δημιουργήθηκε. Ξεκίνησε αρχική σάρωση.");
       setSaveOpen(false);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Αποτυχία αποθήκευσης";
-      if (message.includes("similar") || message.includes("watch_profile_similar")) {
-        toast.error("Υπάρχει ήδη παρόμοια αποθηκευμένη αναζήτηση.");
-      } else {
-        toast.error(message);
-      }
+      toast.error(
+        humanSaasError(err instanceof Error ? err.message : "Αποτυχία αποθήκευσης"),
+      );
     } finally {
       setSaving(false);
     }
@@ -625,11 +626,21 @@ export const SearchPage = () => {
                 όταν είναι δυνατό.
               </span>
             ) : null}
+            {urlState.allHistory && urlState.sort === "date_asc" ? (
+              <span className="mt-1 block text-amber-700 dark:text-amber-400">
+                Η ταξινόμηση «Παλαιότερα πρώτα» εξαρτάται από το ΚΗΜΔΗΣ και μπορεί να μην ισχύει
+                καθολικά σε όλες τις σελίδες του πλήρους ιστορικού. Για αξιόπιστη σειρά, περιορίστε
+                το διάστημα ημερομηνιών.
+              </span>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">
               {totalElements} αποτελέσματα
               {totalPages ? ` · σελίδα ${currentPage} από ${totalPages}` : ""}
+              {items.length > 0
+                ? ` · ${items.length} ανά σελίδα`
+                : ` · έως ${KIMDIS_PAGE_SIZE} ανά σελίδα`}
             </div>
             <div className="flex items-center gap-2">
               <Label htmlFor="sort" className="text-xs text-muted-foreground">
@@ -740,6 +751,7 @@ export const SearchPage = () => {
             page={currentPage}
             totalPages={totalPages}
             total={totalElements > 0 ? totalElements : undefined}
+            pageSize={items.length > 0 ? items.length : KIMDIS_PAGE_SIZE}
             onPageChange={handlePageChange}
             disabled={loading}
             hasNext={!last}

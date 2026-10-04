@@ -123,4 +123,13 @@ describe("suggestWatchInterestsFromKads", () => {
     expect(suggestions.cpvs.length).toBeGreaterThan(0);
     expect(suggestions.keywords).toContain("ιστοσελίδα");
   });
+
+  it("maps construction KAD 41.20 to procurement interests", () => {
+    const suggestions = suggestWatchInterestsFromKads([
+      { code: "41.20", description: "Κατασκευαστικό γραφείο QA" },
+    ]);
+    expect(suggestions.cpvs.some((cpv) => cpv.code.startsWith("45"))).toBe(true);
+    expect(suggestions.keywords).toContain("κατασκευή");
+    expect(suggestions.categories.some((c) => c.includes("Κατασκευ"))).toBe(true);
+  });
 });

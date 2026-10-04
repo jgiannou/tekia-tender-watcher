@@ -78,7 +78,10 @@ const fetchSearchPage = async <T>(
   timeoutMs: number,
   sort?: string,
 ): Promise<KimdisPage<T>> => {
-  const params = new URLSearchParams({ page: String(page) });
+  const params = new URLSearchParams({
+    page: String(page),
+    size: "50",
+  });
   if (sort) params.set("sort", sort);
   return fetchJson<KimdisPage<T>>(`${baseUrl}${path}?${params.toString()}`, {
     method: "POST",

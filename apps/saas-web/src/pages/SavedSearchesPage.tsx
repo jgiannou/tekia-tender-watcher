@@ -36,6 +36,7 @@ import {
   type WatchProfile,
   type WatchProfileInput,
 } from "@/lib/api";
+import { humanSaasError } from "@/lib/labels";
 
 const asStringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
@@ -286,9 +287,17 @@ export const SavedSearchesPage = () => {
         cpvs,
         source: editForm.id ? undefined : "MANUAL",
       };
-      if (editForm.id) {
-        await saasApi.updateWatchProfile(activeOrganization.id, editForm.id, payload);
+      const editingId = editForm.id;
+      if (editingId) {
+        const { profile } = await saasApi.updateWatchProfile(
+          activeOrganization.id,
+          editingId,
+          payload,
+        );
         toast.success("Η αναζήτηση ενημερώθηκε");
+        if (viewProfile?.id === profile.id) {
+          setViewProfile(profile);
+        }
       } else {
         await saasApi.createWatchProfile(activeOrganization.id, payload);
         toast.success("Η αποθηκευμένη αναζήτηση δημιουργήθηκε · ξεκίνησε αρχική σάρωση");
@@ -302,7 +311,9 @@ export const SavedSearchesPage = () => {
       ) {
         toast.error(activeLimitMessage(maxActive));
       } else {
-        toast.error(err instanceof Error ? err.message : "Αποτυχία αποθήκευσης");
+        toast.error(
+          humanSaasError(err instanceof Error ? err.message : "Αποτυχία αποθήκευσης"),
+        );
       }
     } finally {
       setBusy(false);
