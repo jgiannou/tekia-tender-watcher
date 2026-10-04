@@ -75,6 +75,8 @@ export type DraftPackage = {
   sentAt?: string | null;
   /** Recipient email for recorded Early Outreach — never invent. */
   recipient?: string | null;
+  /** True when operator manually edited subject/body after auto-fill. */
+  manualEdited?: boolean;
 };
 
 export type TenderDrafts = {

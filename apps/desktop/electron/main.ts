@@ -50,6 +50,7 @@ import {
   saveVaultDocumentMeta,
   setVaultRootFromInput,
   syncCompanyProfileFromSettings,
+  syncOutreachDraftToDrive,
 } from "./google/vault-service.js";
 import type { VaultDocumentMeta } from "./google/vault-store.js";
 
@@ -683,10 +684,29 @@ const registerIpc = (): void => {
           | "economicOffer"
           | "declarations";
         operatorValues?: Record<string, string>;
+        outreachContent?: { subject: string; body: string };
       },
     ) => {
       try {
         return await copyTemplateForTender(payload);
+      } catch (error) {
+        return driveError(error);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    "tekia:drive-sync-outreach",
+    async (
+      _event,
+      payload: {
+        referenceNumber: string;
+        subject: string;
+        body: string;
+      },
+    ) => {
+      try {
+        return await syncOutreachDraftToDrive(payload);
       } catch (error) {
         return driveError(error);
       }

@@ -271,6 +271,7 @@ export type DraftPackage = {
   updatedAt?: string | null;
   sentAt?: string | null;
   recipient?: string | null;
+  manualEdited?: boolean;
 };
 
 export type SubmissionListItem = {

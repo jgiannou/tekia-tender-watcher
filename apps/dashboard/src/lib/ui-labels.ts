@@ -216,7 +216,22 @@ export const UI = {
   moreActions: "Περισσότερες ενέργειες",
   recordSubmission: "Καταχώριση ήδη πραγματοποιημένης υποβολής",
   recordSubmissionHelper:
-    "Χρησιμοποίησέ το μόνο εάν η υποβολή έγινε εκτός της εφαρμογής.",
+    "Χρησιμοποίησέ το μόνο για επίσημη υποβολή προσφοράς εκτός εφαρμογής. Δεν ισχύει για εκδήλωση ενδιαφέροντος.",
+  regenerateOutreach: "Επαναδημιουργία από πρότυπο",
+  regenerateOutreachConfirm:
+    "Το πρόχειρο έχει χειροκίνητες αλλαγές. Θέλετε να δημιουργηθεί ξανά από το template; Οι αλλαγές σας θα αντικατασταθούν.",
+  syncDrive: "Συγχρονισμός με Drive",
+  syncDriveRetry: "Επανάληψη συγχρονισμού",
+  driveSynced: "App και Drive συγχρονισμένα",
+  driveOutOfSync:
+    "Το Drive δεν είναι συγχρονισμένο με το πρόχειρο της εφαρμογής.",
+  driveSyncFailed: "Αποτυχία συγχρονισμού με το Drive",
+  driveSyncing: "Συγχρονισμός με Drive…",
+  readyBlockedOutOfSync:
+    "Δεν μπορεί να σημανθεί ως Έτοιμο όσο το Drive δεν είναι συγχρονισμένο.",
+  subjectLabel: "Θέμα",
+  bodyLabel: "Περιεχόμενο",
+  unresolvedDraftWarning: "Εκκρεμή πεδία στο πρόχειρο",
   safetyGenerate: "Η δημιουργία εγγράφου δεν πραγματοποιεί αποστολή.",
   safetyReady: "Η σήμανση ως Έτοιμο δεν πραγματοποιεί αποστολή.",
   safetyOutreachSent:

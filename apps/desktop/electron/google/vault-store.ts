@@ -36,6 +36,8 @@ export type TenderDocumentRecord = {
   masterFileId: string;
   status: "DRAFT" | "READY" | "SUBMITTED";
   unresolvedPlaceholders: string[];
+  /** Hash of last subject+body successfully written from the app. */
+  lastSyncedHash?: string | null;
   createdAt: string;
   updatedAt: string;
 };

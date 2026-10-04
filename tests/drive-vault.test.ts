@@ -91,6 +91,34 @@ describe("drive vault discovery", () => {
     );
     expect(parseDriveFolderInput("not-a-folder")).toBeNull();
   });
+
+  it("accepts Early Outreach folder under English or Greek name without duplicate missing", () => {
+    const english = buildVaultDiscovery({
+      root: { id: "root", name: "Tenders" },
+      topChildren: [
+        { id: "cd", name: "Company Documents" },
+        { id: "tpl", name: "Templates" },
+        { id: "sub", name: "Submissions" },
+      ],
+      companyDocChildren: [],
+      templateChildren: [{ id: "eo", name: "Early Outreach" }],
+    });
+    expect(english.templates.earlyOutreach?.id).toBe("eo");
+    expect(english.missing).not.toContain("ΕΚΔΗΛΩΣΗ ΕΝΔΙΑΦΕΡΟΝΤΟΣ");
+    expect(english.missing).not.toContain("early outreach");
+
+    const greek = buildVaultDiscovery({
+      root: { id: "root", name: "Tenders" },
+      topChildren: [
+        { id: "cd", name: "Company Documents" },
+        { id: "tpl", name: "Templates" },
+        { id: "sub", name: "Submissions" },
+      ],
+      companyDocChildren: [],
+      templateChildren: [{ id: "eo2", name: "ΕΚΔΗΛΩΣΗ ΕΝΔΙΑΦΕΡΟΝΤΟΣ" }],
+    });
+    expect(greek.templates.earlyOutreach?.id).toBe("eo2");
+  });
 });
 
 describe("document validity + templates", () => {
@@ -235,5 +263,26 @@ describe("drive security boundary", () => {
     expect(store).toContain("clearGoogleAuth");
     expect(store).not.toContain("files.delete");
     expect(store).toContain("tenderDocuments"); // historical refs retained
+  });
+
+  it("Early Outreach writes app subject/body into the Drive COPY and reuses existing docs", () => {
+    const service = readFileSync(
+      resolve(process.cwd(), "apps/desktop/electron/google/vault-service.ts"),
+      "utf8",
+    );
+    const docsApi = readFileSync(
+      resolve(process.cwd(), "apps/desktop/electron/google/docs-api.ts"),
+      "utf8",
+    );
+    expect(docsApi).toContain("export const replaceDocumentBody");
+    expect(docsApi).toContain("namedStyleType: \"NORMAL_TEXT\"");
+    expect(docsApi).toContain("weightedFontFamily");
+    expect(docsApi).toContain('fontFamily: "Arial"');
+    expect(service).toContain("replaceDocumentBody");
+    expect(service).toContain("syncOutreachDraftToDrive");
+    expect(service).toContain("formatOutreachDriveDocumentText");
+    expect(service).toContain("reusedExisting");
+    expect(service).toContain("lastSyncedHash");
+    expect(service).toContain("Early Outreach: reuse linked COPY");
   });
 });

@@ -39,6 +39,7 @@ const draftPackageSchema = z.object({
   updatedAt: z.string().nullable().optional(),
   sentAt: z.string().nullable().optional(),
   recipient: z.string().nullable().optional(),
+  manualEdited: z.boolean().optional(),
 });
 
 const draftsSchema = z.object({

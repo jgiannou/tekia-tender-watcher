@@ -42,6 +42,7 @@ export type KimdisRequestRecord = {
 
 export type KimdisNoticeRecord = KimdisRequestRecord & {
   finalSubmissionDate?: string | null;
+  procedureTypes?: Array<{ procedureType?: KimdisKeyValue | null }> | null;
 };
 
 export type KimdisPage<T> = {
@@ -57,18 +58,35 @@ export type KimdisPage<T> = {
 export type RequestSearchBody = {
   dateFrom: string;
   dateTo: string;
-  contractType: string;
+  contractType?: string;
   isInitial: boolean;
   isApproved: boolean;
   isApproval: boolean;
+  title?: string;
+  cpvItems?: string[];
+  organizations?: string[];
+  signer?: string;
+  referenceNumber?: string;
   totalCostFrom?: number;
   totalCostTo?: number;
+  cancelDateFrom?: string;
+  cancelDateTo?: string;
 };
 
 export type NoticeSearchBody = {
   dateFrom: string;
   dateTo: string;
-  contractType: string;
+  contractType?: string;
+  title?: string;
+  cpvItems?: string[];
+  organizations?: string[];
+  signer?: string;
+  referenceNumber?: string;
   totalCostFrom?: number;
   totalCostTo?: number;
+  cancelDateFrom?: string;
+  cancelDateTo?: string;
+  procedureType?: string;
+  finalSubmissionDateFrom?: string;
+  finalSubmissionDateTo?: string;
 };

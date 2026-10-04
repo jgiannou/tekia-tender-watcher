@@ -1,0 +1,160 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ARC Tenders — design tokens (dark default, light supported) */
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-background: var(--arc-background);
+  --color-foreground: var(--arc-foreground);
+  --color-card: var(--arc-card);
+  --color-card-foreground: var(--arc-card-foreground);
+  --color-popover: var(--arc-popover);
+  --color-popover-foreground: var(--arc-popover-foreground);
+  --color-primary: var(--arc-primary);
+  --color-primary-foreground: var(--arc-primary-foreground);
+  --color-secondary: var(--arc-secondary);
+  --color-secondary-foreground: var(--arc-secondary-foreground);
+  --color-muted: var(--arc-muted);
+  --color-muted-foreground: var(--arc-muted-foreground);
+  --color-accent: var(--arc-accent);
+  --color-accent-foreground: var(--arc-accent-foreground);
+  --color-destructive: var(--arc-destructive);
+  --color-destructive-foreground: var(--arc-destructive-foreground);
+  --color-border: var(--arc-border);
+  --color-input: var(--arc-input);
+  --color-ring: var(--arc-ring);
+  --color-sidebar: var(--arc-sidebar);
+  --color-sidebar-foreground: var(--arc-sidebar-foreground);
+  --color-sidebar-muted: var(--arc-sidebar-muted);
+  --color-sidebar-accent: var(--arc-sidebar-accent);
+  --color-sidebar-border: var(--arc-sidebar-border);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+}
+
+:root,
+.light {
+  --arc-background: #f4f7f8;
+  --arc-foreground: #0f1416;
+  --arc-card: #ffffff;
+  --arc-card-foreground: #0f1416;
+  --arc-popover: #ffffff;
+  --arc-popover-foreground: #0f1416;
+  --arc-primary: #008b96;
+  --arc-primary-foreground: #ffffff;
+  --arc-secondary: #e8eef0;
+  --arc-secondary-foreground: #0f1416;
+  --arc-muted: #eef3f5;
+  --arc-muted-foreground: #5a6b72;
+  --arc-accent: #dff7fa;
+  --arc-accent-foreground: #006870;
+  --arc-destructive: #d92d4a;
+  --arc-destructive-foreground: #ffffff;
+  --arc-border: rgb(0 80 90 / 0.14);
+  --arc-input: rgb(0 80 90 / 0.18);
+  --arc-ring: #008b96;
+  --arc-sidebar: #0b1214;
+  --arc-sidebar-foreground: #f5f5f5;
+  --arc-sidebar-muted: #a0a0a0;
+  --arc-sidebar-accent: #152024;
+  --arc-sidebar-border: rgb(0 243 255 / 0.14);
+  --arc-glow-cyan: rgb(0 139 150 / 0.08);
+  --arc-glow-magenta: rgb(180 0 140 / 0.05);
+}
+
+.dark {
+  --arc-background: #0a0a0a;
+  --arc-foreground: #f5f5f5;
+  --arc-card: #111111;
+  --arc-card-foreground: #f5f5f5;
+  --arc-popover: #141414;
+  --arc-popover-foreground: #f5f5f5;
+  --arc-primary: #00f3ff;
+  --arc-primary-foreground: #050505;
+  --arc-secondary: #1a1a1a;
+  --arc-secondary-foreground: #f5f5f5;
+  --arc-muted: #171717;
+  --arc-muted-foreground: #a0a0a0;
+  --arc-accent: #161b1c;
+  --arc-accent-foreground: #00f3ff;
+  --arc-destructive: #ff3b5c;
+  --arc-destructive-foreground: #ffffff;
+  --arc-border: rgb(0 243 255 / 0.16);
+  --arc-input: rgb(0 243 255 / 0.22);
+  --arc-ring: #00f3ff;
+  --arc-sidebar: #050505;
+  --arc-sidebar-foreground: #f5f5f5;
+  --arc-sidebar-muted: #a0a0a0;
+  --arc-sidebar-accent: #121212;
+  --arc-sidebar-border: rgb(0 243 255 / 0.14);
+  --arc-glow-cyan: rgb(0 243 255 / 0.12);
+  --arc-glow-magenta: rgb(255 0 229 / 0.08);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  /* Native controls (date calendar icon, etc.) follow theme */
+  :root,
+  .light,
+  html.light {
+    color-scheme: light;
+  }
+
+  .dark,
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image:
+      radial-gradient(900px 420px at 8% -10%, var(--arc-glow-cyan), transparent 55%),
+      radial-gradient(800px 380px at 100% 0%, var(--arc-glow-magenta), transparent 50%);
+    background-attachment: fixed;
+  }
+
+  /*
+   * Native calendar icons: apply color-scheme on the input itself, then force
+   * a white glyph via invert. Scope with html.dark for reliability.
+   */
+  html.dark input[type="date"],
+  html.dark input[type="datetime-local"],
+  html.dark input[type="time"],
+  html.dark input[type="month"],
+  html.dark input[type="week"],
+  .dark input[type="date"],
+  .dark input[type="datetime-local"],
+  .dark input[type="time"],
+  .dark input[type="month"],
+  .dark input[type="week"] {
+    color-scheme: dark;
+  }
+
+  html.dark input[type="date"]::-webkit-calendar-picker-indicator,
+  html.dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  html.dark input[type="time"]::-webkit-calendar-picker-indicator,
+  html.dark input[type="month"]::-webkit-calendar-picker-indicator,
+  html.dark input[type="week"]::-webkit-calendar-picker-indicator,
+  .dark input[type="date"]::-webkit-calendar-picker-indicator,
+  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  .dark input[type="time"]::-webkit-calendar-picker-indicator,
+  .dark input[type="month"]::-webkit-calendar-picker-indicator,
+  .dark input[type="week"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 1;
+    filter: invert(1) brightness(1.4) contrast(1.1);
+  }
+}

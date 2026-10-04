@@ -58,6 +58,24 @@ console.log(`bootstrap send alerts: ${config.BOOTSTRAP_SEND_ALERTS}`);
 
 const app = new Hono();
 app.route("/", createHealthRoutes(repo, { databasePath: config.databasePath }));
+
+// Optional additive SaaS surface. Mount before admin so /api/auth and /api/saas
+// are never shadowed. Internal SQLite/operator path stays primary.
+if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
+  try {
+    const { getPrisma } = await import("./db/prisma.js");
+    const { createSaasApp } = await import("./saas/app.js");
+    const { app: saasApp } = createSaasApp({ prisma: getPrisma(), kimdis });
+    app.route("/", saasApp);
+    console.log("saas API: enabled (/api/auth/* , /api/saas/*)");
+  } catch (error) {
+    console.error(
+      "saas API: failed to start (internal watcher continues):",
+      error instanceof Error ? error.message : error,
+    );
+  }
+}
+
 app.route("/", createAdminRoutes({
   adminToken: config.ADMIN_TOKEN,
   pollJob,

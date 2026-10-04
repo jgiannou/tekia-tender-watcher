@@ -20,6 +20,11 @@ export const AUTO_FILL_KEYS = [
   "CONTACT_PHONE",
   "DATE",
   "LEGAL_REPRESENTATIVE",
+  "LEGAL_NAME",
+  "BRAND_NAME",
+  "RECORD_TYPE_LABEL",
+  "EMAIL_SUBJECT",
+  "DOCUMENT_TITLE",
 ] as const;
 
 /** Technical Offer — leave intact unless operator explicitly supplies. */
@@ -57,12 +62,19 @@ export type MergeContext = {
   tenderTitle?: string | null;
   adam?: string | null;
   protocolNumber?: string | null;
-  /** TEKIA company sender / operator contact (Company Settings) */
+  /** REQ | PROC from cloud tender — never invent */
+  recordType?: string | null;
+  /**
+   * CONTACT_NAME — natural person / signer from Company Settings → Contact name.
+   * Never fall back to LEGAL_NAME or BRAND_NAME.
+   */
   contactName?: string | null;
   contactEmail?: string | null;
   contactPhone?: string | null;
   legalRepresentative?: string | null;
+  /** LEGAL_NAME — official legal entity name from Company Settings → Legal name */
   legalName?: string | null;
+  /** BRAND_NAME — e.g. TEKIA from Company Settings → Brand name */
   brandName?: string | null;
   tradingName?: string | null;
   tradingNameStatus?: string | null;
@@ -76,7 +88,110 @@ export type MergeContext = {
 
 export type MergePlan = {
   replacements: Record<string, string>;
+  /** Exact string → replacement applied on the COPY only (legacy wording fixes). */
+  literalReplacements: Record<string, string>;
   skippedUnknown: string[];
+};
+
+export const EARLY_OUTREACH_DOCUMENT_TITLE = "ΕΚΔΗΛΩΣΗ ΕΝΔΙΑΦΕΡΟΝΤΟΣ";
+
+/** App draft body (Περιεχόμενο) — same placeholders as Drive merge. */
+export const EARLY_OUTREACH_BODY_TEMPLATE = `Καλημέρα σας,
+
+Επικοινωνούμε εκ μέρους της επιχείρησης {{LEGAL_NAME}} σχετικά με το πρόσφατο Πρωτογενές Αίτημα με τίτλο «{{TENDER_TITLE}}» και ΑΔΑΜ {{ADAM}}.
+
+Δραστηριοποιούμαστε στην ανάπτυξη, αναβάθμιση και τεχνική υποστήριξη ιστοσελίδων και web εφαρμογών και θα μας ενδιέφερε να συμμετάσχουμε σε τυχόν έρευνα αγοράς ή πρόσκληση υποβολής προσφοράς που θα ακολουθήσει για το συγκεκριμένο αντικείμενο.
+
+Θα μπορούσατε να μας ενημερώσετε εάν η διαδικασία βρίσκεται ακόμη σε στάδιο έρευνας αγοράς και εάν υπάρχει δυνατότητα να σας αποστείλουμε σύντομη παρουσίαση ή στοιχεία της επιχείρησής μας, ώστε να ληφθούν υπόψη;
+
+Είμαστε διαθέσιμοι για οποιαδήποτε συμπληρωματική πληροφορία χρειαστεί.
+
+Με εκτίμηση,
+{{CONTACT_NAME}}
+{{LEGAL_NAME}}
+{{BRAND_NAME}}
+{{CONTACT_EMAIL}}
+{{CONTACT_PHONE}}
+`;
+
+/**
+ * Canonical Early Outreach body for Drive master / copy wording.
+ * Placeholders only — never invent concrete identity values here.
+ */
+export const EARLY_OUTREACH_CANONICAL_TEMPLATE = `TEKIA
+${EARLY_OUTREACH_DOCUMENT_TITLE}
+
+Θέμα: Εκδήλωση ενδιαφέροντος – {{TENDER_TITLE}} – ΑΔΑΜ {{ADAM}}
+
+${EARLY_OUTREACH_BODY_TEMPLATE}`;
+
+export const EARLY_OUTREACH_SUBJECT_TEMPLATE =
+  "Εκδήλωση ενδιαφέροντος – {{TENDER_TITLE}} – ΑΔΑΜ {{ADAM}}";
+
+export type OutreachDraftContent = {
+  subject: string;
+  body: string;
+  documentTitle: string;
+  unresolvedKeys: string[];
+  replacements: Record<string, string>;
+};
+
+/** Plain-text body written into the Drive COPY — matches app subject/body. */
+export const formatOutreachDriveDocumentText = (
+  subject: string,
+  body: string,
+): string =>
+  `${EARLY_OUTREACH_DOCUMENT_TITLE}\n\nΘέμα: ${subject.trim()}\n\n${body.trim()}\n`;
+
+/** Bump when Drive write styling changes — invalidates lastSyncedHash → auto re-sync. */
+export const OUTREACH_DRIVE_STYLE_VERSION = "v2-normal-arial-11";
+
+/** Stable hash so app ↔ Drive sync state can be compared without inventing content. */
+export const hashOutreachContent = (subject: string, body: string): string => {
+  const s = `${OUTREACH_DRIVE_STYLE_VERSION}\n${subject.trim()}\n\n${body.trim()}`;
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16);
+};
+
+export const applyKnownPlaceholders = (
+  text: string,
+  replacements: Record<string, string>,
+): string => {
+  let out = text;
+  for (const [key, value] of Object.entries(replacements)) {
+    out = out.split(`{{${key}}}`).join(value);
+  }
+  return out;
+};
+
+/**
+ * Build in-app outreach draft from the same merge mappings as Drive.
+ * Unresolved placeholders remain as {{KEY}} — never invent values.
+ */
+export const buildOutreachDraftContent = (
+  ctx: MergeContext,
+): OutreachDraftContent => {
+  const plan = buildMergeReplacements("OUTREACH", ctx);
+  const subject =
+    plan.replacements.EMAIL_SUBJECT ??
+    applyKnownPlaceholders(EARLY_OUTREACH_SUBJECT_TEMPLATE, plan.replacements);
+  const body = applyKnownPlaceholders(
+    EARLY_OUTREACH_BODY_TEMPLATE,
+    plan.replacements,
+  );
+  const unresolvedKeys = findUnresolvedPlaceholders(`${subject}\n${body}`);
+
+  return {
+    subject,
+    body,
+    documentTitle: EARLY_OUTREACH_DOCUMENT_TITLE,
+    unresolvedKeys,
+    replacements: plan.replacements,
+  };
 };
 
 const nonEmpty = (value: string | null | undefined): string | null => {
@@ -85,9 +200,60 @@ const nonEmpty = (value: string | null | undefined): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+export const recordTypeLabel = (
+  recordType: string | null | undefined,
+): string | null => {
+  if (recordType === "REQ") return "Πρωτογενές Αίτημα";
+  if (recordType === "PROC") return "Πρόσκληση / Διακήρυξη";
+  return null;
+};
+
+export const buildOutreachEmailSubject = (
+  tenderTitle: string | null | undefined,
+  adam: string | null | undefined,
+): string | null => {
+  const title = nonEmpty(tenderTitle);
+  const adamValue = nonEmpty(adam);
+  if (!title || !adamValue) return null;
+  return `Εκδήλωση ενδιαφέροντος – ${title} – ΑΔΑΜ ${adamValue}`;
+};
+
+/**
+ * Legacy wording fixes applied on the tender COPY only (never master).
+ * Removes English "EARLY OUTREACH" and generic "αίτημα/προμήθεια" for REQ.
+ */
+export const buildOutreachPhraseFixes = (
+  recordType: string | null | undefined,
+  legalName?: string | null,
+): Record<string, string> => {
+  const fixes: Record<string, string> = {
+    "EARLY OUTREACH": EARLY_OUTREACH_DOCUMENT_TITLE,
+    "Early Outreach": EARLY_OUTREACH_DOCUMENT_TITLE,
+    "EARLY_OUTREACH": EARLY_OUTREACH_DOCUMENT_TITLE,
+  };
+
+  if (recordType === "REQ") {
+    fixes["αίτημα/προμήθεια"] = "Πρωτογενές Αίτημα";
+    fixes["αίτημα / προμήθεια"] = "Πρωτογενές Αίτημα";
+    fixes["αίτημα ή προμήθεια"] = "Πρωτογενές Αίτημα";
+    fixes["πρόσφατο αίτημα/προμήθεια"] = "πρόσφατο Πρωτογενές Αίτημα";
+    fixes["πρόσφατο αίτημα / προμήθεια"] = "πρόσφατο Πρωτογενές Αίτημα";
+  }
+
+  const legal = nonEmpty(legalName);
+  if (legal) {
+    fixes["εκ μέρους της TEKIA"] = `εκ μέρους της επιχείρησης ${legal}`;
+    fixes["εκ μέρους της {{BRAND_NAME}}"] =
+      `εκ μέρους της επιχείρησης ${legal}`;
+  }
+
+  return fixes;
+};
+
 /**
  * Build replacements for a template type.
  * Missing values are omitted (never replaced with "").
+ * CONTACT_NAME never falls back to LEGAL_NAME / BRAND_NAME.
  */
 export const buildMergeReplacements = (
   docType: TemplateDocType,
@@ -108,22 +274,33 @@ export const buildMergeReplacements = (
   setIfKnown("TENDER_TITLE", ctx.tenderTitle);
   setIfKnown("ADAM", ctx.adam);
   setIfKnown("PROTOCOL_NUMBER", ctx.protocolNumber);
-  setIfKnown("CONTACT_NAME", ctx.contactName);
+
+  // Identity mapping — strict separation
+  setIfKnown("CONTACT_NAME", ctx.contactName); // never legalName / brandName
   setIfKnown("CONTACT_EMAIL", ctx.contactEmail);
   setIfKnown("CONTACT_PHONE", ctx.contactPhone);
-  setIfKnown("DATE", ctx.date);
-  setIfKnown(
-    "LEGAL_REPRESENTATIVE",
-    ctx.legalRepresentative ?? ctx.contactName,
-  );
-  // Legal identity vs brand — never replace LEGAL_NAME with brand
-  setIfKnown("LEGAL_NAME", ctx.legalName);
+  setIfKnown("LEGAL_NAME", ctx.legalName); // never brandName
   setIfKnown("BRAND_NAME", ctx.brandName);
   setIfKnown("TRADING_NAME", ctx.tradingName);
   setIfKnown("TRADING_NAME_STATUS", ctx.tradingNameStatus);
 
+  setIfKnown("DATE", ctx.date);
+  // Legal representative = contact person only (not legal entity name)
+  setIfKnown(
+    "LEGAL_REPRESENTATIVE",
+    ctx.legalRepresentative ?? ctx.contactName,
+  );
+
+  if (docType === "OUTREACH") {
+    setIfKnown("DOCUMENT_TITLE", EARLY_OUTREACH_DOCUMENT_TITLE);
+    setIfKnown("RECORD_TYPE_LABEL", recordTypeLabel(ctx.recordType));
+    setIfKnown(
+      "EMAIL_SUBJECT",
+      buildOutreachEmailSubject(ctx.tenderTitle, ctx.adam),
+    );
+  }
+
   if (docType === "TECHNICAL_OFFER") {
-    // Technical narrative fields stay intact until operator provides/reviews them
     for (const key of TECHNICAL_OPERATOR_KEYS) {
       const v = nonEmpty(op[key]);
       if (v) replacements[key] = v;
@@ -147,11 +324,16 @@ export const buildMergeReplacements = (
     }
   }
 
-  if (docType === "OUTREACH") {
-    // outreach uses common auto fields only
-  }
+  const literalReplacements =
+    docType === "OUTREACH"
+      ? buildOutreachPhraseFixes(ctx.recordType, ctx.legalName)
+      : {};
 
-  return { replacements, skippedUnknown: [...new Set(skippedUnknown)] };
+  return {
+    replacements,
+    literalReplacements,
+    skippedUnknown: [...new Set(skippedUnknown)],
+  };
 };
 
 export const placeholderToken = (key: string): string => `{{${key}}}`;
@@ -182,14 +364,16 @@ export const assertMergeTargetIsCopy = (
   }
 };
 
-export const buildReplaceAllTextRequests = (
-  replacements: Record<string, string>,
-): Array<{
+export type ReplaceAllTextRequest = {
   replaceAllText: {
     containsText: { text: string; matchCase: boolean };
     replaceText: string;
   };
-}> =>
+};
+
+export const buildReplaceAllTextRequests = (
+  replacements: Record<string, string>,
+): ReplaceAllTextRequest[] =>
   Object.entries(replacements).map(([key, value]) => ({
     replaceAllText: {
       containsText: {
@@ -199,3 +383,24 @@ export const buildReplaceAllTextRequests = (
       replaceText: value,
     },
   }));
+
+/** Exact-string ReplaceAllText (for legacy wording on the COPY). */
+export const buildLiteralReplaceAllTextRequests = (
+  literals: Record<string, string>,
+): ReplaceAllTextRequest[] =>
+  Object.entries(literals).map(([from, to]) => ({
+    replaceAllText: {
+      containsText: {
+        text: from,
+        matchCase: true,
+      },
+      replaceText: to,
+    },
+  }));
+
+export const buildAllReplaceRequests = (
+  plan: MergePlan,
+): ReplaceAllTextRequest[] => [
+  ...buildReplaceAllTextRequests(plan.replacements),
+  ...buildLiteralReplaceAllTextRequests(plan.literalReplacements),
+];

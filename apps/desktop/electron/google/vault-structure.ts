@@ -18,7 +18,7 @@ export const COMPANY_DOC_FOLDERS = [
 ] as const;
 
 export const TEMPLATE_FOLDERS = [
-  "Early Outreach",
+  "ΕΚΔΗΛΩΣΗ ΕΝΔΙΑΦΕΡΟΝΤΟΣ",
   "Technical Offer",
   "Economic Offer",
   "Declarations",
@@ -63,6 +63,7 @@ export const COMPANY_DOC_NAME_TO_KEY: Record<string, CompanyDocKey> = {
 
 export const TEMPLATE_NAME_TO_KEY: Record<string, TemplateKey> = {
   "early outreach": "earlyOutreach",
+  "εκδήλωση ενδιαφέροντος": "earlyOutreach",
   "technical offer": "technicalOffer",
   "economic offer": "economicOffer",
   declarations: "declarations",
@@ -104,27 +105,41 @@ export type DiscoveredVault = {
 };
 
 export const normalizeFolderName = (name: string): string =>
-  name.trim().toLowerCase().replace(/\s+/g, " ");
+  name
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 
 export const matchNamedChild = <T extends string>(
   children: DriveFolderRef[],
   nameToKey: Record<string, T>,
+  canonicalNameByKey?: Partial<Record<T, string>>,
 ): { found: Partial<Record<T, DriveFolderRef>>; missingNames: string[] } => {
   const found: Partial<Record<T, DriveFolderRef>> = {};
   const byName = new Map(
     children.map((child) => [normalizeFolderName(child.name), child]),
   );
 
-  const expectedNames = Object.keys(nameToKey);
+  const uniqueKeys = [...new Set(Object.values(nameToKey))];
   const missingNames: string[] = [];
 
-  for (const expected of expectedNames) {
-    const key = nameToKey[expected];
-    const hit = byName.get(expected);
+  for (const key of uniqueKeys) {
+    const aliases = Object.entries(nameToKey)
+      .filter(([, mapped]) => mapped === key)
+      .map(([name]) => name);
+
+    let hit: DriveFolderRef | undefined;
+    for (const alias of aliases) {
+      hit = byName.get(normalizeFolderName(alias));
+      if (hit) break;
+    }
+
     if (hit) {
       found[key] = hit;
     } else {
-      missingNames.push(expected);
+      missingNames.push(canonicalNameByKey?.[key] ?? aliases[0] ?? String(key));
     }
   }
 
@@ -142,12 +157,18 @@ export const buildVaultDiscovery = (input: {
     input.companyDocChildren,
     COMPANY_DOC_NAME_TO_KEY,
   );
-  const templates = matchNamedChild(input.templateChildren, TEMPLATE_NAME_TO_KEY);
+  const templates = matchNamedChild(input.templateChildren, TEMPLATE_NAME_TO_KEY, {
+    earlyOutreach: "ΕΚΔΗΛΩΣΗ ΕΝΔΙΑΦΕΡΟΝΤΟΣ",
+    technicalOffer: "Technical Offer",
+    economicOffer: "Economic Offer",
+    declarations: "Declarations",
+    companyProfile: "Company Profile",
+  });
 
   const missing: string[] = [
     ...top.missingNames.map((n) => titleCase(n)),
     ...companyDocs.missingNames.map((n) => titleCase(n)),
-    ...templates.missingNames.map((n) => titleCase(n)),
+    ...templates.missingNames,
   ];
 
   return {

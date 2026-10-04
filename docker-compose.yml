@@ -1,0 +1,24 @@
+# Local SaaS foundation services.
+# Phase 1: Postgres is available for Prisma migrations.
+# The watcher still defaults to SQLite (DATABASE_PATH) until cutover.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: tekia
+      POSTGRES_PASSWORD: tekia
+      POSTGRES_DB: tekia_tender_watcher
+    volumes:
+      - tekia_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tekia -d tekia_tender_watcher"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  tekia_pg_data:

@@ -40,7 +40,8 @@ export const createAdminRoutes = (deps: {
     await next();
   });
 
-  app.use("*", requireAdmin);
+  // Scope admin auth to /admin/* only — must not block /api/auth or /api/saas.
+  app.use("/admin/*", requireAdmin);
 
   app.post("/admin/run", async (c) => {
     if (deps.pollJob.isRunning()) {

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   api,
@@ -8,6 +8,7 @@ import {
   type TenderDetail,
 } from "../api";
 import { TenderPhaseCard } from "../components/TenderPhaseCard";
+import { ToastStack, type ToastItem, type ToastKind } from "../components/ToastStack";
 import { formatDateTime, formatEuro, formatTime, statusClass } from "../lib/format";
 import {
   EARLY_PHASE_DOC_KEYS,
@@ -30,28 +31,14 @@ import {
   getGreekSubmissionMethodLabel,
   getNoExpiryNote,
 } from "../lib/ui-labels";
+import {
+  buildOutreachDraftContent,
+  hashOutreachContent,
+  type MergeContext,
+} from "../../../desktop/electron/google/template-merge";
 
 const draftKeys = ["outreach", "technical", "economic", "declarations"] as const;
 type DraftKey = (typeof draftKeys)[number];
-
-type DraftEditorForm = {
-  status: DraftPackage["status"];
-  subject: string;
-  body: string;
-  notes: string;
-  amountWithoutVat: string;
-};
-
-const toDraftEditorForm = (draft: DraftPackage): DraftEditorForm => ({
-  status: draft.status === "NOT_STARTED" ? "DRAFT" : draft.status,
-  subject: draft.subject ?? "",
-  body: draft.body ?? "",
-  notes: draft.notes ?? "",
-  amountWithoutVat:
-    draft.amountWithoutVat != null ? String(draft.amountWithoutVat) : "",
-});
-
-const DRAFT_AUTOSAVE_MS = 700;
 
 type VaultChecklistItem = {
   key: string;
@@ -79,17 +66,32 @@ type DriveDoc = {
   unresolvedPlaceholders: string[];
   masterFileId: string;
   driveFileId: string;
+  lastSyncedHash?: string | null;
 };
+
+type OutreachSyncState = "unknown" | "synced" | "stale" | "syncing" | "error";
 
 export const TenderDetailPage = () => {
   const { referenceNumber = "" } = useParams();
   const [tender, setTender] = useState<TenderDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [showRecordForm, setShowRecordForm] = useState(false);
+  const [showOutreachSendForm, setShowOutreachSendForm] = useState(false);
+  const [outreachSendForm, setOutreachSendForm] = useState({
+    sentAt: "",
+    recipient: "",
+    subject: "",
+    notes: "",
+  });
+  const [savingOutreachSent, setSavingOutreachSent] = useState(false);
+  const [draftEditorKey, setDraftEditorKey] = useState(0);
+  const [loadingDriveText, setLoadingDriveText] = useState(false);
   const [editingDraft, setEditingDraft] = useState<DraftKey | null>(null);
   const [editingScope, setEditingScope] = useState(false);
+  const [outreachSync, setOutreachSync] = useState<OutreachSyncState>("unknown");
+  const autoSyncedRef = useRef<string | null>(null);
   const [contactForm, setContactForm] = useState({
     name: "",
     department: "",
@@ -105,26 +107,6 @@ export const TenderDetailPage = () => {
   });
   const [formRevision, setFormRevision] = useState(0);
   const [savingDetails, setSavingDetails] = useState(false);
-  const [draftEditorKey, setDraftEditorKey] = useState(0);
-  const [loadingDriveText, setLoadingDriveText] = useState(false);
-  const [draftEditorForm, setDraftEditorForm] = useState<DraftEditorForm | null>(
-    null,
-  );
-  const [draftSaveState, setDraftSaveState] = useState<
-    "idle" | "dirty" | "saving" | "saved" | "error"
-  >("idle");
-  const [draftSaveError, setDraftSaveError] = useState<string | null>(null);
-  const draftAutosaveSeq = useRef(0);
-  const draftFormRef = useRef<DraftEditorForm | null>(null);
-  const editingDraftRef = useRef<DraftKey | null>(null);
-  const [showOutreachSendForm, setShowOutreachSendForm] = useState(false);
-  const [outreachSendForm, setOutreachSendForm] = useState({
-    sentAt: "",
-    recipient: "",
-    subject: "",
-    notes: "",
-  });
-  const [savingOutreachSent, setSavingOutreachSent] = useState(false);
   const [vaultChecklist, setVaultChecklist] = useState<VaultChecklistItem[] | null>(
     null,
   );
@@ -158,6 +140,18 @@ export const TenderDetailPage = () => {
   });
   const [driveDocuments, setDriveDocuments] = useState<DriveDoc[]>([]);
 
+  const pushToast = useCallback(
+    (kind: ToastKind, message: string, sticky = false) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setToasts((prev) => [...prev.slice(-4), { id, kind, message, sticky }]);
+    },
+    [],
+  );
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   const syncFormsFromTender = (detail: TenderDetail) => {
     setContactForm({
       name: detail.contact.name ?? "",
@@ -190,9 +184,8 @@ export const TenderDetailPage = () => {
       }
       setTender(detail);
       syncFormsFromTender(detail);
-      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -202,93 +195,6 @@ export const TenderDetailPage = () => {
     void load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referenceNumber]);
-
-  useEffect(() => {
-    draftFormRef.current = draftEditorForm;
-  }, [draftEditorForm]);
-
-  useEffect(() => {
-    editingDraftRef.current = editingDraft;
-  }, [editingDraft]);
-
-  const persistDraftToServer = async (
-    key: DraftKey,
-    form: DraftEditorForm,
-    options?: { silent?: boolean },
-  ): Promise<boolean> => {
-    if (!tender) return false;
-    const seq = ++draftAutosaveSeq.current;
-    setDraftSaveState("saving");
-    setDraftSaveError(null);
-    const next: DraftPackage = {
-      ...tender.drafts[key],
-      status: form.status,
-      subject: form.subject.trim() || null,
-      body: form.body.trim() || null,
-      notes: form.notes.trim() || null,
-      amountWithoutVat:
-        key === "economic" && form.amountWithoutVat.trim()
-          ? Number(form.amountWithoutVat)
-          : tender.drafts[key].amountWithoutVat ?? null,
-      updatedAt: new Date().toISOString(),
-    };
-    try {
-      const result = await api.patchTender(referenceNumber, {
-        drafts: { [key]: next },
-      });
-      // Ignore stale responses if a newer save started.
-      if (seq !== draftAutosaveSeq.current) return true;
-      setTender(result.tender);
-      setDraftSaveState("saved");
-      if (!options?.silent) {
-        setMessage(
-          result.approvalInvalidated
-            ? "Αποθηκεύτηκε στον server. Η έγκριση ακυρώθηκε λόγω ουσιαστικών αλλαγών."
-            : "Αποθηκεύτηκε στον server.",
-        );
-      }
-      return true;
-    } catch (err) {
-      if (seq !== draftAutosaveSeq.current) return false;
-      const detail = err instanceof Error ? err.message : String(err);
-      setDraftSaveState("error");
-      setDraftSaveError(detail);
-      setError(`Αποτυχία αποθήκευσης προχείρου στον server: ${detail}`);
-      return false;
-    }
-  };
-
-  // Debounced autosave — server is source of truth for draft fields.
-  useEffect(() => {
-    if (!editingDraft || !draftEditorForm || draftSaveState !== "dirty") return;
-    const timer = window.setTimeout(() => {
-      void persistDraftToServer(editingDraft, draftEditorForm, { silent: true });
-    }, DRAFT_AUTOSAVE_MS);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftEditorForm, editingDraft, draftSaveState]);
-
-  const openDraftEditor = (key: DraftKey, draft: DraftPackage) => {
-    const form = toDraftEditorForm(draft);
-    setDraftEditorForm(form);
-    draftFormRef.current = form;
-    setDraftSaveState("idle");
-    setDraftSaveError(null);
-    setDraftEditorKey((n) => n + 1);
-    setEditingDraft(key);
-  };
-
-  const closeDraftEditor = async () => {
-    const key = editingDraftRef.current;
-    const form = draftFormRef.current;
-    if (key && form && draftSaveState === "dirty") {
-      await persistDraftToServer(key, form, { silent: false });
-    }
-    setEditingDraft(null);
-    setDraftEditorForm(null);
-    setDraftSaveState("idle");
-    setDraftSaveError(null);
-  };
 
   useEffect(() => {
     if (!isDesktop() || !window.tekia?.drive) {
@@ -305,7 +211,7 @@ export const TenderDetailPage = () => {
 
   const handlePreparePackage = async () => {
     if (!isDesktop() || !window.tekia?.drive) {
-      setMessage("Η προετοιμασία φακέλου προσφοράς είναι διαθέσιμη στην desktop εφαρμογή.");
+      pushToast("info", "Η προετοιμασία φακέλου προσφοράς είναι διαθέσιμη στην desktop εφαρμογή.");
       return;
     }
     try {
@@ -313,13 +219,13 @@ export const TenderDetailPage = () => {
         referenceNumber,
       )) as PackageReadiness;
       if (result?.__tekiaError) {
-        setError(result.message ?? "Αποτυχία ελέγχου ετοιμότητας");
+        pushToast("error", result.message ?? "Αποτυχία ελέγχου ετοιμότητας");
         return;
       }
       setPackageReadiness(result);
-      setMessage(`Ετοιμότητα φακέλου: ${result.summary}. Δεν στάλθηκε τίποτα.`);
+      pushToast("info", `Ετοιμότητα φακέλου: ${result.summary}. Δεν στάλθηκε τίποτα.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -330,18 +236,18 @@ export const TenderDetailPage = () => {
         referenceNumber,
       )) as { webViewLink?: string; __tekiaError?: boolean; message?: string };
       if (result?.__tekiaError) {
-        setError(result.message ?? "Αποτυχία δημιουργίας φακέλου");
+        pushToast("error", result.message ?? "Αποτυχία δημιουργίας φακέλου");
         return;
       }
-      setMessage("Δημιουργήθηκε φάκελος διαγωνισμού στο Drive (Submissions/{ADAM}/).");
+      pushToast("info", "Δημιουργήθηκε φάκελος διαγωνισμού στο Drive (Submissions/{ADAM}/).");
       if (result.webViewLink) void openExternalUrl(result.webViewLink);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
     }
   };
 
-  const refreshDriveDocuments = async () => {
-    if (!isDesktop() || !window.tekia?.drive?.tenderDocuments) return;
+  const refreshDriveDocuments = async (): Promise<DriveDoc[]> => {
+    if (!isDesktop() || !window.tekia?.drive?.tenderDocuments) return [];
     const rows = (await window.tekia.drive.tenderDocuments(
       referenceNumber,
     )) as Array<{
@@ -352,16 +258,30 @@ export const TenderDetailPage = () => {
       unresolvedPlaceholders?: string[];
       masterFileId: string;
       driveFileId: string;
+      lastSyncedHash?: string | null;
     }>;
     if (rows && typeof rows === "object" && "__tekiaError" in (rows as object)) {
-      return;
+      return [];
     }
-    setDriveDocuments(
-      (rows ?? []).map((r) => ({
-        ...r,
-        unresolvedPlaceholders: r.unresolvedPlaceholders ?? [],
-      })),
-    );
+    const mapped = (rows ?? []).map((r) => ({
+      ...r,
+      unresolvedPlaceholders: r.unresolvedPlaceholders ?? [],
+      lastSyncedHash: r.lastSyncedHash ?? null,
+    }));
+    setDriveDocuments(mapped);
+    return mapped;
+  };
+
+  const evaluateOutreachSync = (
+    subject: string | null | undefined,
+    body: string | null | undefined,
+    drive: DriveDoc | undefined,
+  ): OutreachSyncState => {
+    if (!drive) return "unknown";
+    if (!subject && !body) return "unknown";
+    const hash = hashOutreachContent(subject ?? "", body ?? "");
+    if (!drive.lastSyncedHash) return "stale";
+    return drive.lastSyncedHash === hash ? "synced" : "stale";
   };
 
   useEffect(() => {
@@ -369,12 +289,175 @@ export const TenderDetailPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referenceNumber]);
 
+  useEffect(() => {
+    if (!tender) return;
+    const drive = driveDocuments.find((d) => OUTREACH_DRIVE_DOC_TYPES.has(d.type));
+    setOutreachSync(
+      evaluateOutreachSync(
+        tender.drafts.outreach.subject,
+        tender.drafts.outreach.body,
+        drive,
+      ),
+    );
+  }, [tender, driveDocuments]);
+
+  const syncOutreachToDrive = async (
+    subject: string,
+    body: string,
+  ): Promise<boolean> => {
+    if (!isDesktop() || !window.tekia?.drive?.syncOutreachContent) {
+      pushToast(
+        "warning",
+        "Ο συγχρονισμός Drive είναι διαθέσιμος μόνο στην desktop εφαρμογή.",
+      );
+      return false;
+    }
+    setOutreachSync("syncing");
+    setBusyAction("syncOutreach");
+    try {
+      const result = (await window.tekia.drive.syncOutreachContent(
+        referenceNumber,
+        subject,
+        body,
+      )) as {
+        __tekiaError?: boolean;
+        message?: string;
+        contentSynced?: boolean;
+        lastSyncedHash?: string | null;
+        reusedExisting?: boolean;
+      };
+      if (result?.__tekiaError) {
+        setOutreachSync("error");
+        pushToast(
+          "error",
+          `${UI.driveSyncFailed}: ${result.message ?? "άγνωστο σφάλμα"}`,
+          true,
+        );
+        return false;
+      }
+      await refreshDriveDocuments();
+      setOutreachSync(result.contentSynced ? "synced" : "stale");
+      pushToast(
+        "success",
+        result.reusedExisting
+          ? `${UI.driveSynced} (ενημερώθηκε το υπάρχον έγγραφο).`
+          : `${UI.driveSynced} (δημιουργήθηκε νέο έγγραφο).`,
+      );
+      return Boolean(result.contentSynced);
+    } catch (err) {
+      setOutreachSync("error");
+      pushToast(
+        "error",
+        `${UI.driveSyncFailed}: ${err instanceof Error ? err.message : String(err)}`,
+        true,
+      );
+      return false;
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  // One-shot repair for existing mismatched Drive copies (e.g. 26REQ019873897).
+  useEffect(() => {
+    if (!isDesktop() || !tender || busyAction) return;
+    const drive = driveDocuments.find((d) => OUTREACH_DRIVE_DOC_TYPES.has(d.type));
+    const subject = tender.drafts.outreach.subject;
+    const body = tender.drafts.outreach.body;
+    if (!drive || !subject || !body) return;
+    const state = evaluateOutreachSync(subject, body, drive);
+    if (state !== "stale") return;
+    if (autoSyncedRef.current === referenceNumber) return;
+    autoSyncedRef.current = referenceNumber;
+    void syncOutreachToDrive(subject, body);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tender, driveDocuments, referenceNumber]);
+
+  const saveOutreachDraftFromContent = async (
+    content: {
+      subject: string;
+      body: string;
+      unresolvedKeys?: string[];
+    },
+    options?: { force?: boolean; syncDrive?: boolean },
+  ): Promise<boolean> => {
+    if (!tender) return false;
+    const current = tender.drafts.outreach;
+    if (current.manualEdited && !options?.force) {
+      const ok = window.confirm(UI.regenerateOutreachConfirm);
+      if (!ok) return false;
+    }
+
+    const next: DraftPackage = {
+      ...current,
+      status: current.status === "NOT_STARTED" ? "DRAFT" : current.status,
+      subject: content.subject,
+      body: content.body,
+      manualEdited: false,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const result = await api.patchTender(referenceNumber, {
+      drafts: { outreach: next },
+    });
+    setTender(result.tender);
+    setEditingDraft("outreach");
+    if (content.unresolvedKeys?.length) {
+      pushToast(
+        "warning",
+        `${UI.unresolvedDraftWarning}: ${content.unresolvedKeys.join(", ")}`,
+      );
+    }
+
+    if (options?.syncDrive !== false && isDesktop()) {
+      await syncOutreachToDrive(content.subject, content.body);
+    }
+    return true;
+  };
+
+  const buildLocalOutreachDraft = async () => {
+    if (!tender) return null;
+    let company = {
+      contact_name: "",
+      email: "",
+      phone: "",
+      legal_name: "",
+      brand_name: "TEKIA",
+    };
+    try {
+      if (isDesktop() && window.tekia?.companySettings?.get) {
+        const local = await window.tekia.companySettings.get();
+        const localCompany = local?.company as Partial<typeof company> | undefined;
+        if (localCompany) company = { ...company, ...localCompany };
+      } else {
+        const settings = await api.settings();
+        company = { ...company, ...settings.company };
+      }
+    } catch {
+      // keep defaults — never invent contact/legal beyond empty/brand default
+    }
+
+    const ctx: MergeContext = {
+      organization: tender.organization,
+      tenderTitle: tender.title,
+      adam: tender.referenceNumber,
+      recordType: tender.recordType,
+      contactName: company.contact_name || null,
+      contactEmail: company.email || null,
+      contactPhone: company.phone || null,
+      legalName: company.legal_name || null,
+      brandName: company.brand_name || null,
+      date: new Date().toLocaleDateString("el-GR"),
+    };
+    return buildOutreachDraftContent(ctx);
+  };
+
   const handleCopyTemplate = async (
     templateKey:
       | "earlyOutreach"
       | "technicalOffer"
       | "economicOffer"
       | "declarations",
+    options?: { forceDraftOverwrite?: boolean },
   ) => {
     if (!isDesktop() || !window.tekia?.drive) return;
 
@@ -383,7 +466,8 @@ export const TenderDetailPage = () => {
         ([key, value]) => key !== "NOTES" && !value.trim(),
       );
       if (missing.length > 0) {
-        setError(
+        pushToast(
+          "error",
           `Η Οικονομική Προσφορά απαιτεί τιμές από τον χρήστη πριν τη συγχώνευση: ${missing
             .map(([k]) => k)
             .join(", ")}`,
@@ -394,11 +478,21 @@ export const TenderDetailPage = () => {
 
     if (templateKey === "declarations") {
       if (!declarationValues.DECLARATION_TEXT.trim()) {
-        setError(
+        pushToast(
+          "error",
           "Η Δήλωση απαιτεί DECLARATION_TEXT από τον διαγωνισμό / χρήστη — χωρίς επινόηση.",
         );
         return;
       }
+    }
+
+    if (
+      templateKey === "earlyOutreach" &&
+      tender?.drafts.outreach.manualEdited &&
+      !options?.forceDraftOverwrite
+    ) {
+      const ok = window.confirm(UI.regenerateOutreachConfirm);
+      if (!ok) return;
     }
 
     const operatorValues =
@@ -410,11 +504,28 @@ export const TenderDetailPage = () => {
             ? technicalValues
             : undefined;
 
+    setBusyAction(`copy:${templateKey}`);
     try {
+      let outreachContent: { subject: string; body: string } | undefined;
+      if (templateKey === "earlyOutreach") {
+        const local = await buildLocalOutreachDraft();
+        if (!local) {
+          pushToast("error", "Δεν ήταν δυνατή η δημιουργία προχείρου από το πρότυπο.");
+          return;
+        }
+        outreachContent = { subject: local.subject, body: local.body };
+        // App first (source of truth), Drive second from the same payload.
+        await saveOutreachDraftFromContent(local, {
+          force: true,
+          syncDrive: false,
+        });
+      }
+
       const result = (await window.tekia.drive.copyTemplate(
         referenceNumber,
         templateKey,
         operatorValues,
+        outreachContent,
       )) as {
         name?: string;
         driveUrl?: string;
@@ -423,11 +534,23 @@ export const TenderDetailPage = () => {
         driveFileId?: string;
         unresolvedPlaceholders?: string[];
         replacedKeys?: string[];
+        reusedExisting?: boolean;
+        contentSynced?: boolean;
+        outreachDraft?: {
+          subject: string;
+          body: string;
+          unresolvedKeys: string[];
+        };
         __tekiaError?: boolean;
         message?: string;
       };
       if (result?.__tekiaError) {
-        setError(result.message ?? "Αποτυχία αντιγραφής / συγχώνευσης προτύπου");
+        if (templateKey === "earlyOutreach") setOutreachSync("error");
+        pushToast(
+          "error",
+          result.message ?? "Αποτυχία αντιγραφής / συγχώνευσης προτύπου",
+          true,
+        );
         return;
       }
       if (
@@ -435,29 +558,50 @@ export const TenderDetailPage = () => {
         result.driveFileId &&
         result.masterFileId === result.driveFileId
       ) {
-        setError("Σφάλμα ασφαλείας: το master και το αντίγραφο έχουν το ίδιο ID");
+        pushToast(
+          "error",
+          "Σφάλμα ασφαλείας: το master και το αντίγραφο έχουν το ίδιο ID",
+        );
         return;
       }
       const unresolved = result.unresolvedPlaceholders ?? [];
-      setMessage(
-        `Δημιουργήθηκε αντίγραφο «${result.name}» (το master δεν άλλαξε). ${UI.safetyGenerate} ${
-          unresolved.length
-            ? `Εκκρεμή πεδία: ${unresolved.join(", ")} — παραμένει Πρόχειρο.`
-            : "Δεν υπάρχουν εκκρεμή πεδία."
-        }`,
-      );
-      if (result.driveUrl) void openExternalUrl(result.driveUrl);
       await refreshDriveDocuments();
-      if (templateKey === "earlyOutreach" && tender) {
-        openDraftEditor("outreach", tender.drafts.outreach);
+      if (templateKey === "earlyOutreach") {
+        setOutreachSync(result.contentSynced ? "synced" : "stale");
+        pushToast(
+          "success",
+          `${result.reusedExisting ? "Ενημερώθηκε" : "Δημιουργήθηκε"} το Drive document από το ίδιο περιεχόμενο με το app. ${UI.safetyGenerate} ${
+            unresolved.length
+              ? `Εκκρεμή πεδία: ${unresolved.join(", ")}.`
+              : "Χωρίς εκκρεμή πεδία."
+          }`,
+        );
+      } else {
+        pushToast(
+          "info",
+          `Δημιουργήθηκε αντίγραφο «${result.name}» (το master δεν άλλαξε). ${UI.safetyGenerate} ${
+            unresolved.length
+              ? `Εκκρεμή πεδία: ${unresolved.join(", ")} — παραμένει Πρόχειρο.`
+              : "Δεν υπάρχουν εκκρεμή πεδία."
+          }`,
+        );
+        if (result.driveUrl) void openExternalUrl(result.driveUrl);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (templateKey === "earlyOutreach") setOutreachSync("error");
+      pushToast("error", err instanceof Error ? err.message : String(err), true);
+    } finally {
+      setBusyAction(null);
     }
   };
 
   const handleMarkDriveDocReady = async (documentId: string) => {
     if (!window.tekia?.drive?.markDocumentReady) return;
+    if (outreachSync === "stale" || outreachSync === "error") {
+      pushToast("warning", UI.readyBlockedOutOfSync, true);
+      return;
+    }
+    setBusyAction("markDriveReady");
     try {
       const result = (await window.tekia.drive.markDocumentReady(documentId)) as {
         __tekiaError?: boolean;
@@ -465,15 +609,31 @@ export const TenderDetailPage = () => {
         status?: string;
       };
       if (result?.__tekiaError) {
-        setError(result.message ?? "Δεν μπορεί να σημανθεί ως Έτοιμο");
+        pushToast("error", result.message ?? "Δεν μπορεί να σημανθεί ως Έτοιμο");
         return;
       }
-      setMessage(
+      // Keep app draft status in lockstep when Drive is Ready
+      if (tender) {
+        const patched = await api.patchTender(referenceNumber, {
+          drafts: {
+            outreach: {
+              ...tender.drafts.outreach,
+              status: "READY",
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        });
+        setTender(patched.tender);
+      }
+      pushToast(
+        "success",
         `Το έγγραφο σημειώθηκε ως ${getGreekDocumentStatusLabel(result.status ?? "READY")}. ${UI.safetyReady}`,
       );
       await refreshDriveDocuments();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyAction(null);
     }
   };
 
@@ -481,8 +641,7 @@ export const TenderDetailPage = () => {
     event.preventDefault();
     if (!tender || savingDetails) return;
     setSavingDetails(true);
-    setError(null);
-    try {
+        try {
       const result = await api.patchTender(referenceNumber, {
         contact_name: contactForm.name.trim() || null,
         contact_department: contactForm.department.trim() || null,
@@ -499,13 +658,13 @@ export const TenderDetailPage = () => {
       }
       setTender(result.tender);
       syncFormsFromTender(result.tender);
-      setMessage(
+      pushToast("info", 
         result.approvalInvalidated
           ? "Αποθηκεύτηκε. Η έγκριση ακυρώθηκε λόγω ουσιαστικών αλλαγών."
           : "Αποθηκεύτηκε.",
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
     } finally {
       setSavingDetails(false);
     }
@@ -515,7 +674,6 @@ export const TenderDetailPage = () => {
     event.preventDefault();
     if (!tender || savingDetails) return;
     setSavingDetails(true);
-    setError(null);
     try {
       const result = await api.patchTender(referenceNumber, {
         submission_method: submissionForm.method || "UNKNOWN",
@@ -528,13 +686,14 @@ export const TenderDetailPage = () => {
       }
       setTender(result.tender);
       syncFormsFromTender(result.tender);
-      setMessage(
+      pushToast(
+        "info",
         result.approvalInvalidated
           ? "Αποθηκεύτηκε. Η έγκριση ακυρώθηκε λόγω ουσιαστικών αλλαγών."
           : "Αποθηκεύτηκε.",
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
     } finally {
       setSavingDetails(false);
     }
@@ -551,58 +710,62 @@ export const TenderDetailPage = () => {
       });
       setTender(result.tender);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const handlePrepareDraft = async (key: DraftKey) => {
-    if (!tender) return;
-    const current = tender.drafts[key];
-    const next: DraftPackage = {
-      ...current,
-      status: current.status === "NOT_STARTED" ? "DRAFT" : current.status,
-      updatedAt: new Date().toISOString(),
-    };
-    if (key === "outreach" && !next.subject) {
-      next.subject = `Πρόταση συνεργασίας — ${tender.title ?? tender.referenceNumber}`;
-      next.body =
-        next.body ||
-        `Αξιότιμε/η,\n\nΘα θέλαμε να εκδηλώσουμε ενδιαφέρον εκ μέρους της TEKIA για: ${tender.title ?? ""}.\n\nΜε εκτίμηση,\nΙωάννης Γιαννούσης\nTEKIA`;
-    }
-    try {
-      const result = await api.patchTender(referenceNumber, {
-        drafts: { [key]: next },
-      });
-      setTender(result.tender);
-      openDraftEditor(key, result.tender.drafts[key]);
-      setMessage(
-        result.approvalInvalidated
-          ? "Το πρόχειρο ενημερώθηκε στον server. Η έγκριση ακυρώθηκε."
-          : "Το πρόχειρο προετοιμάστηκε και αποθηκεύτηκε στον server.",
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
     }
   };
 
   const handlePrepareOutreach = async () => {
     if (!tender) return;
-    const existingDrive = driveDocuments.find((d) =>
-      OUTREACH_DRIVE_DOC_TYPES.has(d.type),
-    );
-    if (existingDrive) {
-      // Prefer server draft as source of truth; Drive is optional import.
-      openDraftEditor("outreach", tender.drafts.outreach);
-      setMessage(
-        "Εμφανίζονται τα αποθηκευμένα δεδομένα από τον server. Χρησιμοποίησε «Φόρτωση από Drive» αν θέλεις το Google Doc.",
+    setBusyAction("prepareOutreach");
+    try {
+      const existingDrive = driveDocuments.find((d) =>
+        OUTREACH_DRIVE_DOC_TYPES.has(d.type),
       );
-      return;
+
+      // Always (re)build from template into app, then sync the same text to Drive.
+      if (isDesktop() && window.tekia?.drive) {
+        await handleCopyTemplate("earlyOutreach", {
+          forceDraftOverwrite: !tender.drafts.outreach.manualEdited,
+        });
+        return;
+      }
+
+      const content = await buildLocalOutreachDraft();
+      if (content) {
+        await saveOutreachDraftFromContent(content, { syncDrive: false });
+        pushToast("success", "Το πρόχειρο συμπληρώθηκε από το πρότυπο.");
+      }
+      if (existingDrive) void openExternalUrl(existingDrive.driveUrl);
+      setEditingDraft("outreach");
+    } catch (err) {
+      pushToast("error", err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleRegenerateOutreach = async () => {
+    if (!tender) return;
+    if (tender.drafts.outreach.manualEdited) {
+      const ok = window.confirm(UI.regenerateOutreachConfirm);
+      if (!ok) return;
     }
     if (isDesktop() && window.tekia?.drive) {
-      await handleCopyTemplate("earlyOutreach");
+      await handleCopyTemplate("earlyOutreach", { forceDraftOverwrite: true });
       return;
     }
-    await handlePrepareDraft("outreach");
+    const content = await buildLocalOutreachDraft();
+    if (content) {
+      try {
+        await saveOutreachDraftFromContent(content, {
+          force: true,
+          syncDrive: false,
+        });
+        pushToast("success", "Το πρόχειρο επαναδημιουργήθηκε από το πρότυπο.");
+      } catch (err) {
+        pushToast("error", err instanceof Error ? err.message : String(err));
+      }
+    }
   };
 
   const handleSaveDraft = async (
@@ -610,25 +773,76 @@ export const TenderDetailPage = () => {
     key: DraftKey,
   ) => {
     event.preventDefault();
-    if (!draftEditorForm) return;
-    const ok = await persistDraftToServer(key, draftEditorForm, {
-      silent: false,
-    });
-    if (ok) setDraftSaveState("saved");
-  };
+    if (!tender) return;
+    const form = new FormData(event.currentTarget);
+    const next: DraftPackage = {
+      ...tender.drafts[key],
+      status: String(form.get("status") || "DRAFT") as DraftPackage["status"],
+      subject: String(form.get("subject") || "") || null,
+      body: String(form.get("body") || "") || null,
+      notes: String(form.get("notes") || "") || null,
+      amountWithoutVat: form.get("amountWithoutVat")
+        ? Number(form.get("amountWithoutVat"))
+        : null,
+      manualEdited: key === "outreach" ? true : tender.drafts[key].manualEdited,
+      updatedAt: new Date().toISOString(),
+    };
+    setBusyAction(`saveDraft:${key}`);
+    try {
+      const result = await api.patchTender(referenceNumber, {
+        drafts: { [key]: next },
+      });
+      setTender(result.tender);
+      setEditingDraft(null);
 
-  const updateDraftEditorField = <K extends keyof DraftEditorForm>(
-    field: K,
-    value: DraftEditorForm[K],
-  ) => {
-    setDraftEditorForm((prev) => (prev ? { ...prev, [field]: value } : prev));
-    setDraftSaveState("dirty");
-    setMessage(null);
+      if (key === "outreach" && next.subject && next.body && isDesktop()) {
+        const synced = await syncOutreachToDrive(next.subject, next.body);
+        pushToast(
+          synced ? "success" : "warning",
+          synced
+            ? "Αποθηκεύτηκε και συγχρονίστηκε με το Drive."
+            : `${UI.driveOutOfSync} ${UI.syncDriveRetry}.`,
+          !synced,
+        );
+      } else {
+        pushToast(
+          "info",
+          result.approvalInvalidated
+            ? "Αποθηκεύτηκε. Η έγκριση ακυρώθηκε λόγω ουσιαστικών αλλαγών."
+            : "Το πρόχειρο αποθηκεύτηκε.",
+        );
+      }
+    } catch (err) {
+      pushToast("error", err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyAction(null);
+    }
   };
 
   const handleMarkDraftReady = async (key: DraftKey) => {
     if (!tender) return;
+    const linkedOutreach = driveDocuments.find((d) =>
+      OUTREACH_DRIVE_DOC_TYPES.has(d.type),
+    );
+    if (key === "outreach") {
+      if (outreachSync === "stale" || outreachSync === "error") {
+        const subject = tender.drafts.outreach.subject;
+        const body = tender.drafts.outreach.body;
+        if (isDesktop() && subject && body) {
+          const synced = await syncOutreachToDrive(subject, body);
+          if (!synced) {
+            pushToast("warning", UI.readyBlockedOutOfSync, true);
+            return;
+          }
+        } else {
+          pushToast("warning", UI.readyBlockedOutOfSync, true);
+          return;
+        }
+      }
+    }
+
     const draft = tender.drafts[key];
+    setBusyAction(`markReady:${key}`);
     try {
       const result = await api.patchTender(referenceNumber, {
         drafts: {
@@ -640,13 +854,60 @@ export const TenderDetailPage = () => {
         },
       });
       setTender(result.tender);
-      setMessage(
+      if (key === "outreach" && linkedOutreach && window.tekia?.drive?.markDocumentReady) {
+        if (outreachSync !== "synced") {
+          // already synced above when stale; re-check after sync
+        }
+        const mark = (await window.tekia.drive.markDocumentReady(
+          linkedOutreach.id,
+        )) as { __tekiaError?: boolean; message?: string };
+        if (mark?.__tekiaError) {
+          pushToast(
+            "warning",
+            `App: Έτοιμο, αλλά Drive όχι — ${mark.message ?? UI.driveOutOfSync}`,
+            true,
+          );
+          setOutreachSync("error");
+          return;
+        }
+        await refreshDriveDocuments();
+      }
+      pushToast(
+        "success",
         result.approvalInvalidated
           ? `Σημάνθηκε ως Έτοιμο. Η έγκριση ακυρώθηκε. ${UI.safetyReady}`
           : `${getGreekDraftLabel(key)}: Έτοιμο. ${UI.safetyReady}`,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleMarkReady = async () => {
+    try {
+      const result = await api.setStatus(
+        referenceNumber,
+        "READY",
+        "Package ready for review",
+      );
+      setTender(result.tender);
+      pushToast("info", `Σημάνθηκε ως Έτοιμο. ${UI.safetyReady}`);
+    } catch (err) {
+      pushToast("error", err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleApprove = async () => {
+    try {
+      const result = await api.approve(referenceNumber);
+      setTender(result.tender);
+      pushToast("info", 
+        `Εγκρίθηκε. ${UI.safetyApprove} Η αποστολή παραμένει μη διαθέσιμη έως ότου ρυθμιστεί τοπικά.`,
+      );
+    } catch (err) {
+      pushToast("error", err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -670,11 +931,10 @@ export const TenderDetailPage = () => {
     e.preventDefault();
     if (!tender) return;
     setSavingOutreachSent(true);
-    setError(null);
     try {
       const sentAt = new Date(outreachSendForm.sentAt).toISOString();
       if (Number.isNaN(new Date(outreachSendForm.sentAt).getTime())) {
-        setError("Μη έγκυρη ημερομηνία αποστολής");
+        pushToast("error", "Μη έγκυρη ημερομηνία αποστολής");
         return;
       }
       const result = await api.recordOutreachSent(referenceNumber, {
@@ -685,51 +945,24 @@ export const TenderDetailPage = () => {
       });
       setTender(result.tender);
       setShowOutreachSendForm(false);
-      setMessage(
+      pushToast("success", 
         `Η Εκδήλωση Ενδιαφέροντος καταχωρήθηκε ως σταλμένη. Παρακολούθηση ενεργή. ${UI.safetyOutreachSent}`,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
     } finally {
       setSavingOutreachSent(false);
     }
   };
 
-  const handleMarkReady = async () => {
-    try {
-      const result = await api.setStatus(
-        referenceNumber,
-        "READY",
-        "Package ready for review",
-      );
-      setTender(result.tender);
-      setMessage(`Σημάνθηκε ως Έτοιμο. ${UI.safetyReady}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const handleApprove = async () => {
-    try {
-      const result = await api.approve(referenceNumber);
-      setTender(result.tender);
-      setMessage(
-        `Εγκρίθηκε. ${UI.safetyApprove} Η αποστολή παραμένει μη διαθέσιμη έως ότου ρυθμιστεί τοπικά.`,
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
   const handleConfirmRelation = async (procAdam: string) => {
     try {
-      const result = await api.confirmRelation(procAdam);
+      await api.confirmRelation(procAdam);
       // Reload current tender (REQ or PROC) to refresh linked cards
       await load(false);
-      setMessage(`Επιβεβαιώθηκε η σύνδεση με ${procAdam}.`);
-      void result;
+      pushToast("success", `Επιβεβαιώθηκε η σύνδεση με ${procAdam}.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -737,11 +970,12 @@ export const TenderDetailPage = () => {
     try {
       await api.dismissRelation(procAdam);
       await load(false);
-      setMessage(`Απορρίφθηκε η πιθανή σύνδεση με ${procAdam}.`);
+      pushToast("success", `Απορρίφθηκε η πιθανή σύνδεση με ${procAdam}.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
     }
   };
+
 
   const handleReloadOutreachFromDrive = async () => {
     if (!tender) return;
@@ -749,12 +983,15 @@ export const TenderDetailPage = () => {
       OUTREACH_DRIVE_DOC_TYPES.has(d.type),
     );
     if (!driveDoc || !isDesktop() || !window.tekia?.drive?.readDocument) {
-      setError("Δεν υπάρχει Google Doc για φόρτωση από το Drive.");
+      pushToast("error", "Δεν υπάρχει Google Doc για φόρτωση από το Drive.");
       return;
     }
+    const confirmed = window.confirm(
+      "Το περιεχόμενο του πρόχειρου θα αντικατασταθεί με το κείμενο του Google Doc. Συνέχεια;",
+    );
+    if (!confirmed) return;
 
     setLoadingDriveText(true);
-    setError(null);
     try {
       const result = (await window.tekia.drive.readDocument(driveDoc.id)) as {
         subject?: string | null;
@@ -763,54 +1000,31 @@ export const TenderDetailPage = () => {
         message?: string;
       };
       if (result?.__tekiaError) {
-        setError(result.message ?? "Αποτυχία ανάγνωσης από το Drive");
+        pushToast("error", result.message ?? "Αποτυχία ανάγνωσης από το Drive");
         return;
       }
-
-      const form: DraftEditorForm = {
-        status:
-          tender.drafts.outreach.status === "NOT_STARTED"
-            ? "DRAFT"
-            : tender.drafts.outreach.status,
-        subject: (result.subject ?? tender.drafts.outreach.subject ?? "").trim(),
-        body: result.body?.trim()
-          ? result.body
-          : (tender.drafts.outreach.body ?? ""),
-        notes: tender.drafts.outreach.notes ?? "",
-        amountWithoutVat: "",
+      const current = tender.drafts.outreach;
+      const next: DraftPackage = {
+        ...current,
+        status: current.status === "NOT_STARTED" ? "DRAFT" : current.status,
+        subject: (result.subject ?? current.subject ?? "").trim() || null,
+        body: result.body?.trim() ? result.body : current.body ?? null,
+        manualEdited: true,
+        updatedAt: new Date().toISOString(),
       };
-      setDraftEditorForm(form);
+      const saved = await api.patchTender(referenceNumber, {
+        drafts: { outreach: next },
+      });
+      setTender(saved.tender);
       setDraftEditorKey((n) => n + 1);
       setEditingDraft("outreach");
-      // Persist Drive import to server immediately — server remains source of truth.
-      const ok = await persistDraftToServer("outreach", form, { silent: false });
-      if (ok) {
-        setMessage(
-          "Φορτώθηκε από το Google Doc και αποθηκεύτηκε στον server.",
-        );
-      }
+      setOutreachSync("synced");
+      pushToast("success", "Φορτώθηκε από το Google Doc και αποθηκεύτηκε.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
     } finally {
       setLoadingDriveText(false);
     }
-  };
-
-  const handleOpenOutreachEditor = async () => {
-    if (!tender) return;
-
-    // Always open from server drafts. Drive import is explicit & optional.
-    const serverDraft = tender.drafts.outreach;
-    const hasServerContent = Boolean(
-      serverDraft.subject?.trim() || serverDraft.body?.trim(),
-    );
-
-    openDraftEditor("outreach", serverDraft);
-    setMessage(
-      hasServerContent
-        ? "Φορτώθηκαν τα αποθηκευμένα δεδομένα από τον server."
-        : "Δεν υπάρχουν ακόμα αποθηκευμένα πεδία στον server — συμπλήρωσε και θα αποθηκευτούν αυτόματα.",
-    );
   };
 
   const handleRecordSubmission = async (event: FormEvent<HTMLFormElement>) => {
@@ -830,14 +1044,13 @@ export const TenderDetailPage = () => {
       });
       setTender(result.tender);
       setShowRecordForm(false);
-      setMessage("Η υποβολή καταχωρίστηκε. Κατάσταση: Υποβλήθηκε.");
+      pushToast("info", "Η υποβολή καταχωρίστηκε. Κατάσταση: Υποβλήθηκε.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      pushToast("error", err instanceof Error ? err.message : String(err));
     }
   };
 
   if (loading) return <p className="muted">{UI.loading}</p>;
-  if (error && !tender) return <div className="error">{error}</div>;
   if (!tender) return <div className="error">{UI.notFound}</div>;
 
   const phase = getTenderPhase(tender);
@@ -1004,18 +1217,8 @@ export const TenderDetailPage = () => {
   );
 
   const renderDraftEditor = (key: DraftKey) => {
-    if (editingDraft !== key || !draftEditorForm) return null;
-    const saveLabel =
-      draftSaveState === "saving"
-        ? "Αποθήκευση στον server…"
-        : draftSaveState === "saved"
-          ? "Αποθηκευμένο στον server"
-          : draftSaveState === "dirty"
-            ? "Μη αποθηκευμένες αλλαγές…"
-            : draftSaveState === "error"
-              ? "Σφάλμα αποθήκευσης"
-              : UI.save;
-
+    if (editingDraft !== key) return null;
+    const draft = tender.drafts[key];
     return (
       <form
         key={`${key}-${draftEditorKey}`}
@@ -1023,30 +1226,9 @@ export const TenderDetailPage = () => {
         style={{ width: "100%", marginTop: 10 }}
         onSubmit={(e) => void handleSaveDraft(e, key)}
       >
-        <p className="muted" style={{ margin: 0 }} role="status" aria-live="polite">
-          {draftSaveState === "saving"
-            ? "Αποθήκευση στον server…"
-            : draftSaveState === "saved"
-              ? "✓ Αποθηκευμένο στον server — θα φορτωθεί ξανά από εκεί."
-              : draftSaveState === "dirty"
-                ? "Αλλαγές σε εξέλιξη — αυτόματη αποθήκευση σε λίγο…"
-                : draftSaveState === "error"
-                  ? `Αποτυχία αποθήκευσης: ${draftSaveError ?? "άγνωστο σφάλμα"}`
-                  : "Οι αλλαγές αποθηκεύονται αυτόματα στον server."}
-        </p>
         <label>
           Κατάσταση
-          <select
-            name="status"
-            value={draftEditorForm.status}
-            onChange={(e) =>
-              updateDraftEditorField(
-                "status",
-                e.target.value as DraftPackage["status"],
-              )
-            }
-            aria-label="Κατάσταση προχείρου"
-          >
+          <select name="status" defaultValue={draft.status}>
             <option value="DRAFT">Πρόχειρο</option>
             <option value="READY">Έτοιμο</option>
             <option value="SENT">Στάλθηκε</option>
@@ -1055,31 +1237,15 @@ export const TenderDetailPage = () => {
         </label>
         <label>
           Θέμα
-          <input
-            name="subject"
-            value={draftEditorForm.subject}
-            onChange={(e) => updateDraftEditorField("subject", e.target.value)}
-            aria-label="Θέμα"
-          />
+          <input name="subject" defaultValue={draft.subject ?? ""} />
         </label>
         <label>
           Περιεχόμενο
-          <textarea
-            name="body"
-            value={draftEditorForm.body}
-            onChange={(e) => updateDraftEditorField("body", e.target.value)}
-            rows={12}
-            aria-label="Περιεχόμενο"
-          />
+          <textarea name="body" defaultValue={draft.body ?? ""} />
         </label>
         <label>
           Σημειώσεις
-          <textarea
-            name="notes"
-            value={draftEditorForm.notes}
-            onChange={(e) => updateDraftEditorField("notes", e.target.value)}
-            aria-label="Σημειώσεις"
-          />
+          <textarea name="notes" defaultValue={draft.notes ?? ""} />
         </label>
         {key === "economic" ? (
           <label>
@@ -1087,26 +1253,18 @@ export const TenderDetailPage = () => {
             <input
               name="amountWithoutVat"
               type="number"
-              value={draftEditorForm.amountWithoutVat}
-              onChange={(e) =>
-                updateDraftEditorField("amountWithoutVat", e.target.value)
-              }
-              aria-label="Ποσό χωρίς ΦΠΑ"
+              defaultValue={draft.amountWithoutVat ?? ""}
             />
           </label>
         ) : null}
         <div className="actions">
-          <button
-            type="submit"
-            className="btn primary"
-            disabled={draftSaveState === "saving"}
-          >
-            {saveLabel}
+          <button type="submit" className="btn primary">
+            {UI.save}
           </button>
           <button
             type="button"
             className="btn"
-            onClick={() => void closeDraftEditor()}
+            onClick={() => setEditingDraft(null)}
           >
             {UI.close}
           </button>
@@ -1116,7 +1274,7 @@ export const TenderDetailPage = () => {
             <button
               type="button"
               className="btn"
-              disabled={loadingDriveText}
+              disabled={loadingDriveText || Boolean(busyAction)}
               onClick={() => void handleReloadOutreachFromDrive()}
               aria-label="Φόρτωση από Drive"
             >
@@ -1208,8 +1366,9 @@ export const TenderDetailPage = () => {
         </span>
       </div>
 
-      {message ? <div className="alert-box">{message}</div> : null}
-      {error ? <div className="error">{error}</div> : null}
+      {toasts.length > 0 ? (
+        <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      ) : null}
 
       {/* 1. Header / metadata */}
       <section className="card">
@@ -1662,8 +1821,41 @@ export const TenderDetailPage = () => {
             <div>
               <h3 style={{ marginTop: 0 }}>Εκδήλωση Ενδιαφέροντος</h3>
               <p className="muted" style={{ margin: 0 }}>
-                Κατάσταση: <strong>{outreachStatusLabel}</strong>
+                Κατάσταση:{" "}
+                <strong>
+                  {outreachSync === "stale" || outreachSync === "error"
+                    ? "Πρόχειρο (Drive μη συγχρονισμένο)"
+                    : outreachStatusLabel}
+                </strong>
               </p>
+              {isDesktop() ? (
+                <p style={{ margin: "8px 0 0" }}>
+                  <span
+                    className={`sync-pill ${
+                      outreachSync === "synced"
+                        ? "is-synced"
+                        : outreachSync === "syncing"
+                          ? "is-syncing"
+                          : outreachSync === "stale" || outreachSync === "error"
+                            ? "is-stale"
+                            : ""
+                    }`}
+                  >
+                    {outreachSync === "syncing" ? (
+                      <span className="spinner" aria-hidden />
+                    ) : null}
+                    {outreachSync === "synced"
+                      ? UI.driveSynced
+                      : outreachSync === "syncing"
+                        ? UI.driveSyncing
+                        : outreachSync === "error"
+                          ? UI.driveSyncFailed
+                          : outreachSync === "stale"
+                            ? UI.driveOutOfSync
+                            : "Drive: —"}
+                  </span>
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -1677,9 +1869,14 @@ export const TenderDetailPage = () => {
             {!outreachDrive && outreachDraft.status === "NOT_STARTED" ? (
               <button
                 type="button"
-                className="btn primary"
+                className={`btn primary${busyAction === "prepareOutreach" || busyAction === "copy:earlyOutreach" ? " is-busy" : ""}`}
+                disabled={Boolean(busyAction)}
                 onClick={() => void handlePrepareOutreach()}
               >
+                {(busyAction === "prepareOutreach" ||
+                  busyAction === "copy:earlyOutreach") && (
+                  <span className="spinner" aria-hidden />
+                )}
                 {UI.prepareOutreach}
               </button>
             ) : (
@@ -1696,18 +1893,60 @@ export const TenderDetailPage = () => {
                 <button
                   type="button"
                   className="btn"
-                  disabled={loadingDriveText}
-                  onClick={() => void handleOpenOutreachEditor()}
+                  onClick={() => setEditingDraft("outreach")}
+                  disabled={Boolean(busyAction)}
                 >
-                  {loadingDriveText ? "Φόρτωση από Drive…" : UI.edit}
+                  {UI.edit}
                 </button>
+                <button
+                  type="button"
+                  className={`btn${busyAction === "copy:earlyOutreach" ? " is-busy" : ""}`}
+                  disabled={Boolean(busyAction)}
+                  onClick={() => void handleRegenerateOutreach()}
+                >
+                  {busyAction === "copy:earlyOutreach" ? (
+                    <span className="spinner" aria-hidden />
+                  ) : null}
+                  {UI.regenerateOutreach}
+                </button>
+                {(outreachSync === "stale" || outreachSync === "error") &&
+                outreachDraft.subject &&
+                outreachDraft.body ? (
+                  <button
+                    type="button"
+                    className={`btn primary${busyAction === "syncOutreach" ? " is-busy" : ""}`}
+                    disabled={Boolean(busyAction)}
+                    onClick={() =>
+                      void syncOutreachToDrive(
+                        outreachDraft.subject!,
+                        outreachDraft.body!,
+                      )
+                    }
+                  >
+                    {busyAction === "syncOutreach" ? (
+                      <span className="spinner" aria-hidden />
+                    ) : null}
+                    {outreachSync === "error"
+                      ? UI.syncDriveRetry
+                      : UI.syncDrive}
+                  </button>
+                ) : null}
                 {outreachDrive && outreachDrive.status !== "READY" ? (
                   <button
                     type="button"
-                    className="btn"
-                    disabled={outreachDrive.unresolvedPlaceholders.length > 0}
+                    className={`btn${busyAction === "markDriveReady" ? " is-busy" : ""}`}
+                    disabled={
+                      Boolean(busyAction) ||
+                      outreachDrive.unresolvedPlaceholders.length > 0 ||
+                      outreachSync === "stale" ||
+                      outreachSync === "error" ||
+                      outreachSync === "syncing"
+                    }
                     onClick={() => void handleMarkDriveDocReady(outreachDrive.id)}
                   >
+                    {busyAction === "markDriveReady" ? (
+                      <span className="spinner" aria-hidden />
+                    ) : null}
                     {UI.markReady}
                   </button>
                 ) : null}
@@ -1717,6 +1956,7 @@ export const TenderDetailPage = () => {
                   <button
                     type="button"
                     className="btn"
+                    disabled={Boolean(busyAction)}
                     onClick={() => void handleMarkDraftReady("outreach")}
                   >
                     {UI.markReady}
@@ -1736,6 +1976,7 @@ export const TenderDetailPage = () => {
                   <button
                     type="button"
                     className="btn"
+                    disabled={Boolean(busyAction)}
                     onClick={() => void handleCopyTemplate("earlyOutreach")}
                   >
                     {UI.generateDriveDoc}
@@ -1744,6 +1985,33 @@ export const TenderDetailPage = () => {
               </>
             )}
           </div>
+
+          {outreachDraft.subject || outreachDraft.body ? (
+            <div style={{ marginTop: 16 }}>
+              <div className="meta-item" style={{ display: "block" }}>
+                <span className="k">{UI.subjectLabel}</span>
+                <p style={{ margin: "4px 0 12px", whiteSpace: "pre-wrap" }}>
+                  {outreachDraft.subject || "—"}
+                </p>
+              </div>
+              <div className="meta-item" style={{ display: "block" }}>
+                <span className="k">{UI.bodyLabel}</span>
+                <pre
+                  style={{
+                    margin: "4px 0 0",
+                    whiteSpace: "pre-wrap",
+                    fontFamily: "inherit",
+                    fontSize: "0.95rem",
+                  }}
+                >
+                  {outreachDraft.body || "—"}
+                </pre>
+              </div>
+              {outreachDraft.manualEdited ? (
+                <p className="muted">Πρόχειρο με χειροκίνητες αλλαγές.</p>
+              ) : null}
+            </div>
+          ) : null}
 
           {showOutreachSendForm ? (
             <form
@@ -1829,23 +2097,6 @@ export const TenderDetailPage = () => {
           ) : null}
 
           {renderDraftEditor("outreach")}
-          {editingDraft === "outreach" ? (
-            <p className="muted" style={{ marginTop: 8 }}>
-              Πηγή αλήθειας: server (tenders.tekia.gr).{" "}
-              {outreachDrive ? (
-                <>
-                  Το Google Doc είναι προαιρετικό αντίγραφο —{" "}
-                  <button
-                    type="button"
-                    className="btn ghost"
-                    onClick={() => void openExternalUrl(outreachDrive.driveUrl)}
-                  >
-                    {UI.openInDrive}
-                  </button>
-                </>
-              ) : null}
-            </p>
-          ) : null}
 
           {isOutreachReady ? (
             <div style={{ marginTop: 16 }}>
@@ -2313,7 +2564,9 @@ export const TenderDetailPage = () => {
               <span className="muted">{formatTime(event.createdAt)}</span>
               <span>
                 {getGreekEventTypeLabel(event.eventType)}
-                {event.note ? ` — ${event.note}` : ""}
+                {event.note && event.eventType !== "OUTREACH_SENT"
+                  ? ` — ${event.note}`
+                  : ""}
               </span>
             </li>
           ))}
@@ -2454,7 +2707,7 @@ export const TenderDetailPage = () => {
         </details>
       ) : null}
 
-      {!tender.submission ? (
+      {!tender.submission && !phase.isEarlyStage ? (
         <details className="card">
           <summary>
             <strong>{UI.moreActions}</strong>

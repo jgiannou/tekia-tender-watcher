@@ -1,0 +1,788 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { Eye, MoreHorizontal } from "lucide-react";
+import { toast } from "sonner";
+import { useSessionContext } from "@/auth/SessionProvider";
+import { IconAction } from "@/components/IconAction";
+import { Pagination, usePaginatedList } from "@/components/Pagination";
+import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
+  isSaasRequestError,
+  saasApi,
+  WATCH_PROFILE_ACTIVE_LIMIT_CODE,
+  type MatchingMode,
+  type NotificationOverride,
+  type SaasEntitlementsResponse,
+  type WatchProfile,
+  type WatchProfileInput,
+} from "@/lib/api";
+
+const asStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+
+const formatRelative = (value?: string | null) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const deltaMs = Date.now() - date.getTime();
+  const minutes = Math.round(deltaMs / 60000);
+  if (minutes < 1) return "μόλις τώρα";
+  if (minutes < 60) return `${minutes} λεπτά πριν`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} ώρες πριν`;
+  return date.toLocaleString("el-GR");
+};
+
+const matchingLabel = (mode?: string) => {
+  switch ((mode ?? "BALANCED").toUpperCase()) {
+    case "STRICT":
+      return "Αυστηρή";
+    case "BROAD":
+      return "Ευρεία";
+    default:
+      return "Ισορροπημένη";
+  }
+};
+
+const notificationLabel = (value?: string) => {
+  switch ((value ?? "INHERIT").toUpperCase()) {
+    case "DISABLED":
+      return "Απενεργοποιημένες";
+    case "IMMEDIATE":
+      return "Άμεσο email";
+    default:
+      return "Χρησιμοποιεί προεπιλογές οργανισμού";
+  }
+};
+
+const scanLabel = (profile: WatchProfile) => {
+  switch ((profile.scanState ?? "PENDING").toUpperCase()) {
+    case "RUNNING":
+      return "Αρχική σάρωση σε εξέλιξη…";
+    case "FAILED":
+      return "Αποτυχία σάρωσης";
+    case "COMPLETED":
+      return profile.matchCount
+        ? `${profile.matchCount} αντιστοιχίσεις`
+        : "Ολοκληρώθηκε · χωρίς αποτελέσματα";
+    default:
+      return "Εκκρεμεί σάρωση";
+  }
+};
+
+const emptyForm = (): WatchProfileInput & { id?: string } => ({
+  name: "",
+  keywords: [],
+  negativeKeywords: [],
+  cpvs: [],
+  recordTypes: ["REQ", "PROC"],
+  matchingMode: "BALANCED",
+  notificationOverride: "INHERIT",
+  authority: null,
+  contractType: null,
+  procedureType: null,
+  minBudget: null,
+  maxBudget: null,
+  enabled: true,
+});
+
+const activeLimitMessage = (max: number) =>
+  `Έχετε φτάσει το όριο των ${max} ενεργών αποθηκευμένων αναζητήσεων. Παύστε ή συγχωνεύστε υπάρχουσες πριν ενεργοποιήσετε άλλη.`;
+
+const profileToForm = (profile: WatchProfile): WatchProfileInput & { id: string } => ({
+  id: profile.id,
+  name: profile.name,
+  keywords: asStringArray(profile.keywords),
+  negativeKeywords: asStringArray(profile.negativeKeywords),
+  cpvs: asStringArray(profile.cpvs),
+  recordTypes: asStringArray(profile.recordTypes).length
+    ? asStringArray(profile.recordTypes)
+    : ["REQ", "PROC"],
+  matchingMode: ((profile.matchingMode as MatchingMode) || "BALANCED") as MatchingMode,
+  notificationOverride: ((profile.notificationOverride as NotificationOverride) ||
+    "INHERIT") as NotificationOverride,
+  authority: profile.authority ?? null,
+  contractType: profile.contractType ?? null,
+  procedureType: profile.procedureType ?? null,
+  minBudget: profile.minBudget ?? null,
+  maxBudget: profile.maxBudget ?? null,
+  enabled: profile.enabled,
+});
+
+export const SavedSearchesPage = () => {
+  const { activeOrganization } = useSessionContext();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<WatchProfile[]>([]);
+  const [viewProfile, setViewProfile] = useState<WatchProfile | null>(null);
+  const [editForm, setEditForm] = useState<(WatchProfileInput & { id?: string }) | null>(
+    null,
+  );
+  const [deleteTarget, setDeleteTarget] = useState<WatchProfile | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [keywordsText, setKeywordsText] = useState("");
+  const [excludeText, setExcludeText] = useState("");
+  const [cpvsText, setCpvsText] = useState("");
+  const [entitlements, setEntitlements] = useState<SaasEntitlementsResponse | null>(
+    null,
+  );
+  const paged = usePaginatedList(profiles);
+
+  const load = async () => {
+    if (!activeOrganization) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const [data, ent] = await Promise.all([
+        saasApi.listWatchProfiles(activeOrganization.id),
+        saasApi.getEntitlements(activeOrganization.id),
+      ]);
+      setProfiles(data.profiles);
+      setEntitlements(ent);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, [activeOrganization?.id]);
+
+  const maxActive =
+    entitlements?.entitlements.maxActiveWatchProfiles ?? 20;
+  const activeCount =
+    entitlements?.usage.activeWatchProfiles ??
+    profiles.filter((p) => p.enabled).length;
+  const atActiveLimit = activeCount >= maxActive;
+  const nearActiveLimit = activeCount >= Math.max(maxActive - 2, 0);
+  const pendingScanProfiles = profiles.filter(
+    (profile) =>
+      profile.enabled &&
+      ["PENDING", "FAILED"].includes((profile.scanState ?? "PENDING").toUpperCase()),
+  );
+
+  const wouldExceedActiveLimit = (
+    form: WatchProfileInput & { id?: string },
+    enabling: boolean,
+  ) => {
+    if (!enabling) return false;
+    if (form.id) {
+      const existing = profiles.find((p) => p.id === form.id);
+      if (existing?.enabled) return false;
+    }
+    return atActiveLimit;
+  };
+
+  const openCreate = () => {
+    const form = emptyForm();
+    if (atActiveLimit) {
+      form.enabled = false;
+    }
+    setEditForm(form);
+    setKeywordsText("");
+    setExcludeText("");
+    setCpvsText("");
+  };
+
+  const openEdit = (profile: WatchProfile) => {
+    const form = profileToForm(profile);
+    setEditForm(form);
+    setKeywordsText((form.keywords ?? []).join(", "));
+    setExcludeText((form.negativeKeywords ?? []).join(", "));
+    setCpvsText((form.cpvs ?? []).join(", "));
+  };
+
+  const parseList = (value: string) =>
+    value
+      .split(/[,;\n]/)
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+  const handleSave = async () => {
+    if (!activeOrganization || !editForm) return;
+    const keywords = parseList(keywordsText);
+    const cpvs = parseList(cpvsText);
+    if (!editForm.name.trim() || (keywords.length === 0 && cpvs.length === 0)) {
+      toast.error("Απαιτείται όνομα και τουλάχιστον μία λέξη-κλειδί ή CPV");
+      return;
+    }
+    const enabling = editForm.enabled !== false;
+    if (wouldExceedActiveLimit(editForm, enabling)) {
+      toast.error(activeLimitMessage(maxActive));
+      return;
+    }
+    setBusy(true);
+    try {
+      const payload: WatchProfileInput = {
+        ...editForm,
+        name: editForm.name.trim(),
+        keywords,
+        negativeKeywords: parseList(excludeText),
+        cpvs,
+      };
+      if (editForm.id) {
+        await saasApi.updateWatchProfile(activeOrganization.id, editForm.id, payload);
+        toast.success("Η αναζήτηση ενημερώθηκε");
+      } else {
+        await saasApi.createWatchProfile(activeOrganization.id, payload);
+        toast.success("Η αποθηκευμένη αναζήτηση δημιουργήθηκε · ξεκίνησε αρχική σάρωση");
+      }
+      setEditForm(null);
+      await load();
+    } catch (err) {
+      if (
+        isSaasRequestError(err) &&
+        err.code === WATCH_PROFILE_ACTIVE_LIMIT_CODE
+      ) {
+        toast.error(activeLimitMessage(maxActive));
+      } else {
+        toast.error(err instanceof Error ? err.message : "Αποτυχία αποθήκευσης");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleToggleEnabled = async (profile: WatchProfile) => {
+    if (!activeOrganization) return;
+    if (!profile.enabled && atActiveLimit) {
+      toast.error(activeLimitMessage(maxActive));
+      return;
+    }
+    try {
+      await saasApi.setWatchProfileEnabled(
+        activeOrganization.id,
+        profile.id,
+        !profile.enabled,
+      );
+      toast.success(profile.enabled ? "Σε παύση" : "Ενεργοποιήθηκε");
+      await load();
+    } catch (err) {
+      if (
+        isSaasRequestError(err) &&
+        err.code === WATCH_PROFILE_ACTIVE_LIMIT_CODE
+      ) {
+        toast.error(activeLimitMessage(maxActive));
+      } else {
+        toast.error(err instanceof Error ? err.message : "Αποτυχία");
+      }
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!activeOrganization || !deleteTarget) return;
+    setBusy(true);
+    try {
+      await saasApi.deleteWatchProfile(activeOrganization.id, deleteTarget.id);
+      toast.success("Διαγράφηκε. Τα παρακολουθούμενα νήματα παραμένουν.");
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία διαγραφής");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRunPendingScans = async () => {
+    if (!activeOrganization) return;
+    setBusy(true);
+    try {
+      await Promise.all(
+        pendingScanProfiles.map((profile) =>
+          saasApi.scanWatchProfile(activeOrganization.id, profile.id),
+        ),
+      );
+      toast.success("Οι σαρώσεις ολοκληρώθηκαν");
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία σάρωσης");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRescan = async (profile: WatchProfile) => {
+    if (!activeOrganization) return;
+    try {
+      await saasApi.scanWatchProfile(activeOrganization.id, profile.id);
+      toast.success("Η σάρωση ξεκίνησε");
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία σάρωσης");
+    }
+  };
+
+  if (loading) return <PageSkeleton />;
+  if (!activeOrganization) {
+    return (
+      <EmptyState
+        title="Χωρίς οργανισμό"
+        description="Δημιουργήστε οργανισμό για αποθηκευμένες αναζητήσεις."
+      />
+    );
+  }
+  if (error) return <ErrorState description={error} onRetry={() => void load()} />;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Αποθηκευμένες Αναζητήσεις</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Οι αναζητήσεις που εκτελούμε αυτόματα για την εταιρεία σας.
+          </p>
+          <p className="mt-2 text-sm font-medium">
+            {activeCount} / {maxActive} ενεργές
+          </p>
+        </div>
+        <Button onClick={openCreate}>Νέα Αποθηκευμένη Αναζήτηση</Button>
+      </div>
+
+      {pendingScanProfiles.length > 0 ? (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+            <span>
+              {pendingScanProfiles.length}{" "}
+              {pendingScanProfiles.length === 1
+                ? "αναζήτηση δεν έχει ολοκληρώσει σάρωση"
+                : "αναζητήσεις δεν έχουν ολοκληρώσει σάρωση"}
+              .
+            </span>
+            <Button size="sm" disabled={busy} onClick={() => void handleRunPendingScans()}>
+              {busy ? "Σάρωση…" : "Εκτέλεση σαρώσεων"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {nearActiveLimit && !atActiveLimit ? (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardContent className="py-3 text-sm text-muted-foreground">
+            Πλησιάζετε το όριο ενεργών αναζητήσεων. Σκεφτείτε να{" "}
+            <Link to="/app/saved-searches" className="text-foreground underline">
+              παύσετε ή συγχωνεύσετε
+            </Link>{" "}
+            υπάρχουσες πριν προσθέσετε νέες.
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {atActiveLimit ? (
+        <Card className="border-destructive/30 bg-destructive/5">
+          <CardContent className="space-y-1 py-3 text-sm">
+            <p className="font-medium text-foreground">{activeLimitMessage(maxActive)}</p>
+            <p className="text-muted-foreground">
+              Μπορείτε να δημιουργήσετε νέα αναζήτηση σε παύση ή να διαχειριστείτε τις
+              υπάρχουσες.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {profiles.length === 0 ? (
+        <EmptyState
+          title="Καμία αποθηκευμένη αναζήτηση"
+          description="Χωρίς ενεργό WatchProfile οι αυτόματες ευκαιρίες παραμένουν κενές. Μπορείτε να αποθηκεύσετε κριτήρια από την Αναζήτηση ΚΗΜΔΗΣ."
+        />
+      ) : (
+        <div className="space-y-3">
+          {paged.pageItems.map((profile) => {
+            const keywords = asStringArray(profile.keywords);
+            const cpvs = asStringArray(profile.cpvs);
+            const recordTypes = asStringArray(profile.recordTypes);
+            return (
+              <Card key={profile.id}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base">{profile.name}</CardTitle>
+                      <CardDescription className="mt-1">
+                        {scanLabel(profile)}
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <IconAction label="Προβολή" onClick={() => setViewProfile(profile)}>
+                        <Eye />
+                      </IconAction>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            className="h-8 w-8"
+                            aria-label="Περισσότερες ενέργειες"
+                          >
+                            <MoreHorizontal />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEdit(profile)}>
+                            Επεξεργασία
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={!profile.enabled && atActiveLimit}
+                            onClick={() => void handleToggleEnabled(profile)}
+                          >
+                            {profile.enabled ? "Παύση" : "Ενεργοποίηση"}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => void handleRescan(profile)}>
+                            Επανασάρωση
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link to="/app/opportunities">Προβολή ευκαιριών</Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => setDeleteTarget(profile)}
+                          >
+                            Διαγραφή
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <div>
+                      <span className="text-muted-foreground">Κατάσταση: </span>
+                      <Badge variant={profile.enabled ? "default" : "outline"}>
+                        {profile.enabled ? "Ενεργή" : "Σε παύση"}
+                      </Badge>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Τύποι πράξεων: </span>
+                      {(recordTypes.length ? recordTypes : ["REQ", "PROC"]).join(" + ")}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Τρόπος αντιστοίχισης: </span>
+                      {matchingLabel(profile.matchingMode)}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Τελευταία σάρωση: </span>
+                      {formatRelative(profile.lastScannedAt)}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Αντιστοιχίσεις: </span>
+                      {profile.matchCount ?? 0}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Ειδοποιήσεις: </span>
+                      {notificationLabel(profile.notificationOverride)}
+                    </div>
+                  </div>
+                  {keywords.length ? (
+                    <div>
+                      <div className="mb-1 text-muted-foreground">Λέξεις-κλειδιά</div>
+                      <div className="flex flex-wrap gap-1">
+                        {keywords.slice(0, 8).map((keyword) => (
+                          <Badge key={keyword} variant="secondary">
+                            {keyword}
+                          </Badge>
+                        ))}
+                        {keywords.length > 8 ? (
+                          <Badge variant="outline">+{keywords.length - 8}</Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  {cpvs.length ? (
+                    <div>
+                      <div className="mb-1 text-muted-foreground">CPVs</div>
+                      <div className="flex flex-wrap gap-1">
+                        {cpvs.slice(0, 6).map((cpv) => (
+                          <Badge key={cpv} variant="outline" className="font-mono">
+                            {cpv}
+                          </Badge>
+                        ))}
+                        {cpvs.length > 6 ? (
+                          <Badge variant="outline">+{cpvs.length - 6}</Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            );
+          })}
+          <Pagination
+            page={paged.page}
+            totalPages={paged.totalPages}
+            total={paged.total}
+            pageSize={paged.pageSize}
+            onPageChange={paged.setPage}
+          />
+        </div>
+      )}
+
+      <Dialog open={Boolean(viewProfile)} onOpenChange={(o) => !o && setViewProfile(null)}>
+        <DialogContent className="max-w-lg">
+          {viewProfile ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>{viewProfile.name}</DialogTitle>
+                <DialogDescription>{scanLabel(viewProfile)}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2 text-sm">
+                <div>Κατάσταση: {viewProfile.enabled ? "Ενεργή" : "Σε παύση"}</div>
+                <div>Αντιστοίχιση: {matchingLabel(viewProfile.matchingMode)}</div>
+                <div>
+                  Λέξεις-κλειδιά: {asStringArray(viewProfile.keywords).join(", ") || "—"}
+                </div>
+                <div>CPVs: {asStringArray(viewProfile.cpvs).join(", ") || "—"}</div>
+                <div>Αρχή: {viewProfile.authority || "—"}</div>
+                <div>
+                  Ποσό: {viewProfile.minBudget ?? "—"} – {viewProfile.maxBudget ?? "—"}
+                </div>
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <Button size="sm" onClick={() => openEdit(viewProfile)}>
+                    Επεξεργασία
+                  </Button>
+                  <Button size="sm" variant="outline" asChild>
+                    <Link to="/app/opportunities">Ευκαιρίες</Link>
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(editForm)} onOpenChange={(o) => !o && setEditForm(null)}>
+        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+          {editForm ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {editForm.id ? "Επεξεργασία αναζήτησης" : "Νέα Αποθηκευμένη Αναζήτηση"}
+                </DialogTitle>
+                <DialogDescription>
+                  Οι αλλαγές κριτηρίων ενεργοποιούν επαναξιολόγηση / σάρωση.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>Όνομα</Label>
+                  <Input
+                    value={editForm.name}
+                    onChange={(e) =>
+                      setEditForm((prev) => (prev ? { ...prev, name: e.target.value } : prev))
+                    }
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+                  <div>
+                    <Label className="text-sm">Ενεργή αναζήτηση</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Σε παύση δεν μετράει στο όριο {maxActive} ενεργών αναζητήσεων.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={editForm.enabled !== false}
+                    disabled={editForm.enabled === false && atActiveLimit}
+                    onCheckedChange={(checked) => {
+                      if (checked && wouldExceedActiveLimit(editForm, true)) {
+                        toast.error(activeLimitMessage(maxActive));
+                        return;
+                      }
+                      setEditForm((prev) => (prev ? { ...prev, enabled: checked } : prev));
+                    }}
+                    aria-label="Ενεργή αναζήτηση"
+                  />
+                </div>
+                {atActiveLimit && editForm.enabled === false ? (
+                  <p className="text-xs text-muted-foreground">
+                    {activeLimitMessage(maxActive)} Η αποθήκευση σε παύση επιτρέπεται.
+                  </p>
+                ) : null}
+                <div className="space-y-2">
+                  <Label>Λέξεις-κλειδιά (κόμμα)</Label>
+                  <Input
+                    value={keywordsText}
+                    onChange={(e) => setKeywordsText(e.target.value)}
+                    placeholder="ιστοσελίδα, portal"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Λέξεις αποκλεισμού</Label>
+                  <Input
+                    value={excludeText}
+                    onChange={(e) => setExcludeText(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>CPVs</Label>
+                  <Input value={cpvsText} onChange={(e) => setCpvsText(e.target.value)} />
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Τρόπος αντιστοίχισης</Label>
+                    <Select
+                      value={editForm.matchingMode ?? "BALANCED"}
+                      onChange={(e) =>
+                        setEditForm((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                matchingMode: e.target.value as MatchingMode,
+                              }
+                            : prev,
+                        )
+                      }
+                    >
+                      <option value="STRICT">Αυστηρή</option>
+                      <option value="BALANCED">Ισορροπημένη</option>
+                      <option value="BROAD">Ευρεία</option>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ειδοποιήσεις</Label>
+                    <Select
+                      value={editForm.notificationOverride ?? "INHERIT"}
+                      onChange={(e) =>
+                        setEditForm((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                notificationOverride: e.target
+                                  .value as NotificationOverride,
+                              }
+                            : prev,
+                        )
+                      }
+                    >
+                      <option value="INHERIT">Προεπιλογές οργανισμού</option>
+                      <option value="DISABLED">Απενεργοποίηση</option>
+                      <option value="IMMEDIATE">Άμεσο email</option>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Τύποι πράξεων</Label>
+                    <Select
+                      value={(editForm.recordTypes ?? ["REQ", "PROC"]).join("+")}
+                      onChange={(e) => {
+                        const map: Record<string, string[]> = {
+                          REQ: ["REQ"],
+                          PROC: ["PROC"],
+                          "REQ+PROC": ["REQ", "PROC"],
+                        };
+                        setEditForm((prev) =>
+                          prev
+                            ? { ...prev, recordTypes: map[e.target.value] ?? ["REQ", "PROC"] }
+                            : prev,
+                        );
+                      }}
+                    >
+                      <option value="REQ+PROC">REQ + PROC</option>
+                      <option value="REQ">REQ</option>
+                      <option value="PROC">PROC</option>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Αρχή (κωδ.)</Label>
+                    <Input
+                      value={editForm.authority ?? ""}
+                      onChange={(e) =>
+                        setEditForm((prev) =>
+                          prev ? { ...prev, authority: e.target.value || null } : prev,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ποσό από</Label>
+                    <Input
+                      type="number"
+                      value={editForm.minBudget ?? ""}
+                      onChange={(e) =>
+                        setEditForm((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                minBudget: e.target.value ? Number(e.target.value) : null,
+                              }
+                            : prev,
+                        )
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Ποσό έως</Label>
+                    <Input
+                      type="number"
+                      value={editForm.maxBudget ?? ""}
+                      onChange={(e) =>
+                        setEditForm((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                maxBudget: e.target.value ? Number(e.target.value) : null,
+                              }
+                            : prev,
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setEditForm(null)}>
+                    Ακύρωση
+                  </Button>
+                  <Button disabled={busy} onClick={() => void handleSave()}>
+                    {busy ? "Αποθήκευση…" : "Αποθήκευση"}
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Διαγραφή αποθηκευμένης αναζήτησης;</DialogTitle>
+            <DialogDescription>
+              Η αναζήτηση «{deleteTarget?.name}» θα σταματήσει να βρίσκει νέες ευκαιρίες.
+              Τα ήδη παρακολουθούμενα νήματα δεν θα διαγραφούν.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Ακύρωση
+            </Button>
+            <Button variant="destructive" disabled={busy} onClick={() => void handleDelete()}>
+              Διαγραφή
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};

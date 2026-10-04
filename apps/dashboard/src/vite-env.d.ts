@@ -26,6 +26,12 @@ type TekiaDriveBridge = {
     referenceNumber: string,
     templateKey: string,
     operatorValues?: Record<string, string>,
+    outreachContent?: { subject: string; body: string },
+  ) => Promise<unknown>;
+  syncOutreachContent: (
+    referenceNumber: string,
+    subject: string,
+    body: string,
   ) => Promise<unknown>;
   tenderDocuments: (referenceNumber: string) => Promise<unknown>;
   markDocumentReady: (documentId: string) => Promise<unknown>;

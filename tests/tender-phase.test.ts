@@ -139,10 +139,17 @@ describe("legal identity vs brand in formal merge", () => {
       organization: "Δήμος",
       tenderTitle: "Συντήρηση",
       adam: "26REQ01",
+      recordType: "REQ",
       date: "30/09/2026",
     });
     expect(plan.replacements.LEGAL_NAME).toBe("ΓΙΑΝΝΟΥΣΗΣ ΙΩΑΝΝΗΣ ΤΟΥ ΓΡΗΓΟΡΙΟΥ");
     expect(plan.replacements.BRAND_NAME).toBe("TEKIA");
+    expect(plan.replacements.CONTACT_NAME).toBe("Ιωάννης Γιαννούσης");
+    expect(plan.replacements.CONTACT_NAME).not.toBe(plan.replacements.LEGAL_NAME);
+    expect(plan.replacements.RECORD_TYPE_LABEL).toBe("Πρωτογενές Αίτημα");
+    expect(plan.replacements.DOCUMENT_TITLE).toBe("ΕΚΔΗΛΩΣΗ ΕΝΔΙΑΦΕΡΟΝΤΟΣ");
+    expect(plan.literalReplacements["EARLY OUTREACH"]).toBe("ΕΚΔΗΛΩΣΗ ΕΝΔΙΑΦΕΡΟΝΤΟΣ");
+    expect(plan.literalReplacements["αίτημα/προμήθεια"]).toBe("Πρωτογενές Αίτημα");
   });
 });
 

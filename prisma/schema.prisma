@@ -1,0 +1,855 @@
+// TEKIA Tender Watcher — SaaS PostgreSQL schema (additive product)
+// Internal Electron/SQLite tool does NOT use this database.
+// See docs/SAAS_PRODUCT_NORTH_STAR.md
+//
+// Prisma 6.x + PostgreSQL + Node 22
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity (Better Auth–compatible shapes; wired in Phase 2)
+// ---------------------------------------------------------------------------
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum ThemePreference {
+  DARK
+  LIGHT
+  SYSTEM
+}
+
+enum OnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  DISMISSED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions    Session[]
+  accounts    Account[]
+  members     OrganizationMember[]
+  invitationsSent Invitation[] @relation("InvitationInviter")
+  preference  UserPreference?
+
+  @@map("users")
+}
+
+/// Per-user UI preferences (theme belongs to the user, not the organization).
+model UserPreference {
+  id        String          @id @default(cuid())
+  userId    String          @unique
+  theme     ThemePreference @default(DARK)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  activeOrganizationId String?
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members          OrganizationMember[]
+  invitations      Invitation[]
+  subscription     Subscription?
+  watchProfiles    WatchProfile[]
+  organizationTenders OrganizationTender[]
+  settings         OrganizationSettings?
+  alertDestinations AlertDestination[]
+  submissions      Submission[]
+  tenderEvents     TenderEvent[]
+  outreachLedgers  OutreachLedger[]
+  attentionEvents  OrganizationAttentionEvent[]
+  notificationDeliveries NotificationDelivery[]
+  vaultFolders       VaultFolder[]
+  vaultDocuments     VaultDocument[]
+  vaultDocumentVersions VaultDocumentVersion[]
+  tenderWorkspaces   TenderWorkspace[]
+  submissionDocumentSnapshots SubmissionDocumentSnapshot[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String     @id @default(cuid())
+  organizationId String
+  userId         String
+  role           MemberRole @default(MEMBER)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+model Invitation {
+  id             String     @id @default(cuid())
+  organizationId String
+  email          String
+  role           MemberRole @default(MEMBER)
+  status         String     @default("pending")
+  token          String     @unique
+  expiresAt      DateTime
+  inviterId      String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inviter      User?        @relation("InvitationInviter", fields: [inviterId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, email])
+  @@map("invitations")
+}
+
+// ---------------------------------------------------------------------------
+// Billing (Phase 6 — tables exist early for clean FKs)
+// ---------------------------------------------------------------------------
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  organizationId       String             @unique
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  status               SubscriptionStatus @default(INCOMPLETE)
+  planKey              String             @default("saas_standard")
+  stripePriceId        String?
+  trialEndsAt          DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model StripeWebhookEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique
+  type        String
+  processedAt DateTime @default(now())
+  payload     Json?
+
+  @@map("stripe_webhook_events")
+}
+
+// ---------------------------------------------------------------------------
+// Watch profiles (tenant filter configuration)
+// ---------------------------------------------------------------------------
+
+model WatchProfile {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  name                  String
+  enabled               Boolean  @default(true)
+  presetKey             String?
+  keywords              Json     @default("[]")
+  negativeKeywords      Json     @default("[]")
+  cpvs                  Json     @default("[]")
+  minBudget             Float?
+  maxBudget             Float?
+  scoreThreshold        Int      @default(45)
+  alertScoreThreshold   Int      @default(60)
+  categories            Json?
+  notificationThreshold Int?
+  customFilters         Json?
+  recordTypes           Json     @default("[\"REQ\",\"PROC\"]")
+  matchingMode          String   @default("BALANCED")
+  notificationOverride  String   @default("INHERIT")
+  scanState             String   @default("PENDING")
+  lastScannedAt         DateTime?
+  initialScanCompletedAt DateTime?
+  lastMatchAt           DateTime?
+  matchCount            Int      @default(0)
+  authority             String?
+  contractType          String?
+  procedureType         String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationTenders OrganizationTender[]
+
+  @@index([organizationId, enabled])
+  @@map("watch_profiles")
+}
+
+// ---------------------------------------------------------------------------
+// Canonical KIMDIS tender (global, deduped by ADAM)
+// ---------------------------------------------------------------------------
+
+enum RecordType {
+  REQ
+  PROC
+  AWRD
+  OTHER
+}
+
+model Tender {
+  id                        String     @id @default(cuid())
+  referenceNumber           String     @unique
+  recordType                RecordType
+  title                     String?
+  contractingAuthority      String?
+  submissionDate            DateTime?
+  signedDate                DateTime?
+  finalSubmissionDate       DateTime?
+  budgetWithoutVat          Float?
+  budgetWithVat             Float?
+  cpvs                      Json       @default("[]")
+  stage                     String?
+  targetedSupplier          Boolean    @default(false)
+  nonInvitedOffersRejected  Boolean    @default(false)
+  pdfTextStatus             String?
+  pdfText                   String?
+  officialPdfUrl            String?
+  publicKimdisUrl           String?
+  rawJson                   Json?
+  sourceFingerprint         String?
+  classificationVersion     Int?
+  parentTenderId            String?
+  relationCandidateId       String?
+  firstSeenAt               DateTime
+  lastSeenAt                DateTime
+  createdAt                 DateTime   @default(now())
+  updatedAt                 DateTime   @updatedAt
+
+  parentTender      Tender?  @relation("TenderParent", fields: [parentTenderId], references: [id], onDelete: SetNull)
+  childTenders      Tender[] @relation("TenderParent")
+  organizationTenders OrganizationTender[]
+  relatedActsAsSource  RelatedActLink[] @relation("RelatedActSource")
+  relatedActsAsRelated RelatedActLink[] @relation("RelatedActRelated")
+  attentionEventsAsRelated OrganizationAttentionEvent[] @relation("AttentionRelatedTender")
+
+  @@index([recordType])
+  @@index([lastSeenAt])
+  @@index([parentTenderId])
+  @@map("tenders")
+}
+
+// ---------------------------------------------------------------------------
+// Organization-specific match / workflow state
+// ---------------------------------------------------------------------------
+
+enum RelevanceStatus {
+  RELEVANT
+  NEEDS_REVIEW
+  IRRELEVANT
+  EXPIRED
+  TARGETED
+}
+
+enum OperationalStatus {
+  NEW
+  REVIEW
+  READY
+  SUBMITTED
+  WON
+  LOST
+}
+
+enum MonitoringReason {
+  USER_FOLLOWING
+  OUTREACH_SENT
+  SUBMISSION_RECORDED
+}
+
+/// Organization workflow only. FOLLOWING and monitoring are separate booleans.
+enum PipelineStage {
+  NEW
+  REVIEWING
+  OUTREACH_SENT
+  PREPARING
+  SUBMITTED
+  WON
+  LOST
+  CLOSED
+  DISMISSED
+}
+
+model OrganizationTender {
+  id                      String            @id @default(cuid())
+  organizationId          String
+  tenderId                String
+  watchProfileId          String?
+  relevanceStatus         RelevanceStatus?
+  score                   Int?
+  scoreReasons            Json?
+  webRelevant             Boolean           @default(false)
+  webCategory             String?
+  ignoreReason            String?
+  reviewReason            String?
+  matchedKeywords         Json?
+  matchedCpvs             Json?
+  matchMeta               Json?
+  classificationVersion   Int?
+  alertEligibilityReason  String?
+  operationalStatus       OperationalStatus @default(NEW)
+  pipelineStage           PipelineStage     @default(NEW)
+
+  /// Explicit «Παρακολούθηση» / «Με ενδιαφέρει» — not outreach, not submission.
+  following               Boolean           @default(false)
+  followedAt              DateTime?
+  followedByUserId        String?
+
+  /// Active related-act monitoring (continues after outreach/submit until stopped).
+  monitoringActive        Boolean           @default(false)
+  monitoringReason        MonitoringReason?
+  monitoringStartedAt     DateTime?
+  monitoringStoppedAt     DateTime?
+  lastRelatedCheckAt      DateTime?
+  latestRelatedActAt      DateTime?
+  lastMonitoringNotificationAt DateTime?
+
+  notifiedAt              DateTime?
+  assignedMemberId        String?
+  notes                   String?
+  contactName             String?
+  contactDepartment       String?
+  contactEmail            String?
+  contactPhone            String?
+  submissionMethod        String?
+  submissionEmail         String?
+  submissionPortal        String?
+  submissionInstructions  String?
+  scopeSummary            String?
+  documentChecklist       Json?
+  drafts                  Json?
+  approvalStatus          String?
+  approvalSnapshot        Json?
+  approvedAt              DateTime?
+  relationConfidence      String?
+  relationMethod          String?
+  relationScore           Int?
+  relationReasons         Json?
+  invitationType          String?
+  invitedVendorName       String?
+  ourInvitationStatus     String?
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tender       Tender        @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  watchProfile WatchProfile? @relation(fields: [watchProfileId], references: [id], onDelete: SetNull)
+  submissions  Submission[]
+  events       TenderEvent[]
+  outreachLedger OutreachLedger?
+  attentionEvents OrganizationAttentionEvent[]
+  notificationDeliveries NotificationDelivery[]
+  tenderWorkspace   TenderWorkspace?
+
+  @@unique([organizationId, tenderId])
+  @@index([organizationId, operationalStatus])
+  @@index([organizationId, relevanceStatus])
+  @@index([organizationId, following])
+  @@index([organizationId, monitoringActive])
+  @@index([organizationId, pipelineStage])
+  @@index([organizationId, notifiedAt])
+  @@index([watchProfileId])
+  @@map("organization_tenders")
+}
+
+// ---------------------------------------------------------------------------
+// Workflow ledgers (org-scoped)
+// ---------------------------------------------------------------------------
+
+enum SubmissionResult {
+  PENDING
+  WON
+  LOST
+}
+
+model Submission {
+  id                     String           @id @default(cuid())
+  organizationId         String
+  organizationTenderId   String
+  submittedAt            DateTime
+  submissionMethod       String
+  recipient              String?
+  subject                String?
+  amountWithoutVat       Float?
+  amountWithVat          Float?
+  attachments            Json?
+  externalReference      String?
+  result                 SubmissionResult @default(PENDING)
+  notes                  String?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationTender OrganizationTender @relation(fields: [organizationTenderId], references: [id], onDelete: Cascade)
+  documentSnapshots  SubmissionDocumentSnapshot[]
+
+  @@index([organizationId, result])
+  @@index([organizationTenderId])
+  @@map("submissions")
+}
+
+model TenderEvent {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  organizationTenderId String
+  eventType            String
+  note                 String?
+  createdAt            DateTime @default(now())
+
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationTender OrganizationTender @relation(fields: [organizationTenderId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationTenderId, createdAt])
+  @@map("tender_events")
+}
+
+model OutreachLedger {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  organizationTenderId String   @unique
+  status               String   @default("NOT_STARTED")
+  subject              String?
+  body                 String?
+  notes                String?
+  recipient            String?
+  sentAt               DateTime?
+  payload              Json?
+  updatedAt            DateTime @updatedAt
+  createdAt            DateTime @default(now())
+
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationTender OrganizationTender @relation(fields: [organizationTenderId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([organizationId, sentAt])
+  @@map("outreach_ledgers")
+}
+
+// ---------------------------------------------------------------------------
+// Settings & alerts
+// ---------------------------------------------------------------------------
+
+model OrganizationSettings {
+  id               String           @id @default(cuid())
+  organizationId   String           @unique
+  /// Persisted company profile (GEMI enrichment is optional provenance).
+  company          Json
+  /// OrganizationActivity rows: [{ code, description, isPrimary, source? }]
+  activities       Json             @default("[]")
+  /// Email notification preferences (SaaS; no Slack).
+  notifications    Json?
+  onboardingStatus OnboardingStatus @default(NOT_STARTED)
+  /// Resume metadata: { step?, dismissedAt?, completedAt? }
+  onboardingMeta   Json?
+  drive            Json?
+  documents        Json?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("organization_settings")
+}
+
+enum AlertChannel {
+  EMAIL
+  IN_APP
+  /// Reserved; SaaS product uses Brevo email. Internal tool keeps Slack outside Prisma.
+  SLACK
+}
+
+model AlertDestination {
+  id             String       @id @default(cuid())
+  organizationId String
+  channel        AlertChannel
+  name           String?
+  enabled        Boolean      @default(true)
+  config         Json
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, channel, enabled])
+  @@map("alert_destinations")
+}
+
+// ---------------------------------------------------------------------------
+// Canonical related acts + org attention + delivery (SaaS core)
+// ---------------------------------------------------------------------------
+
+enum RelationConfidence {
+  CONFIRMED
+  LIKELY
+  POSSIBLE
+  DISMISSED
+}
+
+/// Canonical procurement relation (NOT per-tenant).
+/// Example: REQ A → PROC B exists once globally.
+model RelatedActLink {
+  id              String             @id @default(cuid())
+  sourceTenderId  String
+  targetTenderId  String
+  relationType    String
+  /// CONFIRMED | LIKELY | POSSIBLE | DISMISSED
+  confidence      RelationConfidence @default(LIKELY)
+  detectionMethod String
+  payload         Json?
+  createdAt       DateTime           @default(now())
+  confirmedAt     DateTime?
+  updatedAt       DateTime           @updatedAt
+
+  sourceTender Tender @relation("RelatedActSource", fields: [sourceTenderId], references: [id], onDelete: Cascade)
+  targetTender Tender @relation("RelatedActRelated", fields: [targetTenderId], references: [id], onDelete: Cascade)
+  attentionEvents OrganizationAttentionEvent[]
+
+  @@unique([sourceTenderId, targetTenderId, relationType])
+  @@index([sourceTenderId])
+  @@index([targetTenderId])
+  @@index([confidence])
+  @@map("related_act_links")
+}
+
+enum AttentionEventType {
+  NEW_OPPORTUNITY
+  OUTREACH_RECORDED
+  SUBMISSION_RECORDED
+  RELATED_PROC_DISCOVERED
+  RELATED_APPROVED_REQUEST_DISCOVERED
+  RELATED_AWARD_DISCOVERED
+  RELATED_CONTRACT_DISCOVERED
+  DEADLINE_CHANGED
+}
+
+/// Org-specific "needs attention" fact. System of record for in-app attention.
+/// Independent of email delivery success.
+model OrganizationAttentionEvent {
+  id                   String             @id @default(cuid())
+  organizationId       String
+  organizationTenderId String
+  relatedTenderId      String?
+  relatedActLinkId     String?
+  type                 AttentionEventType
+  title                String
+  metadata             Json?
+  dedupeKey            String
+  createdAt            DateTime           @default(now())
+  readAt               DateTime?
+
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationTender OrganizationTender @relation(fields: [organizationTenderId], references: [id], onDelete: Cascade)
+  relatedTender      Tender?            @relation("AttentionRelatedTender", fields: [relatedTenderId], references: [id], onDelete: SetNull)
+  relatedActLink     RelatedActLink?    @relation(fields: [relatedActLinkId], references: [id], onDelete: SetNull)
+  deliveries         NotificationDelivery[]
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, readAt])
+  @@index([organizationTenderId, createdAt])
+  @@map("organization_attention_events")
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+/// Transport attempt only (Brevo later). Never the source of truth for "what happened".
+model NotificationDelivery {
+  id                       String                     @id @default(cuid())
+  organizationId           String
+  organizationAttentionEventId String
+  organizationTenderId     String?
+  channel                  AlertChannel
+  templateKey              String
+  dedupeKey                String
+  status                   NotificationDeliveryStatus @default(PENDING)
+  subject                  String?
+  bodyPreview              String?
+  providerMessageId        String?
+  error                    String?
+  payload                  Json?
+  createdAt                DateTime                   @default(now())
+  sentAt                   DateTime?
+
+  organization       Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  attentionEvent     OrganizationAttentionEvent  @relation(fields: [organizationAttentionEventId], references: [id], onDelete: Cascade)
+  organizationTender OrganizationTender?         @relation(fields: [organizationTenderId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationAttentionEventId])
+  @@index([organizationId, createdAt])
+  @@map("notification_deliveries")
+}
+
+// ---------------------------------------------------------------------------
+// Company vault (org-scoped document library)
+// ---------------------------------------------------------------------------
+
+enum VaultDocumentStatus {
+  VALID
+  EXPIRING_SOON
+  EXPIRED
+  NO_EXPIRY
+}
+
+enum VaultDocumentSource {
+  USER_UPLOAD
+  GEMI
+  GENERATED
+  IMPORTED
+}
+
+model VaultFolder {
+  id             String   @id @default(cuid())
+  organizationId String
+  parentId       String?
+  name           String
+  slug           String
+  sortOrder      Int      @default(0)
+  isSystem       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parent       VaultFolder?  @relation("VaultFolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children     VaultFolder[] @relation("VaultFolderTree")
+  documents    VaultDocument[]
+
+  @@index([organizationId, parentId])
+  @@index([organizationId, parentId, slug])
+  @@map("vault_folders")
+}
+
+model VaultDocument {
+  id               String              @id @default(cuid())
+  organizationId   String
+  folderId         String
+  name             String
+  originalFilename String?
+  documentType     String?
+  mimeType         String?
+  storageKey       String?
+  fileSize         Int?
+  checksum         String?
+  issueDate        DateTime?
+  expiryDate       DateTime?
+  noExpiry         Boolean             @default(true)
+  status           VaultDocumentStatus @default(NO_EXPIRY)
+  version          Int                 @default(1)
+  notes            String?
+  source           VaultDocumentSource @default(USER_UPLOAD)
+  uploadedByUserId String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  organization   Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  folder         VaultFolder                  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  versions       VaultDocumentVersion[]
+  workspaceRefs  TenderWorkspaceDocumentRef[]
+  submissionSnapshots SubmissionDocumentSnapshot[]
+
+  @@index([organizationId, folderId])
+  @@index([organizationId, name])
+  @@map("vault_documents")
+}
+
+/// Immutable file history for a company vault document.
+model VaultDocumentVersion {
+  id               String   @id @default(cuid())
+  organizationId   String
+  documentId       String
+  version          Int
+  storageKey       String
+  originalFilename String?
+  mimeType         String?
+  fileSize         Int?
+  checksum         String?
+  uploadedByUserId String?
+  createdAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     VaultDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  workspaceRefs TenderWorkspaceDocumentRef[]
+  submissionSnapshots SubmissionDocumentSnapshot[]
+
+  @@unique([documentId, version])
+  @@index([organizationId, documentId])
+  @@map("vault_document_versions")
+}
+
+model TenderWorkspace {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  organizationTenderId String?  @unique
+  name                 String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  organization       Organization                 @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationTender OrganizationTender?          @relation(fields: [organizationTenderId], references: [id], onDelete: SetNull)
+  documentRefs       TenderWorkspaceDocumentRef[]
+
+  @@index([organizationId])
+  @@map("tender_workspaces")
+}
+
+/// Live reference from a tender workspace to a company vault document (no file copy).
+model TenderWorkspaceDocumentRef {
+  id                String   @id @default(cuid())
+  workspaceId       String
+  documentId        String
+  documentVersionId String?
+  purpose           String?
+  folderHint        String?
+  linkedByUserId    String?
+  createdAt         DateTime @default(now())
+
+  workspace       TenderWorkspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document        VaultDocument         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentVersion VaultDocumentVersion? @relation(fields: [documentVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, documentId])
+  @@index([documentId])
+  @@index([documentVersionId])
+  @@map("tender_workspace_document_refs")
+}
+
+/// Exact document versions used in a finalized submission (audit-safe).
+model SubmissionDocumentSnapshot {
+  id                String   @id @default(cuid())
+  organizationId    String
+  submissionId      String
+  documentId        String
+  documentVersionId String
+  purpose           String?
+  nameSnapshot      String
+  storageKeySnapshot String
+  capturedAt        DateTime @default(now())
+
+  organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  submission      Submission           @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  document        VaultDocument        @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  documentVersion VaultDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
+
+  @@index([submissionId])
+  @@index([organizationId, submissionId])
+  @@map("submission_document_snapshots")
+}
+
+// ---------------------------------------------------------------------------
+// Global ingestion ops (not tenant-owned)
+// ---------------------------------------------------------------------------
+
+model IngestionMeta {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("ingestion_meta")
+}
+
+model PollRun {
+  id          String   @id @default(cuid())
+  startedAt   DateTime
+  finishedAt  DateTime?
+  success     Boolean?
+  error       String?
+  fetched     Int      @default(0)
+  newCount    Int      @default(0)
+  matching    Int      @default(0)
+  notified    Int      @default(0)
+  bootstrap   Boolean  @default(false)
+  durationMs  Int?
+
+  @@index([startedAt])
+  @@map("poll_runs")
+}

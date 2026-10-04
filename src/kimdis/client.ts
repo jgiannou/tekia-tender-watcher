@@ -70,6 +70,19 @@ const fetchJson = async <T>(
   }
 };
 
+const fetchSearchPage = async <T>(
+  baseUrl: string,
+  path: string,
+  body: unknown,
+  page: number,
+  timeoutMs: number,
+): Promise<KimdisPage<T>> =>
+  fetchJson<KimdisPage<T>>(`${baseUrl}${path}?page=${page}`, {
+    method: "POST",
+    body,
+    timeoutMs,
+  });
+
 const fetchAllPages = async <T>(
   baseUrl: string,
   path: string,
@@ -81,12 +94,13 @@ const fetchAllPages = async <T>(
   let last = false;
 
   while (!last) {
-    const url = `${baseUrl}${path}?page=${page}`;
-    const result = await fetchJson<KimdisPage<T>>(url, {
-      method: "POST",
+    const result = await fetchSearchPage<T>(
+      baseUrl,
+      path,
       body,
+      page,
       timeoutMs,
-    });
+    );
 
     items.push(...(result.content ?? []));
     last = Boolean(result.last) || !(result.content?.length);
@@ -105,6 +119,14 @@ const fetchAllPages = async <T>(
 };
 
 export type KimdisClient = {
+  searchRequestsPage: (
+    body: RequestSearchBody,
+    page: number,
+  ) => Promise<KimdisPage<KimdisRequestRecord>>;
+  searchNoticesPage: (
+    body: NoticeSearchBody,
+    page: number,
+  ) => Promise<KimdisPage<KimdisNoticeRecord>>;
   searchRequests: (body: RequestSearchBody) => Promise<KimdisRequestRecord[]>;
   searchNotices: (body: NoticeSearchBody) => Promise<KimdisNoticeRecord[]>;
   downloadAttachment: (recordType: "REQ" | "PROC", adam: string) => Promise<Buffer | null>;
@@ -119,6 +141,24 @@ export const createKimdisClient = (
   const normalizedBase = baseUrl.replace(/\/$/, "");
 
   return {
+    searchRequestsPage: (body, page) =>
+      fetchSearchPage<KimdisRequestRecord>(
+        normalizedBase,
+        "/khmdhs-opendata/request",
+        body,
+        page,
+        timeoutMs,
+      ),
+
+    searchNoticesPage: (body, page) =>
+      fetchSearchPage<KimdisNoticeRecord>(
+        normalizedBase,
+        "/khmdhs-opendata/notice",
+        body,
+        page,
+        timeoutMs,
+      ),
+
     searchRequests: (body) =>
       fetchAllPages<KimdisRequestRecord>(
         normalizedBase,

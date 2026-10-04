@@ -92,6 +92,100 @@ export const getDocumentText = async (
   return collectText(doc.body?.content);
 };
 
+type DocsBodyElement = {
+  startIndex?: number;
+  endIndex?: number;
+};
+
+/**
+ * Replace the entire body of a Google Doc COPY with plain text,
+ * then normalize typography so we don't inherit master Title styles
+ * (large bold pink fonts, etc.).
+ * Never call this with a master template ID.
+ */
+export const replaceDocumentBody = async (
+  accessToken: string,
+  documentId: string,
+  plainText: string,
+): Promise<void> => {
+  const doc = await docsFetch<{
+    body?: { content?: DocsBodyElement[] };
+  }>(accessToken, `/documents/${encodeURIComponent(documentId)}`);
+
+  const content = doc.body?.content ?? [];
+  const last = content[content.length - 1];
+  const endIndex = last?.endIndex ?? 1;
+  const text = plainText.endsWith("\n") ? plainText : `${plainText}\n`;
+
+  const writeRequests: unknown[] = [];
+  // Docs API keeps a trailing newline — delete everything before it.
+  if (endIndex > 2) {
+    writeRequests.push({
+      deleteContentRange: {
+        range: { startIndex: 1, endIndex: endIndex - 1 },
+      },
+    });
+  }
+  writeRequests.push({
+    insertText: {
+      location: { index: 1 },
+      text,
+    },
+  });
+
+  await docsFetch(
+    accessToken,
+    `/documents/${encodeURIComponent(documentId)}:batchUpdate`,
+    {
+      method: "POST",
+      body: JSON.stringify({ requests: writeRequests }),
+    },
+  );
+
+  // Insert inherits the previous paragraph's named style (often Title).
+  // Force NORMAL_TEXT + readable body typography on the written range.
+  const styleEnd = 1 + text.length;
+  if (styleEnd <= 2) return;
+
+  await docsFetch(
+    accessToken,
+    `/documents/${encodeURIComponent(documentId)}:batchUpdate`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        requests: [
+          {
+            updateParagraphStyle: {
+              range: { startIndex: 1, endIndex: styleEnd },
+              paragraphStyle: {
+                namedStyleType: "NORMAL_TEXT",
+              },
+              fields: "namedStyleType",
+            },
+          },
+          {
+            updateTextStyle: {
+              range: { startIndex: 1, endIndex: styleEnd },
+              textStyle: {
+                bold: false,
+                italic: false,
+                underline: false,
+                fontSize: { magnitude: 11, unit: "PT" },
+                weightedFontFamily: { fontFamily: "Arial" },
+                foregroundColor: {
+                  color: { rgbColor: { red: 0, green: 0, blue: 0 } },
+                },
+              },
+              fields:
+                "bold,italic,underline,fontSize,weightedFontFamily,foregroundColor",
+            },
+          },
+        ],
+      }),
+    },
+  );
+};
+
 export const batchReplaceAllText = async (
   accessToken: string,
   documentId: string,

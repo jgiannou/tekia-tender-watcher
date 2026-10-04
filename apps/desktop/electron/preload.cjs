@@ -50,11 +50,18 @@ const drive = {
     ipcRenderer.invoke("tekia:drive-package-readiness", referenceNumber),
   createWorkspace: (referenceNumber) =>
     ipcRenderer.invoke("tekia:drive-create-workspace", referenceNumber),
-  copyTemplate: (referenceNumber, templateKey, operatorValues) =>
+  copyTemplate: (referenceNumber, templateKey, operatorValues, outreachContent) =>
     ipcRenderer.invoke("tekia:drive-copy-template", {
       referenceNumber,
       templateKey,
       operatorValues: operatorValues ?? {},
+      outreachContent,
+    }),
+  syncOutreachContent: (referenceNumber, subject, body) =>
+    ipcRenderer.invoke("tekia:drive-sync-outreach", {
+      referenceNumber,
+      subject,
+      body,
     }),
   tenderDocuments: (referenceNumber) =>
     ipcRenderer.invoke("tekia:drive-tender-documents", referenceNumber),

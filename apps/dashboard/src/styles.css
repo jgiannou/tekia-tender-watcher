@@ -516,6 +516,133 @@ th {
   padding: 12px;
 }
 
+.toast-stack {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgba(28, 27, 26, 0.12);
+  animation: toast-in 180ms ease-out;
+}
+
+.toast-message {
+  margin: 0;
+  flex: 1;
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.toast-dismiss {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.toast-info {
+  border-color: #c9d7ef;
+  background: #f3f7ff;
+}
+
+.toast-success {
+  border-color: #b7dfc8;
+  background: #f1faf4;
+  color: #1f7a4d;
+}
+
+.toast-warning {
+  border-color: #f0d48a;
+  background: #fff8e8;
+  color: #6d4d00;
+}
+
+.toast-error {
+  border-color: #f0b8b0;
+  background: #fff1ef;
+  color: #a11f1f;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.btn.is-busy,
+.btn:disabled.is-busy {
+  opacity: 0.75;
+  cursor: wait;
+}
+
+.spinner {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 8px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--chip);
+  color: var(--muted);
+}
+
+.sync-pill.is-synced {
+  background: #e7f6ec;
+  color: #1f7a4d;
+}
+
+.sync-pill.is-stale,
+.sync-pill.is-error {
+  background: #fff1ef;
+  color: #a11f1f;
+}
+
+.sync-pill.is-syncing {
+  background: #eef3ff;
+  color: #2f4f8a;
+}
+
 .already-submitted {
   background: var(--coral-soft);
   border: 1px solid #f2c0b8;

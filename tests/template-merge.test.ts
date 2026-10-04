@@ -4,9 +4,14 @@ import { resolve } from "node:path";
 import {
   assertMergeTargetIsCopy,
   buildMergeReplacements,
+  buildOutreachDraftContent,
   buildReplaceAllTextRequests,
   canMarkDocumentReady,
+  EARLY_OUTREACH_CANONICAL_TEMPLATE,
+  EARLY_OUTREACH_DOCUMENT_TITLE,
   findUnresolvedPlaceholders,
+  formatOutreachDriveDocumentText,
+  hashOutreachContent,
   placeholderToken,
 } from "../apps/desktop/electron/google/template-merge.ts";
 
@@ -98,6 +103,51 @@ describe("template merge — known fields & no invention", () => {
     expect(plan.replacements.CONTACT_PHONE).toBeUndefined();
   });
 
+  it("never falls back CONTACT_NAME to LEGAL_NAME", () => {
+    const plan = buildMergeReplacements("OUTREACH", {
+      ...knownCtx,
+      contactName: "",
+      legalName: "ΓΙΑΝΝΟΥΣΗΣ ΙΩΑΝΝΗΣ ΤΟΥ ΓΡΗΓΟΡΙΟΥ",
+      brandName: "TEKIA",
+      recordType: "REQ",
+    });
+    expect(plan.replacements.CONTACT_NAME).toBeUndefined();
+    expect(plan.skippedUnknown).toContain("CONTACT_NAME");
+    expect(plan.replacements.LEGAL_NAME).toBe("ΓΙΑΝΝΟΥΣΗΣ ΙΩΑΝΝΗΣ ΤΟΥ ΓΡΗΓΟΡΙΟΥ");
+    expect(plan.replacements.BRAND_NAME).toBe("TEKIA");
+  });
+
+  it("OUTREACH for ADAM 26REQ019873897 uses Πρωτογενές Αίτημα and Greek title", () => {
+    const plan = buildMergeReplacements("OUTREACH", {
+      organization: "ΠΕΤΑ Α.Ε.",
+      tenderTitle: "Συντήρηση της ιστοσελίδας για την ΠΕΤΑ Α.Ε.",
+      adam: "26REQ019873897",
+      recordType: "REQ",
+      contactName: "Ιωάννης Γιαννούσης",
+      legalName: "ΓΙΑΝΝΟΥΣΗΣ ΙΩΑΝΝΗΣ ΤΟΥ ΓΡΗΓΟΡΙΟΥ",
+      brandName: "TEKIA",
+      contactEmail: "info@tekia.gr",
+      contactPhone: "2100000000",
+      date: "30/09/2026",
+    });
+
+    expect(plan.replacements.DOCUMENT_TITLE).toBe("ΕΚΔΗΛΩΣΗ ΕΝΔΙΑΦΕΡΟΝΤΟΣ");
+    expect(plan.replacements.RECORD_TYPE_LABEL).toBe("Πρωτογενές Αίτημα");
+    expect(plan.replacements.EMAIL_SUBJECT).toBe(
+      "Εκδήλωση ενδιαφέροντος – Συντήρηση της ιστοσελίδας για την ΠΕΤΑ Α.Ε. – ΑΔΑΜ 26REQ019873897",
+    );
+    expect(plan.replacements.CONTACT_NAME).toBe("Ιωάννης Γιαννούσης");
+    expect(plan.replacements.LEGAL_NAME).toBe("ΓΙΑΝΝΟΥΣΗΣ ΙΩΑΝΝΗΣ ΤΟΥ ΓΡΗΓΟΡΙΟΥ");
+    expect(plan.replacements.BRAND_NAME).toBe("TEKIA");
+    expect(plan.literalReplacements["EARLY OUTREACH"]).toBe(
+      "ΕΚΔΗΛΩΣΗ ΕΝΔΙΑΦΕΡΟΝΤΟΣ",
+    );
+    expect(plan.literalReplacements["αίτημα/προμήθεια"]).toBe("Πρωτογενές Αίτημα");
+    expect(EARLY_OUTREACH_CANONICAL_TEMPLATE).toContain("Πρωτογενές Αίτημα");
+    expect(EARLY_OUTREACH_CANONICAL_TEMPLATE).not.toContain("EARLY OUTREACH");
+    expect(EARLY_OUTREACH_CANONICAL_TEMPLATE).not.toContain("αίτημα/προμήθεια");
+  });
+
   it("ReplaceAllText requests use {{KEY}} tokens and never empty replaceText for known keys", () => {
     const plan = buildMergeReplacements("OUTREACH", knownCtx);
     const requests = buildReplaceAllTextRequests(plan.replacements);
@@ -111,6 +161,61 @@ describe("template merge — known fields & no invention", () => {
         (r) => r.replaceAllText.containsText.text === placeholderToken("ADAM"),
       ),
     ).toBe(true);
+  });
+
+  it("buildOutreachDraftContent uses LEGAL_NAME in opening line, not brand as official entity", () => {
+    const draft = buildOutreachDraftContent({
+      organization: "ΠΕΤΑ Α.Ε.",
+      tenderTitle: "Συντήρηση της ιστοσελίδας για την ΠΕΤΑ Α.Ε.",
+      adam: "26REQ019873897",
+      recordType: "REQ",
+      contactName: "Ιωάννης Γιαννούσης",
+      legalName: "ΓΙΑΝΝΟΥΣΗΣ ΙΩΑΝΝΗΣ ΤΟΥ ΓΡΗΓΟΡΙΟΥ",
+      brandName: "TEKIA",
+      contactEmail: "info@tekia.gr",
+      contactPhone: "2100000000",
+      date: "30/09/2026",
+    });
+
+    expect(draft.documentTitle).toBe(EARLY_OUTREACH_DOCUMENT_TITLE);
+    expect(draft.subject).toContain("ΑΔΑΜ 26REQ019873897");
+    expect(draft.subject).toMatch(/ΑΔΑΜ/);
+    expect(draft.body).toContain(
+      "εκ μέρους της επιχείρησης ΓΙΑΝΝΟΥΣΗΣ ΙΩΑΝΝΗΣ ΤΟΥ ΓΡΗΓΟΡΙΟΥ",
+    );
+    expect(draft.body).not.toContain("εκ μέρους της TEKIA");
+    expect(draft.body).not.toContain("αίτημα/προμήθεια");
+    expect(draft.body).toContain("Πρωτογενές Αίτημα");
+    expect(draft.body).toContain("TEKIA"); // brand only in signature block
+    expect(draft.unresolvedKeys).toEqual([]);
+
+    const driveText = formatOutreachDriveDocumentText(draft.subject, draft.body);
+    expect(driveText).toContain(draft.subject);
+    expect(driveText).toContain(draft.body.trim());
+    expect(driveText).toContain("Θέμα:");
+    expect(hashOutreachContent(draft.subject, draft.body)).toBe(
+      hashOutreachContent(draft.subject, draft.body),
+    );
+    expect(hashOutreachContent(draft.subject, draft.body)).not.toBe(
+      hashOutreachContent(draft.subject, `${draft.body}x`),
+    );
+
+    const partial = buildOutreachDraftContent({
+      tenderTitle: "Συντήρηση ιστοσελίδας",
+      adam: "26REQ019873897",
+      recordType: "REQ",
+      brandName: "TEKIA",
+      contactName: null,
+      legalName: null,
+      contactEmail: null,
+      contactPhone: null,
+    });
+    expect(partial.body).toContain("{{CONTACT_NAME}}");
+    expect(partial.body).toContain("{{LEGAL_NAME}}");
+    expect(partial.body).toContain("εκ μέρους της επιχείρησης {{LEGAL_NAME}}");
+    expect(partial.unresolvedKeys).toEqual(
+      expect.arrayContaining(["CONTACT_NAME", "LEGAL_NAME"]),
+    );
   });
 });
 

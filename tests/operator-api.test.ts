@@ -433,6 +433,27 @@ describe("operator API + submission workflow", () => {
     expect(res.status).toBe(400);
   });
 
+  it("persists outreach draft manualEdited flag", async () => {
+    seedTender(repo, "26REQ_DRAFT");
+    const patched = await request("/api/operator/tenders/26REQ_DRAFT", {
+      method: "PATCH",
+      body: JSON.stringify({
+        drafts: {
+          outreach: {
+            status: "DRAFT",
+            subject: "Custom subject",
+            body: "Custom body",
+            manualEdited: true,
+          },
+        },
+      }),
+    });
+    expect(patched.status).toBe(200);
+    const body = await patched.json();
+    expect(body.tender.drafts.outreach.manualEdited).toBe(true);
+    expect(body.tender.drafts.outreach.subject).toBe("Custom subject");
+  });
+
   it("persists outreach draft subject/body/notes on PATCH and returns them on GET", async () => {
     seedTender(repo, "26REQ019897367");
 

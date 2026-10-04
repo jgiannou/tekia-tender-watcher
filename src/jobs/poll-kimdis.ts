@@ -49,6 +49,18 @@ const BOOTSTRAP_RECENT_HOURS = 48;
 
 const CONTRACT_TYPES = ["9", "14"] as const;
 
+/** KIMDIS answers 404 "No notices found for the given criteria" for empty windows. */
+const emptyOnNoResults = async <T>(promise: Promise<T[]>): Promise<T[]> => {
+  try {
+    return await promise;
+  } catch (error) {
+    if (error instanceof Error && /KIMDIS HTTP 404/.test(error.message)) {
+      return [];
+    }
+    throw error;
+  }
+};
+
 const collectCpvs = (details: KimdisObjectDetail[] | null | undefined): string[] => {
   const cpvs = new Set<string>();
   for (const detail of details ?? []) {
@@ -627,21 +639,25 @@ export const createPollJob = (deps: {
       const records: NormalizedRecord[] = [];
 
       for (const contractType of CONTRACT_TYPES) {
-        const requests = await deps.kimdis.searchRequests({
-          dateFrom,
-          dateTo,
-          contractType,
-          isInitial: true,
-          isApproved: false,
-          isApproval: false,
-        });
+        const requests = await emptyOnNoResults(
+          deps.kimdis.searchRequests({
+            dateFrom,
+            dateTo,
+            contractType,
+            isInitial: true,
+            isApproved: false,
+            isApproval: false,
+          }),
+        );
         records.push(...requests.map(normalizeRequest));
 
-        const notices = await deps.kimdis.searchNotices({
-          dateFrom,
-          dateTo,
-          contractType,
-        });
+        const notices = await emptyOnNoResults(
+          deps.kimdis.searchNotices({
+            dateFrom,
+            dateTo,
+            contractType,
+          }),
+        );
         records.push(...notices.map(normalizeNotice));
       }
 

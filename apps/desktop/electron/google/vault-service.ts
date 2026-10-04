@@ -18,14 +18,19 @@ import {
   findUnresolvedPlaceholders as findCompanyProfileUnresolved,
   GENERATED_COMPANY_PROFILE_NAME,
 } from "./company-profile-merge.js";
-import { batchReplaceAllText, getDocumentText } from "./docs-api.js";
+import { batchReplaceAllText, getDocumentText, replaceDocumentBody } from "./docs-api.js";
 import { getValidAccessToken, startGoogleOAuthLogin } from "./oauth.js";
 import {
   assertMergeTargetIsCopy,
+  buildAllReplaceRequests,
   buildMergeReplacements,
-  buildReplaceAllTextRequests,
+  buildOutreachDraftContent,
   canMarkDocumentReady,
+  EARLY_OUTREACH_DOCUMENT_TITLE,
   findUnresolvedPlaceholders,
+  formatOutreachDriveDocumentText,
+  hashOutreachContent,
+  type OutreachDraftContent,
 } from "./template-merge.js";
 import {
   buildVaultDiscovery,
@@ -92,7 +97,7 @@ export type DrivePublicStatus = {
 };
 
 const TEMPLATE_LABELS: Record<TemplateKey, string> = {
-  earlyOutreach: "Early Outreach",
+  earlyOutreach: EARLY_OUTREACH_DOCUMENT_TITLE,
   technicalOffer: "Technical Offer",
   economicOffer: "Economic Offer",
   declarations: "Declarations",
@@ -564,6 +569,11 @@ export const copyTemplateForTender = async (input: {
   templateKey: Exclude<TemplateKey, "companyProfile">;
   /** Explicit operator values for economic / declaration / optional technical fills */
   operatorValues?: Record<string, string>;
+  /**
+   * Early Outreach: when set, write this subject/body into Drive (app is source of truth).
+   * When omitted, content is built from the same merge context as the app draft.
+   */
+  outreachContent?: { subject: string; body: string };
 }): Promise<{
   documentId: string;
   driveFileId: string;
@@ -574,6 +584,11 @@ export const copyTemplateForTender = async (input: {
   status: "DRAFT" | "READY";
   unresolvedPlaceholders: string[];
   replacedKeys: string[];
+  reusedExisting: boolean;
+  contentSynced: boolean;
+  lastSyncedHash: string | null;
+  /** In-app draft payload (Early Outreach) — same merge values as Drive. */
+  outreachDraft?: OutreachDraftContent;
 }> => {
   if ((input.templateKey as TemplateKey) === "companyProfile") {
     throw new Error(
@@ -587,9 +602,40 @@ export const copyTemplateForTender = async (input: {
     throw new Error("Master template is not ready — configure in Settings");
   }
 
+  const docType = TEMPLATE_KEY_TO_TYPE[input.templateKey];
+  const masterId = template.selection.file.id;
+  const existingDocs = listTenderDocuments(input.referenceNumber).filter(
+    (d) => d.type === docType,
+  );
+  const existing = existingDocs[0];
+
+  // Early Outreach: reuse linked COPY — never create duplicates on regenerate.
+  if (input.templateKey === "earlyOutreach" && existing) {
+    const synced = await syncOutreachContentToExistingCopy({
+      documentId: existing.id,
+      subject: input.outreachContent?.subject,
+      body: input.outreachContent?.body,
+      operatorValues: input.operatorValues,
+    });
+    return {
+      documentId: synced.document.id,
+      driveFileId: synced.document.driveFileId,
+      driveUrl: synced.document.driveUrl,
+      name: `${input.referenceNumber} – ${TEMPLATE_LABELS[input.templateKey]}`,
+      masterFileId: synced.document.masterFileId,
+      masterUntouched: true,
+      status: synced.document.status === "READY" ? "READY" : "DRAFT",
+      unresolvedPlaceholders: synced.document.unresolvedPlaceholders,
+      replacedKeys: [],
+      reusedExisting: true,
+      contentSynced: synced.contentSynced,
+      lastSyncedHash: synced.document.lastSyncedHash ?? null,
+      outreachDraft: synced.outreachDraft,
+    };
+  }
+
   const workspace = await createTenderWorkspace(input.referenceNumber);
   const accessToken = await getValidAccessToken(config);
-  const masterId = template.selection.file.id;
   const cloned = await cloneGoogleDocToFolder(
     accessToken,
     masterId,
@@ -598,23 +644,46 @@ export const copyTemplateForTender = async (input: {
   );
   const copied = cloned;
 
-  // Safety: master id must differ from copy id
   if (copied.id === masterId) {
     throw new Error("Copy failed — refusing to modify master template");
   }
 
   assertMergeTargetIsCopy(masterId, copied.id);
 
-  const docType = TEMPLATE_KEY_TO_TYPE[input.templateKey];
   const mergeCtx = await loadMergeContext(
     input.referenceNumber,
     input.operatorValues,
   );
   const plan = buildMergeReplacements(docType, mergeCtx);
-  const requests = buildReplaceAllTextRequests(plan.replacements);
+  let outreachDraft: OutreachDraftContent | undefined;
+  let lastSyncedHash: string | null = null;
+  let contentSynced = false;
 
-  // Docs API merge — COPY ONLY (never masterId)
-  await batchReplaceAllText(accessToken, copied.id, requests);
+  if (input.templateKey === "earlyOutreach") {
+    outreachDraft = input.outreachContent
+      ? {
+          ...buildOutreachDraftContent(mergeCtx),
+          subject: input.outreachContent.subject,
+          body: input.outreachContent.body,
+          unresolvedKeys: findUnresolvedPlaceholders(
+            `${input.outreachContent.subject}\n${input.outreachContent.body}`,
+          ),
+        }
+      : buildOutreachDraftContent(mergeCtx);
+    const driveText = formatOutreachDriveDocumentText(
+      outreachDraft.subject,
+      outreachDraft.body,
+    );
+    await replaceDocumentBody(accessToken, copied.id, driveText);
+    lastSyncedHash = hashOutreachContent(
+      outreachDraft.subject,
+      outreachDraft.body,
+    );
+    contentSynced = true;
+  } else {
+    const requests = buildAllReplaceRequests(plan);
+    await batchReplaceAllText(accessToken, copied.id, requests);
+  }
 
   const textAfter = await getDocumentText(accessToken, copied.id);
   const unresolved = findUnresolvedPlaceholders(textAfter);
@@ -629,6 +698,7 @@ export const copyTemplateForTender = async (input: {
     masterFileId: masterId,
     status: "DRAFT",
     unresolvedPlaceholders: unresolved,
+    lastSyncedHash,
     createdAt: now,
     updatedAt: now,
   };
@@ -644,6 +714,141 @@ export const copyTemplateForTender = async (input: {
     status: "DRAFT",
     unresolvedPlaceholders: unresolved,
     replacedKeys: Object.keys(plan.replacements),
+    reusedExisting: false,
+    contentSynced,
+    lastSyncedHash,
+    outreachDraft,
+  };
+};
+
+/**
+ * Push app outreach subject/body into the existing Drive COPY (no duplicates).
+ */
+export const syncOutreachContentToExistingCopy = async (input: {
+  documentId: string;
+  subject?: string;
+  body?: string;
+  operatorValues?: Record<string, string>;
+}): Promise<{
+  document: TenderDocumentRecord;
+  outreachDraft: OutreachDraftContent;
+  contentSynced: boolean;
+}> => {
+  const existing = findTenderDocument(input.documentId);
+  if (!existing) throw new Error("Tender document not found");
+  if (existing.type !== "OUTREACH") {
+    throw new Error("syncOutreachContent is only for Early Outreach documents");
+  }
+
+  assertMergeTargetIsCopy(existing.masterFileId, existing.driveFileId);
+
+  const config = requireConfig();
+  const accessToken = await getValidAccessToken(config);
+  const mergeCtx = await loadMergeContext(
+    existing.tenderReferenceNumber,
+    input.operatorValues,
+  );
+  const built = buildOutreachDraftContent(mergeCtx);
+  const subject = input.subject?.trim() ? input.subject : built.subject;
+  const body = input.body?.trim() ? input.body : built.body;
+  const outreachDraft: OutreachDraftContent = {
+    ...built,
+    subject,
+    body,
+    unresolvedKeys: findUnresolvedPlaceholders(`${subject}\n${body}`),
+  };
+
+  const driveText = formatOutreachDriveDocumentText(subject, body);
+  await replaceDocumentBody(accessToken, existing.driveFileId, driveText);
+
+  const textAfter = await getDocumentText(accessToken, existing.driveFileId);
+  const unresolved = findUnresolvedPlaceholders(textAfter);
+  const lastSyncedHash = hashOutreachContent(subject, body);
+  const updated = updateTenderDocument(existing.id, {
+    unresolvedPlaceholders: unresolved,
+    lastSyncedHash,
+    // Content changed from app — leave READY only if no unresolved placeholders
+    status:
+      existing.status === "READY" && unresolved.length === 0
+        ? "READY"
+        : "DRAFT",
+  });
+  if (!updated) throw new Error("Failed to update tender document");
+
+  return {
+    document: updated,
+    outreachDraft,
+    contentSynced: true,
+  };
+};
+
+/**
+ * Sync app draft → linked Drive OUTREACH doc (create if missing).
+ */
+export const syncOutreachDraftToDrive = async (input: {
+  referenceNumber: string;
+  subject: string;
+  body: string;
+}): Promise<{
+  documentId: string;
+  driveFileId: string;
+  driveUrl: string;
+  reusedExisting: boolean;
+  contentSynced: boolean;
+  lastSyncedHash: string | null;
+  unresolvedPlaceholders: string[];
+  status: "DRAFT" | "READY";
+  outreachDraft: OutreachDraftContent;
+}> => {
+  const existing = listTenderDocuments(input.referenceNumber).find(
+    (d) => d.type === "OUTREACH",
+  );
+
+  if (existing) {
+    const synced = await syncOutreachContentToExistingCopy({
+      documentId: existing.id,
+      subject: input.subject,
+      body: input.body,
+    });
+    return {
+      documentId: synced.document.id,
+      driveFileId: synced.document.driveFileId,
+      driveUrl: synced.document.driveUrl,
+      reusedExisting: true,
+      contentSynced: synced.contentSynced,
+      lastSyncedHash: synced.document.lastSyncedHash ?? null,
+      unresolvedPlaceholders: synced.document.unresolvedPlaceholders,
+      status: synced.document.status === "READY" ? "READY" : "DRAFT",
+      outreachDraft: synced.outreachDraft,
+    };
+  }
+
+  const created = await copyTemplateForTender({
+    referenceNumber: input.referenceNumber,
+    templateKey: "earlyOutreach",
+    outreachContent: { subject: input.subject, body: input.body },
+  });
+
+  return {
+    documentId: created.documentId,
+    driveFileId: created.driveFileId,
+    driveUrl: created.driveUrl,
+    reusedExisting: false,
+    contentSynced: created.contentSynced,
+    lastSyncedHash: created.lastSyncedHash,
+    unresolvedPlaceholders: created.unresolvedPlaceholders,
+    status: created.status,
+    outreachDraft:
+      created.outreachDraft ??
+      ({
+        subject: input.subject,
+        body: input.body,
+        documentTitle: EARLY_OUTREACH_DOCUMENT_TITLE,
+        unresolvedKeys: findUnresolvedPlaceholders(
+          `${input.subject}\n${input.body}`,
+        ),
+        replacements: {},
+      } satisfies OutreachDraftContent),
   };
 };
 
@@ -652,6 +857,7 @@ type CloudTender = {
   title: string | null;
   organization: string | null;
   scopeSummary: string | null;
+  recordType?: string | null;
   contact?: { name: string | null; email: string | null; phone: string | null };
 };
 
@@ -676,12 +882,23 @@ const loadMergeContext = async (
     year: "numeric",
   });
 
+  // Infer REQ from ADAM when API omits recordType (never invent identity fields).
+  const recordType =
+    tender?.recordType ??
+    (referenceNumber.includes("REQ")
+      ? "REQ"
+      : referenceNumber.includes("PROC")
+        ? "PROC"
+        : null);
+
   return {
     organization: tender?.organization ?? null,
     tenderTitle: tender?.title ?? null,
     adam: tender?.referenceNumber ?? referenceNumber,
     protocolNumber: operatorValues?.PROTOCOL_NUMBER ?? null,
-    // Company Settings only — never invent; never use tender authority contact here
+    recordType,
+    // Company Settings only — never invent; never use tender authority contact;
+    // never fall back CONTACT_NAME ← LEGAL_NAME / BRAND_NAME.
     contactName: localCompany.contact_name || null,
     contactEmail: localCompany.email || null,
     contactPhone: localCompany.phone || null,
@@ -779,7 +996,7 @@ export const remergeOperatorValuesIntoCopy = async (input: {
     input.operatorValues,
   );
   const plan = buildMergeReplacements(existing.type, mergeCtx);
-  const requests = buildReplaceAllTextRequests(plan.replacements);
+  const requests = buildAllReplaceRequests(plan);
   await batchReplaceAllText(accessToken, existing.driveFileId, requests);
 
   const textAfter = await getDocumentText(accessToken, existing.driveFileId);
