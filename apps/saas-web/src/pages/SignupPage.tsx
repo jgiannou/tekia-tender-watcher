@@ -38,7 +38,23 @@ export const SignupPage = () => {
         authClient.hydrateSession(session.data);
       }
 
-      await saasApi.createOrganization(organizationName.trim() || "ARC Tenders");
+      // Session cookie can lag one tick after sign-up; retry org create once.
+      let organization: { id: string } | null = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const created = await saasApi.createOrganization(
+            organizationName.trim() || "ARC Tenders",
+          );
+          organization = created.organization;
+          break;
+        } catch (err) {
+          if (attempt === 2) throw err;
+          await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+        }
+      }
+      if (organization?.id) {
+        await saasApi.setActiveOrganization(organization.id).catch(() => null);
+      }
       toast.success("Ο λογαριασμός δημιουργήθηκε");
       navigate("/app", { replace: true });
     } catch (error) {
