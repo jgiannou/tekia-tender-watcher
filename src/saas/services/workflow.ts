@@ -299,21 +299,50 @@ export const getOrganizationTenderWorkflow = async (
   }
 
   const outreachMethod = outreachPayload(organizationTender.outreachLedger)?.method;
+  // Pair legacy SUBMITTED events (no JSON note) to submissions in time order.
+  const unpairedSubmissions = [...organizationTender.submissions].sort(
+    (a, b) => a.submittedAt.getTime() - b.submittedAt.getTime(),
+  );
   for (const event of organizationTender.events) {
     const label = ORGANIZATION_EVENT_LABELS[event.eventType];
     if (!label) continue;
+    let subtitle: string | null = null;
+    if (event.eventType === "OUTREACH_SENT") {
+      subtitle =
+        [outreachMethod, organizationTender.outreachLedger?.recipient]
+          .filter(Boolean)
+          .join(" · ") || null;
+    } else if (event.eventType === "SUBMITTED") {
+      const fromNote = parseSubmissionEventNote(event.note);
+      if (fromNote) {
+        subtitle = submissionSubtitle(fromNote);
+        if (fromNote.submissionId) {
+          const idx = unpairedSubmissions.findIndex((row) => row.id === fromNote.submissionId);
+          if (idx >= 0) unpairedSubmissions.splice(idx, 1);
+        }
+      } else {
+        const nearestIdx = unpairedSubmissions.findIndex(
+          (row) =>
+            Math.abs(row.submittedAt.getTime() - event.createdAt.getTime()) < 120_000,
+        );
+        const snap =
+          nearestIdx >= 0
+            ? unpairedSubmissions.splice(nearestIdx, 1)[0]
+            : unpairedSubmissions.shift();
+        subtitle = snap
+          ? submissionSubtitle({
+              submissionMethod: snap.submissionMethod,
+              externalReference: snap.externalReference,
+              amountWithoutVat: snap.amountWithoutVat,
+            })
+          : null;
+      }
+    }
     timeline.push({
       kind: "organization",
       key: `event-${event.id}`,
       title: label,
-      subtitle:
-        event.eventType === "OUTREACH_SENT"
-          ? [outreachMethod, organizationTender.outreachLedger?.recipient]
-              .filter(Boolean)
-              .join(" · ") || null
-          : event.eventType === "SUBMITTED"
-            ? submissionSubtitle(organizationTender.submissions[0])
-            : null,
+      subtitle,
       at: event.createdAt.toISOString(),
     });
   }
@@ -383,23 +412,58 @@ type OutreachPayload = {
   documents?: Array<{ documentId: string; name: string; version: number | null }>;
 };
 
+const SUBMISSION_METHOD_LABELS: Record<string, string> = {
+  PORTAL: "Ηλεκτρονική πλατφόρμα",
+  EMAIL: "Email",
+  PHYSICAL: "Φυσική παράδοση",
+  OTHER: "Άλλο",
+  ESIDIS: "ΕΣΗΔΗΣ",
+  UNKNOWN: "Άγνωστο",
+};
+
+const submissionMethodLabel = (code: string | null | undefined): string => {
+  if (!code) return "—";
+  return SUBMISSION_METHOD_LABELS[code] ?? code;
+};
+
+type SubmissionSnapshot = {
+  submissionId?: string;
+  submissionMethod: string;
+  externalReference: string | null;
+  amountWithoutVat: number | null;
+};
+
+const parseSubmissionEventNote = (note: string | null | undefined): SubmissionSnapshot | null => {
+  if (!note?.trim().startsWith("{")) return null;
+  try {
+    const raw = JSON.parse(note) as Partial<SubmissionSnapshot>;
+    if (!raw.submissionMethod) return null;
+    return {
+      submissionId: raw.submissionId,
+      submissionMethod: String(raw.submissionMethod),
+      externalReference:
+        raw.externalReference == null ? null : String(raw.externalReference),
+      amountWithoutVat:
+        typeof raw.amountWithoutVat === "number" ? raw.amountWithoutVat : null,
+    };
+  } catch {
+    return null;
+  }
+};
+
 const submissionSubtitle = (
-  submission:
-    | {
-        submissionMethod: string;
-        externalReference: string | null;
-        amountWithoutVat: number | null;
-      }
-    | undefined,
+  submission: SubmissionSnapshot | undefined | null,
 ): string | null => {
   if (!submission) return null;
   const amount =
     submission.amountWithoutVat == null
       ? null
       : `${submission.amountWithoutVat} €`;
-  const parts = [submission.submissionMethod, submission.externalReference, amount].filter(
-    Boolean,
-  );
+  const parts = [
+    submissionMethodLabel(submission.submissionMethod),
+    submission.externalReference,
+    amount,
+  ].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
 };
 

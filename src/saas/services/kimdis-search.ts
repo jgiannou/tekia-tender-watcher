@@ -248,11 +248,30 @@ export const buildKimdisSearchMeta = () => ({
   requestKinds: KIMDIS_REQUEST_KINDS,
 });
 
+const itemDateMs = (item: KimdisSearchItem): number => {
+  const raw = item.submissionDate || item.signedDate;
+  if (!raw) return 0;
+  const ms = new Date(raw).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+};
+
 /**
- * Do not re-sort a single upstream page locally — that masquerades as global
- * sort while page boundaries stay in KIMDIS default (usually newest-first) order.
- * Ordering comes only from the upstream `sort` query parameter.
+ * Local sort is only honest when the response contains the entire filtered set
+ * (single page). Multi-page local sort would masquerade as global ordering.
  */
+const sortItemsIfCompletePage = (
+  items: KimdisSearchItem[],
+  sort: KimdisSearchSort,
+  page: number,
+  last: boolean,
+  totalElements: number,
+): KimdisSearchItem[] => {
+  const complete =
+    page === 0 && (last || (totalElements > 0 && items.length >= totalElements));
+  if (!complete) return items;
+  const sorted = [...items].sort((a, b) => itemDateMs(b) - itemDateMs(a));
+  return sort === "date_asc" ? sorted.reverse() : sorted;
+};
 
 /** Adapt a canonical Tender row to the search/detail item shape. */
 export const kimdisItemFromTender = (tender: Tender): KimdisSearchItem => ({
@@ -399,15 +418,21 @@ export const searchKimdis = async (
       };
 
       const result = await kimdis.searchRequestsPage(body, page, sortParam);
-      const items = (result.content ?? []).map((record) =>
-        normalizeItem(kimdis, record, "REQ"),
+      const totalElements = result.totalElements ?? 0;
+      const last = Boolean(result.last);
+      const items = sortItemsIfCompletePage(
+        (result.content ?? []).map((record) => normalizeItem(kimdis, record, "REQ")),
+        sort,
+        page,
+        last,
+        totalElements,
       );
       return {
         items,
         page: result.number ?? page,
-        totalElements: result.totalElements ?? 0,
+        totalElements,
         totalPages: result.totalPages ?? 0,
-        last: Boolean(result.last),
+        last,
       };
     }
 
@@ -441,15 +466,21 @@ export const searchKimdis = async (
     };
 
     const result = await kimdis.searchNoticesPage(body, page, sortParam);
-    const items = (result.content ?? []).map((record) =>
-      normalizeItem(kimdis, record, "PROC"),
+    const totalElements = result.totalElements ?? 0;
+    const last = Boolean(result.last);
+    const items = sortItemsIfCompletePage(
+      (result.content ?? []).map((record) => normalizeItem(kimdis, record, "PROC")),
+      sort,
+      page,
+      last,
+      totalElements,
     );
     return {
       items,
       page: result.number ?? page,
-      totalElements: result.totalElements ?? 0,
+      totalElements,
       totalPages: result.totalPages ?? 0,
-      last: Boolean(result.last),
+      last,
     };
   } catch (error) {
     if (error instanceof SaasError) throw error;

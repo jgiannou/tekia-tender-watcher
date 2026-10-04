@@ -23,6 +23,7 @@ import {
   mergeMatchMeta,
   parseMatchMeta,
   recordTypesForScan,
+  removeProfileFromMatchMeta,
   scoreKimdisItemAgainstProfile,
   type MatchProfileEntry,
   type OpportunityMatchMeta,
@@ -450,7 +451,16 @@ export const scanDateWindowForProfile = (
   return { dateFrom: formatDateOnly(from), dateTo: formatDateOnly(now) };
 };
 
-const buildScanFilterVariants = (
+/** Cap union variants so construction-style profiles stay within a practical scan budget. */
+const MAX_KEYWORD_VARIANTS = 6;
+const MAX_CPV_VARIANTS = 6;
+
+/**
+ * Candidate retrieval is a union of alternatives: each keyword alone and each
+ * CPV alone. Do not AND all keywords into one title with every CPV — that
+ * over-constrains upstream collection (e.g. construction KAD suggestions).
+ */
+export const buildScanFilterVariants = (
   profile: WatchProfile,
 ): KimdisSearchFilters[] => {
   const dates = scanDateWindowForProfile(profile);
@@ -469,26 +479,25 @@ const buildScanFilterVariants = (
   };
 
   const variants: KimdisSearchFilters[] = [];
+  const keywords = criteria.keywords.slice(0, MAX_KEYWORD_VARIANTS);
+  const cpvs = criteria.cpvs.slice(0, MAX_CPV_VARIANTS);
 
   for (const recordFamily of recordTypes) {
-    if (criteria.cpvs.length > 0) {
-      for (const cpv of criteria.cpvs) {
-        variants.push({
-          recordFamily,
-          ...base,
-          cpv,
-          ...(criteria.keywords.length
-            ? { title: criteria.keywords.join(" ") }
-            : {}),
-        });
-      }
-    } else if (criteria.keywords.length > 0) {
+    for (const keyword of keywords) {
       variants.push({
         recordFamily,
         ...base,
-        title: criteria.keywords.join(" "),
+        title: keyword,
       });
-    } else {
+    }
+    for (const cpv of cpvs) {
+      variants.push({
+        recordFamily,
+        ...base,
+        cpv,
+      });
+    }
+    if (keywords.length === 0 && cpvs.length === 0) {
       variants.push({ recordFamily, ...base });
     }
   }
@@ -769,6 +778,61 @@ const linkOpportunityToProfile = async (
 };
 
 /**
+ * After a successful non-partial full scan, drop this profile from org tenders
+ * that no longer qualify. Keeps follows and other profile associations intact.
+ */
+const reconcileStaleProfileMatches = async (
+  prisma: PrismaClient,
+  input: {
+    organizationId: string;
+    profileId: string;
+    activeTenderIds: Set<string>;
+  },
+): Promise<number> => {
+  const candidates = await prisma.organizationTender.findMany({
+    where: { organizationId: input.organizationId },
+    select: {
+      id: true,
+      tenderId: true,
+      watchProfileId: true,
+      matchMeta: true,
+      matchedKeywords: true,
+      matchedCpvs: true,
+    },
+  });
+
+  let removed = 0;
+  for (const row of candidates) {
+    if (input.activeTenderIds.has(row.tenderId)) continue;
+    const meta = parseMatchMeta(row.matchMeta);
+    const linked =
+      row.watchProfileId === input.profileId ||
+      Boolean(meta?.matchedProfiles.some((profile) => profile.id === input.profileId));
+    if (!linked) continue;
+
+    const nextMeta = removeProfileFromMatchMeta(meta, input.profileId);
+    const top = nextMeta.matchedProfiles[0];
+    await prisma.organizationTender.update({
+      where: { id: row.id },
+      data: {
+        matchMeta: nextMeta as unknown as Prisma.InputJsonValue,
+        watchProfileId: top?.id ?? null,
+        score: top?.score ?? null,
+        scoreReasons: (top?.reasons ?? []) as Prisma.InputJsonValue,
+        ...(top
+          ? {}
+          : {
+              matchedKeywords: [] as Prisma.InputJsonValue,
+              matchedCpvs: [] as Prisma.InputJsonValue,
+            }),
+      },
+    });
+    removed += 1;
+  }
+  return removed;
+};
+
+/**
  * Phase 1 of a scan: already-ingested canonical tenders. Keeps Opportunities
  * useful even when KIMDIS is slow, rate-limited or returns nothing.
  */
@@ -927,6 +991,15 @@ export const runWatchProfileScan = async (
 
     const now = new Date();
     const partial = upstreamErrors.length > 0;
+    let reconciledStale = 0;
+    // Never reconcile on partial/failed upstream — that would drop real matches.
+    if (!partial) {
+      reconciledStale = await reconcileStaleProfileMatches(prisma, {
+        organizationId: profile.organizationId,
+        profileId: profile.id,
+        activeTenderIds: matchedTenderIds,
+      });
+    }
 
     if (isInitialScan && matchSummaries.length > 0) {
       const topMatches = [...matchSummaries]
@@ -963,6 +1036,8 @@ export const runWatchProfileScan = async (
           lastScanNewCount: newMatchIds.size,
           lastScanPreviousMatchCount: previousMatchCount,
           lastScanEvaluatedCount: matchedTenderIds.size,
+          lastScanReconciledStale: reconciledStale,
+          lastScanVariantCount: variantsAttempted,
         }),
       },
     });

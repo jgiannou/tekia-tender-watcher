@@ -298,6 +298,21 @@ export const mergeMatchMeta = (
   return { matchedProfiles, highestScore };
 };
 
+/** Drop a profile association after a successful full rescan no longer qualifies it. */
+export const removeProfileFromMatchMeta = (
+  existing: OpportunityMatchMeta | null | undefined,
+  profileId: string,
+): OpportunityMatchMeta => {
+  const matchedProfiles = (existing?.matchedProfiles ?? []).filter(
+    (profile) => profile.id !== profileId,
+  );
+  const highestScore = matchedProfiles.reduce(
+    (max, profile) => Math.max(max, profile.score),
+    0,
+  );
+  return { matchedProfiles, highestScore };
+};
+
 export const parseMatchMeta = (value: unknown): OpportunityMatchMeta | null => {
   if (!value || typeof value !== "object") return null;
   const raw = value as OpportunityMatchMeta;

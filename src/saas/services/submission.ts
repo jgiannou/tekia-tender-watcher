@@ -129,7 +129,14 @@ export const recordFormalSubmission = async (
         organizationId: input.organizationId,
         organizationTenderId: orgTender.id,
         eventType: "SUBMITTED",
-        note: "Formal submission recorded",
+        // Immutable snapshot for timeline rendering — never read latestSubmission.
+        note: JSON.stringify({
+          submissionId: submission.id,
+          submissionMethod: input.submissionMethod,
+          externalReference: input.externalReference ?? null,
+          amountWithoutVat: input.amountWithoutVat ?? null,
+          submittedAt: submission.submittedAt.toISOString(),
+        }),
       },
     });
 

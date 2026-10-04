@@ -626,11 +626,14 @@ export const SearchPage = () => {
                 όταν είναι δυνατό.
               </span>
             ) : null}
-            {urlState.allHistory && urlState.sort === "date_asc" ? (
+            {urlState.sort === "date_asc" &&
+            totalElements > 0 &&
+            items.length > 0 &&
+            items.length < totalElements ? (
               <span className="mt-1 block text-amber-700 dark:text-amber-400">
-                Η ταξινόμηση «Παλαιότερα πρώτα» εξαρτάται από το ΚΗΜΔΗΣ και μπορεί να μην ισχύει
-                καθολικά σε όλες τις σελίδες του πλήρους ιστορικού. Για αξιόπιστη σειρά, περιορίστε
-                το διάστημα ημερομηνιών.
+                Η ταξινόμηση «Παλαιότερα πρώτα» εφαρμόζεται αξιόπιστα μόνο όταν όλα τα αποτελέσματα
+                χωρούν σε μία σελίδα. Εδώ υπάρχουν {totalPages} σελίδες — η σειρά μεταξύ σελίδων δεν
+                είναι εγγυημένη από το ΚΗΜΔΗΣ.
               </span>
             ) : null}
           </div>

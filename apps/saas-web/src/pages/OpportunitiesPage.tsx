@@ -43,10 +43,17 @@ const parseMatchMeta = (value: unknown): Opportunity["matchMeta"] => {
 };
 
 const matchesProfile = (opportunity: Opportunity, profileId: string): boolean => {
-  if (opportunity.watchProfileId === profileId) return true;
-  if (opportunity.watchProfile?.id === profileId) return true;
   const meta = parseMatchMeta(opportunity.matchMeta);
-  return Boolean(meta?.matchedProfiles.some((profile) => profile.id === profileId));
+  // matchedProfiles is the active association after full-scan reconciliation.
+  if (meta?.matchedProfiles.some((profile) => profile.id === profileId)) return true;
+  // Legacy rows that never got matchMeta still use the primary watchProfileId.
+  if ((meta?.matchedProfiles.length ?? 0) === 0) {
+    return (
+      opportunity.watchProfileId === profileId ||
+      opportunity.watchProfile?.id === profileId
+    );
+  }
+  return false;
 };
 
 export const OpportunitiesPage = () => {
@@ -127,6 +134,7 @@ export const OpportunitiesPage = () => {
   const scanning = profiles.some(
     (p) => p.enabled && (p.scanState ?? "").toUpperCase() === "RUNNING",
   );
+  const unfollowed = filtered.filter((o) => !o.following).length;
   const highScore = filtered.filter((o) => (o.score ?? 0) >= 70).length;
   const following = filtered.filter((o) => o.following).length;
 
@@ -200,7 +208,7 @@ export const OpportunitiesPage = () => {
 
       <div className="grid gap-3 md:grid-cols-4">
         {[
-          ["Νέα", String(filtered.length)],
+          ["Χωρίς παρακολούθηση", String(unfollowed)],
           ["Υψηλή συνάφεια", String(highScore)],
           ["Παρακολουθούμενα", String(following)],
           ["Ενεργές αναζητήσεις", String(enabledProfiles.length)],

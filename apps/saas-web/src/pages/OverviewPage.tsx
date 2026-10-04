@@ -14,6 +14,7 @@ import {
   type Opportunity,
   type SaasOverview,
 } from "@/lib/api";
+import { attentionEventHref } from "@/lib/attention-routing";
 
 const formatRelative = (value?: string | null) => {
   if (!value) return "—";
@@ -283,7 +284,7 @@ export const OverviewPage = () => {
                         <div className="min-w-0 text-sm font-medium">{event.title}</div>
                         <div className="flex gap-2">
                           <Button size="sm" variant="outline" asChild>
-                            <Link to="/app/opportunities">Προβολή ευκαιριών</Link>
+                            <Link to={attentionEventHref(event)}>Προβολή ευκαιριών</Link>
                           </Button>
                           {!event.readAt ? (
                             <Button

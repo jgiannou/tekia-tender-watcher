@@ -90,8 +90,17 @@ const scanLabel = (profile: WatchProfile) => {
   const newCount =
     typeof profile.scanNewCount === "number" ? profile.scanNewCount : null;
   switch ((profile.scanState ?? "PENDING").toUpperCase()) {
-    case "RUNNING":
-      return "Σάρωση σε εξέλιξη…";
+    case "RUNNING": {
+      const started = profile.updatedAt ? new Date(profile.updatedAt).getTime() : NaN;
+      const elapsedSec = Number.isNaN(started)
+        ? null
+        : Math.max(0, Math.round((Date.now() - started) / 1000));
+      return elapsedSec == null
+        ? "Σάρωση σε εξέλιξη…"
+        : elapsedSec < 60
+          ? `Σάρωση σε εξέλιξη… (${elapsedSec} δευτ.)`
+          : `Σάρωση σε εξέλιξη… (${Math.round(elapsedSec / 60)} λεπ.)`;
+    }
     case "FAILED":
       return profile.scanError
         ? `Αποτυχία σάρωσης · ${humanScanError(profile.scanError)}`
@@ -521,7 +530,9 @@ export const SavedSearchesPage = () => {
                             Επανασάρωση
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>
-                            <Link to="/app/opportunities">Προβολή ευκαιριών</Link>
+                            <Link to={`/app/opportunities?profile=${encodeURIComponent(profile.id)}`}>
+                              Προβολή ευκαιριών
+                            </Link>
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive"
@@ -643,7 +654,11 @@ export const SavedSearchesPage = () => {
                     Επεξεργασία
                   </Button>
                   <Button size="sm" variant="outline" asChild>
-                    <Link to="/app/opportunities">Ευκαιρίες</Link>
+                    <Link
+                      to={`/app/opportunities?profile=${encodeURIComponent(viewProfile.id)}`}
+                    >
+                      Ευκαιρίες
+                    </Link>
                   </Button>
                 </div>
               </div>
