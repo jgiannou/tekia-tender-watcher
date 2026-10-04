@@ -215,12 +215,19 @@ export const findSimilarWatchProfiles = async (
 };
 
 /**
- * A scan only lives inside one Node process, so a restart can leave `RUNNING`
- * behind forever. Fail orphaned scans after this window so the UI can retry.
- * Uses scanStartedAt (not updatedAt) so mid-scan writes do not reset the clock.
+ * Hard wall-clock budget for an active scan. After this the scan fails with
+ * `scan_timeout` and the user retries. Orphan reclaim uses a slightly larger
+ * window so a live scan is not marked failed twice.
  */
+const SCAN_HARD_TIMEOUT_MS = 3 * 60 * 1000;
 const STALE_SCAN_MS = 5 * 60 * 1000;
 const inflightScans = new Map<string, Promise<WatchProfile>>();
+
+const assertScanBudget = (startedAtMs: number): void => {
+  if (Date.now() - startedAtMs >= SCAN_HARD_TIMEOUT_MS) {
+    throw new Error("scan_timeout");
+  }
+};
 
 const scanStartedAtMs = (profile: WatchProfile): number => {
   const meta =
@@ -1006,6 +1013,7 @@ export const runWatchProfileScan = async (
   }
 
   const scanStartedAt = new Date().toISOString();
+  const scanStartedMs = Date.now();
   await prisma.watchProfile.update({
     where: { id: profileId },
     data: {
@@ -1032,10 +1040,12 @@ export const runWatchProfileScan = async (
   const previousMatchCount = profile.matchCount ?? 0;
 
   try {
+    assertScanBudget(scanStartedMs);
     const seenAdam = await scanCanonicalTenders(
       prisma,
       profile,
       async (tenderId, match) => {
+        assertScanBudget(scanStartedMs);
         matchedTenderIds.add(tenderId);
         const result = await linkOpportunityToProfile(prisma, {
           organizationId: profile.organizationId,
@@ -1057,11 +1067,15 @@ export const runWatchProfileScan = async (
     let variantsAttempted = 0;
     if (kimdis) {
       for (const filters of buildScanFilterVariants(profile)) {
+        assertScanBudget(scanStartedMs);
         variantsAttempted += 1;
         let items: KimdisSearchItem[] = [];
         try {
           items = await fetchAllKimdisItems(kimdis, filters);
         } catch (error) {
+          if (error instanceof Error && error.message === "scan_timeout") {
+            throw error;
+          }
           upstreamErrors.push(
             error instanceof Error ? error.message : "kimdis_variant_failed",
           );

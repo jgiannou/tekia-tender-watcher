@@ -81,6 +81,9 @@ const notificationLabel = (value?: string) => {
 const humanScanError = (error?: string | null) => {
   if (!error) return "";
   if (error === "kimdis_not_configured") return "το ΚΗΜΔΗΣ δεν ήταν διαθέσιμο";
+  if (error === "scan_timeout" || error.includes("scan_timeout")) {
+    return "έληξε το χρονικό όριο σάρωσης (3 λεπτά) — δοκιμάστε Επανάληψη";
+  }
   if (
     error === "scan_interrupted" ||
     error === "scan_interrupted_restart" ||
