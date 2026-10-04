@@ -127,20 +127,26 @@
   }
 
   /*
-   * Native calendar icons: apply color-scheme on the input itself, then force
-   * a white glyph via invert. Scope with html.dark for reliability.
+   * Native date/time picker icons in dark mode.
+   * Keep the input on light color-scheme so the glyph starts dark, then invert
+   * to white. (color-scheme:dark + invert made icons black again.)
    */
   html.dark input[type="date"],
   html.dark input[type="datetime-local"],
   html.dark input[type="time"],
   html.dark input[type="month"],
   html.dark input[type="week"],
+  html[data-theme="dark"] input[type="date"],
+  html[data-theme="dark"] input[type="datetime-local"],
+  html[data-theme="dark"] input[type="time"],
+  html[data-theme="dark"] input[type="month"],
+  html[data-theme="dark"] input[type="week"],
   .dark input[type="date"],
   .dark input[type="datetime-local"],
   .dark input[type="time"],
   .dark input[type="month"],
   .dark input[type="week"] {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   html.dark input[type="date"]::-webkit-calendar-picker-indicator,
@@ -148,6 +154,11 @@
   html.dark input[type="time"]::-webkit-calendar-picker-indicator,
   html.dark input[type="month"]::-webkit-calendar-picker-indicator,
   html.dark input[type="week"]::-webkit-calendar-picker-indicator,
+  html[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
+  html[data-theme="dark"] input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  html[data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator,
+  html[data-theme="dark"] input[type="month"]::-webkit-calendar-picker-indicator,
+  html[data-theme="dark"] input[type="week"]::-webkit-calendar-picker-indicator,
   .dark input[type="date"]::-webkit-calendar-picker-indicator,
   .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,
   .dark input[type="time"]::-webkit-calendar-picker-indicator,
@@ -155,6 +166,6 @@
   .dark input[type="week"]::-webkit-calendar-picker-indicator {
     cursor: pointer;
     opacity: 1;
-    filter: invert(1) brightness(1.4) contrast(1.1);
+    filter: invert(1) brightness(1.15);
   }
 }
