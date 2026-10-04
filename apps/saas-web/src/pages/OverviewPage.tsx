@@ -112,6 +112,17 @@ export const OverviewPage = () => {
     void load();
   }, [activeOrganization?.id, user?.name]);
 
+  // Keep the «Εκτελούμε…» banner honest while a scan is in flight.
+  useEffect(() => {
+    if (!activeOrganization || !overview || overview.scanningProfiles <= 0) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void load();
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [activeOrganization?.id, overview?.scanningProfiles]);
+
   const handleFollow = async (opportunity: Opportunity) => {
     if (!activeOrganization) return;
     try {

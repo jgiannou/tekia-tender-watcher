@@ -81,6 +81,19 @@ const notificationLabel = (value?: string) => {
 const humanScanError = (error?: string | null) => {
   if (!error) return "";
   if (error === "kimdis_not_configured") return "το ΚΗΜΔΗΣ δεν ήταν διαθέσιμο";
+  if (
+    error === "scan_interrupted" ||
+    error === "scan_interrupted_restart" ||
+    error.includes("scan_interrupted")
+  ) {
+    return "η σάρωση διακόπηκε (επανεκκίνηση ή μεγάλος χρόνος) — δοκιμάστε Επανάληψη";
+  }
+  if (error.includes("Foreign key") || error.includes("watchProfileId_fkey")) {
+    return "εσωτερικό σφάλμα συσχέτισης προφίλ — δοκιμάστε Επανάληψη";
+  }
+  if (error.includes("429") || error.toLowerCase().includes("rate")) {
+    return "το ΚΗΜΔΗΣ περιόρισε προσωρινά τα αιτήματα — δοκιμάστε ξανά σε λίγο";
+  }
   return error.length > 180 ? `${error.slice(0, 180)}…` : error;
 };
 

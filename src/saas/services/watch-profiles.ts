@@ -215,35 +215,56 @@ export const findSimilarWatchProfiles = async (
 };
 
 /**
- * A scan only lives inside one request, so a restart can leave `RUNNING`
- * behind forever. Anything older than this is treated as interrupted.
+ * A scan only lives inside one Node process, so a restart can leave `RUNNING`
+ * behind forever. Fail orphaned scans after this window so the UI can retry.
+ * Uses scanStartedAt (not updatedAt) so mid-scan writes do not reset the clock.
  */
-const STALE_SCAN_MS = 10 * 60 * 1000;
+const STALE_SCAN_MS = 5 * 60 * 1000;
+const inflightScans = new Map<string, Promise<WatchProfile>>();
+
+const scanStartedAtMs = (profile: WatchProfile): number => {
+  const meta =
+    typeof profile.customFilters === "object" && profile.customFilters
+      ? (profile.customFilters as Record<string, unknown>)
+      : {};
+  const raw = meta.scanStartedAt;
+  if (typeof raw === "string") {
+    const ms = new Date(raw).getTime();
+    if (!Number.isNaN(ms)) return ms;
+  }
+  return profile.updatedAt.getTime();
+};
 
 export const reclaimStaleWatchProfileScans = async (
   prisma: PrismaClient,
   organizationId?: string,
 ): Promise<number> => {
-  const stale = await prisma.watchProfile.findMany({
+  const candidates = await prisma.watchProfile.findMany({
     where: {
       ...(organizationId ? { organizationId } : {}),
       scanState: "RUNNING",
-      updatedAt: { lt: new Date(Date.now() - STALE_SCAN_MS) },
     },
   });
 
-  for (const profile of stale) {
+  let reclaimed = 0;
+  const now = Date.now();
+  for (const profile of candidates) {
+    // Never interrupt a scan that is still alive in this process.
+    if (inflightScans.has(profile.id)) continue;
+    if (now - scanStartedAtMs(profile) < STALE_SCAN_MS) continue;
     await prisma.watchProfile.update({
       where: { id: profile.id },
       data: {
         scanState: "FAILED",
         customFilters: mergeCustomFilters(profile, {
           lastScanError: "scan_interrupted",
+          scanStartedAt: null,
         }),
       },
     });
+    reclaimed += 1;
   }
-  return stale.length;
+  return reclaimed;
 };
 
 export const listWatchProfiles = async (
@@ -798,7 +819,30 @@ const linkOpportunityToProfile = async (
   }
 
   const prevMeta = parseMatchMeta(existing.matchMeta);
-  const matchMeta = mergeMatchMeta(prevMeta, entry);
+  const mergedMeta = mergeMatchMeta(prevMeta, entry);
+  // Drop deleted profile ids from matchMeta so later scans cannot FK-crash.
+  const livingIds = new Set(
+    (
+      await prisma.watchProfile.findMany({
+        where: {
+          organizationId: input.organizationId,
+          id: { in: mergedMeta.matchedProfiles.map((row) => row.id) },
+        },
+        select: { id: true },
+      })
+    ).map((row) => row.id),
+  );
+  livingIds.add(input.profile.id);
+  const matchedProfiles = mergedMeta.matchedProfiles.filter((row) =>
+    livingIds.has(row.id),
+  );
+  const matchMeta: OpportunityMatchMeta = {
+    matchedProfiles,
+    highestScore: matchedProfiles.reduce(
+      (max, row) => Math.max(max, row.score),
+      input.match.score,
+    ),
+  };
   const top = matchMeta.matchedProfiles[0];
   // Never write a deleted/stale profile id — FK would 500 the scan/update path.
   const watchProfileId = await resolveExistingWatchProfileId(prisma, {
@@ -956,14 +1000,21 @@ export const runWatchProfileScan = async (
 
   const startedRecently =
     profile.scanState === "RUNNING" &&
-    Date.now() - profile.updatedAt.getTime() < STALE_SCAN_MS;
+    Date.now() - scanStartedAtMs(profile) < STALE_SCAN_MS;
   if (startedRecently) {
     return profile;
   }
 
+  const scanStartedAt = new Date().toISOString();
   await prisma.watchProfile.update({
     where: { id: profileId },
-    data: { scanState: "RUNNING" },
+    data: {
+      scanState: "RUNNING",
+      customFilters: mergeCustomFilters(profile, {
+        scanStartedAt,
+        lastScanError: null,
+      }),
+    },
   });
 
   const criteria = criteriaFromWatchProfile(profile);
@@ -1100,6 +1151,7 @@ export const runWatchProfileScan = async (
           lastScanEvaluatedCount: matchedTenderIds.size,
           lastScanReconciledStale: reconciledStale,
           lastScanVariantCount: variantsAttempted,
+          scanStartedAt: null,
         }),
       },
     });
@@ -1121,13 +1173,12 @@ export const runWatchProfileScan = async (
           lastScanNewCount: newMatchIds.size,
           lastScanPreviousMatchCount: previousMatchCount,
           lastScanEvaluatedCount: matchedTenderIds.size,
+          scanStartedAt: null,
         }),
       },
     });
   }
 };
-
-const inflightScans = new Map<string, Promise<WatchProfile>>();
 
 /** Starts a scan without awaiting it. A second call for the same profile joins it. */
 export const enqueueWatchProfileScan = (

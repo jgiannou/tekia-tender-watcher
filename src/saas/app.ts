@@ -63,6 +63,7 @@ import {
   findSimilarWatchProfiles,
   getWatchProfile,
   listWatchProfiles,
+  reclaimStaleWatchProfileScans,
   setWatchProfileEnabled,
   toWatchProfileDto,
   triggerWatchProfileScanForRoute,
@@ -109,6 +110,9 @@ export const createSaasApp = (deps: SaasAppDeps) => {
   const companyRegistry =
     deps.companyRegistry ?? createCompanyRegistryProvider(config);
   const app = new Hono<{ Variables: SaasVariables }>();
+
+  // Orphan RUNNING scans survive process restarts — reclaim immediately on boot.
+  void reclaimStaleWatchProfileScans(deps.prisma).catch(() => null);
 
   app.use(
     "*",
