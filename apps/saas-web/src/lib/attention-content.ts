@@ -33,8 +33,10 @@ const asMeta = (value: unknown): AttentionMeta => {
 export const relativeAttentionTime = (iso: string): string => {
   const diff = Date.now() - new Date(iso).getTime();
   const minutes = Math.max(1, Math.round(diff / 60000));
+  if (minutes === 1) return "πριν 1 λεπτό";
   if (minutes < 60) return `πριν ${minutes} λεπτά`;
   const hours = Math.round(minutes / 60);
+  if (hours === 1) return "πριν 1 ώρα";
   if (hours < 48) return `πριν ${hours} ώρες`;
   return new Date(iso).toLocaleString("el-GR");
 };

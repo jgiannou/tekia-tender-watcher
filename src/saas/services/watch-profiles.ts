@@ -646,6 +646,25 @@ const ensureOpportunityDigestAttention = async (
 /** Scoring works on the KIMDIS search shape — reuse the shared adapter. */
 const searchItemFromTender = kimdisItemFromTender;
 
+/** Pick the first candidate profile id that still exists for this org. */
+const resolveExistingWatchProfileId = async (
+  prisma: PrismaClient,
+  input: {
+    organizationId: string;
+    candidateIds: Array<string | null | undefined>;
+  },
+): Promise<string | null> => {
+  for (const candidateId of input.candidateIds) {
+    if (!candidateId) continue;
+    const found = await prisma.watchProfile.findFirst({
+      where: { id: candidateId, organizationId: input.organizationId },
+      select: { id: true },
+    });
+    if (found) return found.id;
+  }
+  return null;
+};
+
 export const upsertOpportunityFromProfileMatch = async (
   prisma: PrismaClient,
   input: {
@@ -755,7 +774,11 @@ const linkOpportunityToProfile = async (
   const prevMeta = parseMatchMeta(existing.matchMeta);
   const matchMeta = mergeMatchMeta(prevMeta, entry);
   const top = matchMeta.matchedProfiles[0];
-  const watchProfileId = top?.id ?? existing.watchProfileId;
+  // Never write a deleted/stale profile id — FK would 500 the scan/update path.
+  const watchProfileId = await resolveExistingWatchProfileId(prisma, {
+    organizationId: input.organizationId,
+    candidateIds: [top?.id, existing.watchProfileId, input.profile.id],
+  });
 
   await prisma.organizationTender.update({
     where: { id: existing.id },
@@ -821,11 +844,15 @@ const reconcileStaleProfileMatches = async (
 
     const nextMeta = removeProfileFromMatchMeta(meta, input.profileId);
     const top = nextMeta.matchedProfiles[0];
+    const watchProfileId = await resolveExistingWatchProfileId(prisma, {
+      organizationId: input.organizationId,
+      candidateIds: [top?.id],
+    });
     await prisma.organizationTender.update({
       where: { id: row.id },
       data: {
         matchMeta: nextMeta as unknown as Prisma.InputJsonValue,
-        watchProfileId: top?.id ?? null,
+        watchProfileId,
         score: top?.score ?? null,
         scoreReasons: (top?.reasons ?? []) as Prisma.InputJsonValue,
         ...(top

@@ -510,7 +510,7 @@ const composeOverviewFromEndpoints = async (
     entitlementsRes,
     documentsRes,
   ] = await Promise.all([
-    saasApi.attention(organizationId),
+    saasApi.attention(organizationId).catch(() => ({ events: [] as AttentionEvent[] })),
     saasApi.monitoringState(organizationId),
     saasApi.listOpportunities(organizationId),
     saasApi.listWatchProfiles(organizationId),
@@ -674,7 +674,8 @@ const composeOverviewFromEndpoints = async (
     lastSystemScanAt: maxIso(profiles.map((p) => p.lastScannedAt)),
     latestMatchAt: maxIso(profiles.map((p) => p.lastMatchAt)),
     attention: sortAttentionEvents(attentionRes.events).slice(0, 8),
-    opportunities: opportunitiesRes.opportunities.slice(0, 5),
+    // Keep enough rows for Overview «Νέες ευκαιρίες» client pagination (3/page).
+    opportunities: opportunitiesRes.opportunities.slice(0, 30),
     monitoring,
     deadlines,
     documentsAttention,

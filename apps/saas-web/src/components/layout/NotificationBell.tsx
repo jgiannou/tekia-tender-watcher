@@ -9,6 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { attentionEventViewModel } from "@/lib/attention-content";
 import { attentionEventHref } from "@/lib/attention-routing";
 import { saasApi, type AttentionEvent } from "@/lib/api";
 
@@ -99,7 +100,7 @@ export const NotificationBell = () => {
                 type="button"
                 className="flex w-full cursor-pointer items-start gap-2 border-b border-border px-4 py-3 text-left hover:bg-muted/60"
                 onClick={() => void handleOpenEvent(event)}
-                aria-label={event.title}
+                aria-label={attentionEventViewModel(event).primaryFull}
               >
                 <AttentionEventContent event={event} className="flex-1" />
                 {!event.readAt ? (

@@ -198,7 +198,7 @@ export const OpportunitiesPage = () => {
           <span>
             Φίλτρο αποθηκευμένης αναζήτησης:{" "}
             <strong>{filterProfileName || profileFilter}</strong> · {filtered.length}{" "}
-            αποτελέσματα
+            {filtered.length === 1 ? "αποτέλεσμα" : "αποτελέσματα"}
           </span>
           <Button size="sm" variant="outline" onClick={handleClearProfileFilter}>
             Καθαρισμός φίλτρου

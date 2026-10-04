@@ -117,27 +117,33 @@ export const TenderDetailPage = () => {
       setTenderId(data.tender.id);
       setLoading(false);
 
-      const [oppData, workflowData] = await Promise.all([
-        saasApi.listOpportunities(activeOrganization.id).catch(() => ({
-          opportunities: [] as Opportunity[],
-        })),
-        saasApi.getTenderWorkflow(activeOrganization.id, data.tender.id),
-      ]);
-      setOpportunity(
-        oppData.opportunities.find(
-          (row) =>
-            row.tender.referenceNumber === data.item.adam ||
-            row.tender.id === data.tender.id,
-        ) ?? null,
-      );
-      setWorkflow(workflowData.workflow);
+      // Enrichment must not wipe a successful record load (transient workflow 500s).
+      try {
+        const [oppData, workflowData] = await Promise.all([
+          saasApi.listOpportunities(activeOrganization.id).catch(() => ({
+            opportunities: [] as Opportunity[],
+          })),
+          saasApi.getTenderWorkflow(activeOrganization.id, data.tender.id),
+        ]);
+        setOpportunity(
+          oppData.opportunities.find(
+            (row) =>
+              row.tender.referenceNumber === data.item.adam ||
+              row.tender.id === data.tender.id,
+          ) ?? null,
+        );
+        setWorkflow(workflowData.workflow);
 
-      if (workflowData.workflow.organizationTender) {
-        const ws = await saasApi
-          .tenderWorkspace(activeOrganization.id, data.tender.id)
-          .catch(() => null);
-        setWorkspace(ws);
-      } else {
+        if (workflowData.workflow.organizationTender) {
+          const ws = await saasApi
+            .tenderWorkspace(activeOrganization.id, data.tender.id)
+            .catch(() => null);
+          setWorkspace(ws);
+        } else {
+          setWorkspace(null);
+        }
+      } catch {
+        setWorkflow(null);
         setWorkspace(null);
       }
     } catch (err) {

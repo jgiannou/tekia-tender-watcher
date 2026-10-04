@@ -7,6 +7,7 @@ import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { attentionEventViewModel } from "@/lib/attention-content";
 import { attentionEventHref } from "@/lib/attention-routing";
 import { saasApi, type AttentionEvent } from "@/lib/api";
 
@@ -91,7 +92,7 @@ export const NotificationsPage = () => {
                   type="button"
                   className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 text-left"
                   onClick={() => void handleOpen(event)}
-                  aria-label={event.title}
+                  aria-label={attentionEventViewModel(event).primaryFull}
                 >
                   <AttentionEventContent event={event} className="flex-1" />
                   {!event.readAt ? <Badge variant="warning">Νέο</Badge> : null}

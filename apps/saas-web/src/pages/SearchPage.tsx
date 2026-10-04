@@ -639,7 +639,7 @@ export const SearchPage = () => {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">
-              {totalElements} αποτελέσματα
+              {totalElements === 1 ? "1 αποτέλεσμα" : `${totalElements} αποτελέσματα`}
               {totalPages ? ` · σελίδα ${currentPage} από ${totalPages}` : ""}
               {items.length > 0
                 ? ` · ${items.length} ανά σελίδα`

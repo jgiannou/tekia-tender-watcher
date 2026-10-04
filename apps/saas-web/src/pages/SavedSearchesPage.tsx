@@ -48,8 +48,10 @@ const formatRelative = (value?: string | null) => {
   const deltaMs = Date.now() - date.getTime();
   const minutes = Math.round(deltaMs / 60000);
   if (minutes < 1) return "μόλις τώρα";
+  if (minutes === 1) return "1 λεπτό πριν";
   if (minutes < 60) return `${minutes} λεπτά πριν`;
   const hours = Math.round(minutes / 60);
+  if (hours === 1) return "1 ώρα πριν";
   if (hours < 48) return `${hours} ώρες πριν`;
   return date.toLocaleString("el-GR");
 };
@@ -230,11 +232,19 @@ export const SavedSearchesPage = () => {
     profiles.filter((p) => p.enabled).length;
   const atActiveLimit = activeCount >= maxActive;
   const nearActiveLimit = activeCount >= Math.max(maxActive - 2, 0);
-  const pendingScanProfiles = profiles.filter(
+  const pendingInitialProfiles = profiles.filter(
     (profile) =>
-      profile.enabled &&
-      ["PENDING", "FAILED"].includes((profile.scanState ?? "PENDING").toUpperCase()),
+      profile.enabled && (profile.scanState ?? "PENDING").toUpperCase() === "PENDING",
   );
+  const failedScanProfiles = profiles.filter(
+    (profile) =>
+      profile.enabled && (profile.scanState ?? "").toUpperCase() === "FAILED",
+  );
+  const runningScanProfiles = profiles.filter(
+    (profile) =>
+      profile.enabled && (profile.scanState ?? "").toUpperCase() === "RUNNING",
+  );
+  const retryableScanProfiles = [...pendingInitialProfiles, ...failedScanProfiles];
 
   const wouldExceedActiveLimit = (
     form: WatchProfileInput & { id?: string },
@@ -375,11 +385,11 @@ export const SavedSearchesPage = () => {
     setBusy(true);
     try {
       await Promise.all(
-        pendingScanProfiles.map((profile) =>
+        retryableScanProfiles.map((profile) =>
           saasApi.scanWatchProfile(activeOrganization.id, profile.id),
         ),
       );
-      toast.success("Οι σαρώσεις ολοκληρώθηκαν");
+      toast.success("Ξεκίνησε η επανάληψη σαρώσεων");
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Αποτυχία σάρωσης");
@@ -430,18 +440,54 @@ export const SavedSearchesPage = () => {
         <Button onClick={openCreate}>Νέα Αποθηκευμένη Αναζήτηση</Button>
       </div>
 
-      {pendingScanProfiles.length > 0 ? (
+      {runningScanProfiles.length > 0 ? (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="py-3 text-sm">
+            {runningScanProfiles.length === 1
+              ? "1 σάρωση σε εξέλιξη…"
+              : `${runningScanProfiles.length} σαρώσεις σε εξέλιξη…`}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {pendingInitialProfiles.length > 0 ? (
         <Card className="border-primary/40 bg-primary/5">
           <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
             <span>
-              {pendingScanProfiles.length}{" "}
-              {pendingScanProfiles.length === 1
-                ? "αναζήτηση δεν έχει ολοκληρώσει σάρωση"
-                : "αναζητήσεις δεν έχουν ολοκληρώσει σάρωση"}
-              .
+              {pendingInitialProfiles.length === 1
+                ? "1 αναζήτηση εκκρεμεί αρχική σάρωση."
+                : `${pendingInitialProfiles.length} αναζητήσεις εκκρεμούν αρχική σάρωση.`}
             </span>
             <Button size="sm" disabled={busy} onClick={() => void handleRunPendingScans()}>
               {busy ? "Σάρωση…" : "Εκτέλεση σαρώσεων"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {failedScanProfiles.length > 0 ? (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+            <div className="min-w-0 space-y-1">
+              <div>
+                {failedScanProfiles.length === 1
+                  ? "Η τελευταία σάρωση απέτυχε."
+                  : `${failedScanProfiles.length} αναζητήσεις απέτυχαν στην τελευταία σάρωση.`}
+              </div>
+              {failedScanProfiles.slice(0, 2).map((profile) => (
+                <div key={profile.id} className="text-xs text-muted-foreground">
+                  {profile.name}
+                  {profile.scanError
+                    ? ` · ${humanScanError(profile.scanError)}`
+                    : ""}
+                  {profile.lastScannedAt
+                    ? ` · τελευταία προσπάθεια ${formatRelative(profile.lastScannedAt)}`
+                    : ""}
+                </div>
+              ))}
+            </div>
+            <Button size="sm" disabled={busy} onClick={() => void handleRunPendingScans()}>
+              {busy ? "Σάρωση…" : "Επανάληψη"}
             </Button>
           </CardContent>
         </Card>

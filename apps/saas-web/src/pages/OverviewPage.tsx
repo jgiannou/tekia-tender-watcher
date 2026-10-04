@@ -4,6 +4,7 @@ import { Eye, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { IconAction } from "@/components/IconAction";
+import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,8 @@ import {
 } from "@/lib/api";
 import { attentionEventHref } from "@/lib/attention-routing";
 
+const OVERVIEW_OPPORTUNITY_PAGE_SIZE = 3;
+
 const formatRelative = (value?: string | null) => {
   if (!value) return "—";
   const date = new Date(value);
@@ -23,8 +26,10 @@ const formatRelative = (value?: string | null) => {
   const deltaMs = Date.now() - date.getTime();
   const minutes = Math.round(deltaMs / 60000);
   if (minutes < 1) return "μόλις τώρα";
+  if (minutes === 1) return "1 λεπτό πριν";
   if (minutes < 60) return `${minutes} λεπτά πριν`;
   const hours = Math.round(minutes / 60);
+  if (hours === 1) return "1 ώρα πριν";
   if (hours < 48) return `${hours} ώρες πριν`;
   return date.toLocaleString("el-GR");
 };
@@ -117,6 +122,12 @@ export const OverviewPage = () => {
       toast.error(err instanceof Error ? err.message : "Αποτυχία παρακολούθησης");
     }
   };
+
+  const opportunityItems = overview?.opportunities ?? [];
+  const opportunityPages = usePaginatedList(opportunityItems, {
+    pageSize: OVERVIEW_OPPORTUNITY_PAGE_SIZE,
+    resetKey: `${activeOrganization?.id ?? ""}:${opportunityItems.map((row) => row.id).join("|")}`,
+  });
 
   if (sessionLoading || loading) return <PageSkeleton />;
 
@@ -276,7 +287,7 @@ export const OverviewPage = () => {
               </CardHeader>
               <CardContent className="space-y-3">
                 {digestAttention.length > 0
-                  ? digestAttention.slice(0, 3).map((event) => (
+                  ? digestAttention.slice(0, 2).map((event) => (
                       <div
                         key={event.id}
                         className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2.5"
@@ -303,91 +314,103 @@ export const OverviewPage = () => {
                       </div>
                     ))
                   : null}
-                {overview.opportunities.length === 0 && digestAttention.length === 0 ? (
+                {opportunityPages.total === 0 && digestAttention.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     Καμία πρόσφατη ευκαιρία.
                   </p>
                 ) : (
-                  overview.opportunities.map((opportunity) => {
-                    const meta = parseMatchMeta(opportunity.matchMeta);
-                    const topScore = meta?.highestScore ?? opportunity.score ?? 0;
-                    const profileName =
-                      meta?.matchedProfiles?.[0]?.name ??
-                      opportunity.watchProfile?.name ??
-                      "—";
-                    const reasonFromMeta = meta?.matchedProfiles?.[0]?.reasons?.[0];
-                    const reasonFromScore = Array.isArray(opportunity.scoreReasons)
-                      ? opportunity.scoreReasons[0]
-                      : null;
-                    const primaryReason =
-                      reasonFromMeta ||
-                      (reasonFromScore != null ? String(reasonFromScore) : null);
-                    return (
-                      <div
-                        key={opportunity.id}
-                        className="space-y-2 rounded-md border border-border p-3"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge>{opportunity.tender.recordType}</Badge>
-                          <Badge variant="secondary">{topScore}%</Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {profileName}
-                          </span>
-                        </div>
-                        <div className="font-medium leading-snug">
-                          {opportunity.tender.title || "—"}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {opportunity.tender.contractingAuthority || "—"} ·{" "}
-                          {formatMoney(opportunity.tender.budgetWithoutVat)}
-                        </div>
-                        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                          {formatDate(opportunity.tender.submissionDate) ? (
-                            <span>
-                              Καταχώριση: {formatDate(opportunity.tender.submissionDate)}
+                  <>
+                    {opportunityPages.pageItems.map((opportunity) => {
+                      const meta = parseMatchMeta(opportunity.matchMeta);
+                      const topScore = meta?.highestScore ?? opportunity.score ?? 0;
+                      const profileName =
+                        meta?.matchedProfiles?.[0]?.name ??
+                        opportunity.watchProfile?.name ??
+                        "—";
+                      const reasonFromMeta = meta?.matchedProfiles?.[0]?.reasons?.[0];
+                      const reasonFromScore = Array.isArray(opportunity.scoreReasons)
+                        ? opportunity.scoreReasons[0]
+                        : null;
+                      const primaryReason =
+                        reasonFromMeta ||
+                        (reasonFromScore != null ? String(reasonFromScore) : null);
+                      return (
+                        <div
+                          key={opportunity.id}
+                          className="space-y-2 rounded-md border border-border p-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge>{opportunity.tender.recordType}</Badge>
+                            <Badge variant="secondary">{topScore}%</Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {profileName}
                             </span>
-                          ) : null}
-                          {opportunity.tender.finalSubmissionDate ? (
-                            <span
-                              className={
-                                isExpiredDeadline(opportunity.tender.finalSubmissionDate)
-                                  ? "font-medium text-destructive"
-                                  : undefined
-                              }
-                            >
-                              {isExpiredDeadline(opportunity.tender.finalSubmissionDate)
-                                ? "Έληξε: "
-                                : "Καταληκτική: "}
-                              {formatDate(opportunity.tender.finalSubmissionDate)}
-                            </span>
-                          ) : null}
-                        </div>
-                        {primaryReason ? (
-                          <div className="text-xs text-muted-foreground">
-                            {primaryReason}
                           </div>
-                        ) : null}
-                        <div className="flex flex-wrap items-center gap-2">
-                          <IconAction
-                            label="Προεπισκόπηση PDF"
-                            onClick={() => setPdfPreview(opportunity)}
-                          >
-                            <Eye />
-                          </IconAction>
-                          <Button size="sm" variant="outline" asChild>
-                            <Link to={tenderPath(opportunity)}>Άνοιγμα</Link>
-                          </Button>
-                          {!opportunity.following ? (
-                            <Button size="sm" onClick={() => void handleFollow(opportunity)}>
-                              Παρακολούθηση
+                          <div className="font-medium leading-snug">
+                            {opportunity.tender.title || "—"}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {opportunity.tender.contractingAuthority || "—"} ·{" "}
+                            {formatMoney(opportunity.tender.budgetWithoutVat)}
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                            {formatDate(opportunity.tender.submissionDate) ? (
+                              <span>
+                                Καταχώριση: {formatDate(opportunity.tender.submissionDate)}
+                              </span>
+                            ) : null}
+                            {opportunity.tender.finalSubmissionDate ? (
+                              <span
+                                className={
+                                  isExpiredDeadline(opportunity.tender.finalSubmissionDate)
+                                    ? "font-medium text-destructive"
+                                    : undefined
+                                }
+                              >
+                                {isExpiredDeadline(opportunity.tender.finalSubmissionDate)
+                                  ? "Έληξε: "
+                                  : "Καταληκτική: "}
+                                {formatDate(opportunity.tender.finalSubmissionDate)}
+                              </span>
+                            ) : null}
+                          </div>
+                          {primaryReason ? (
+                            <div className="text-xs text-muted-foreground">
+                              {primaryReason}
+                            </div>
+                          ) : null}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <IconAction
+                              label="Προεπισκόπηση PDF"
+                              onClick={() => setPdfPreview(opportunity)}
+                            >
+                              <Eye />
+                            </IconAction>
+                            <Button size="sm" variant="outline" asChild>
+                              <Link to={tenderPath(opportunity)}>Άνοιγμα</Link>
                             </Button>
-                          ) : (
-                            <Badge variant="success">Παρακολουθείται</Badge>
-                          )}
+                            {!opportunity.following ? (
+                              <Button
+                                size="sm"
+                                onClick={() => void handleFollow(opportunity)}
+                              >
+                                Παρακολούθηση
+                              </Button>
+                            ) : (
+                              <Badge variant="success">Παρακολουθείται</Badge>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })
+                      );
+                    })}
+                    <Pagination
+                      page={opportunityPages.page}
+                      totalPages={opportunityPages.totalPages}
+                      total={opportunityPages.total}
+                      pageSize={opportunityPages.pageSize}
+                      onPageChange={opportunityPages.setPage}
+                    />
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -487,7 +510,9 @@ export const OverviewPage = () => {
                     έλεγχος {formatRelative(overview.lastSystemScanAt)} · νεότερη
                     αντιστοίχιση {formatRelative(overview.latestMatchAt)}
                     {failedScanCount > 0
-                      ? ` · ${failedScanCount} αποτυχημένες σαρώσεις`
+                      ? failedScanCount === 1
+                        ? " · 1 αποτυχημένη σάρωση"
+                        : ` · ${failedScanCount} αποτυχημένες σαρώσεις`
                       : ""}
                   </CardDescription>
                 </div>
