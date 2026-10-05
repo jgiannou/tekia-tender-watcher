@@ -653,7 +653,7 @@ export const TenderDetailPage = () => {
               <Badge variant="outline">{workflow.stageLabel}</Badge>
             ) : null}
           </div>
-          <h2 className="text-2xl font-semibold leading-snug tracking-tight">
+          <h2 className="text-xl font-semibold leading-snug tracking-tight sm:text-2xl">
             {item.title || "—"}
           </h2>
           <p className="text-sm text-muted-foreground">

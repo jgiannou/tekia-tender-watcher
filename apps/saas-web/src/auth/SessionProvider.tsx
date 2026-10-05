@@ -28,7 +28,7 @@ type SessionContextValue = {
   activeOrganization: SaasOrganization | null;
   refresh: () => Promise<void>;
   setActiveOrganizationId: (organizationId: string) => Promise<void>;
-  createOrganization: (name: string) => Promise<void>;
+  createOrganization: (name: string) => Promise<{ id: string; name: string }>;
   signOut: () => Promise<void>;
 };
 
@@ -83,8 +83,9 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
 
   const createOrganization = useCallback(
     async (name: string) => {
-      await saasApi.createOrganization(name);
+      const { organization } = await saasApi.createOrganization(name);
       await refresh();
+      return { id: organization.id, name: organization.name };
     },
     [refresh],
   );

@@ -23,6 +23,8 @@ import { CompanySettingsPage } from "@/pages/settings/CompanySettingsPage";
 import { TeamSettingsPage } from "@/pages/settings/TeamSettingsPage";
 import { ActivitiesSettingsPage } from "@/pages/settings/ActivitiesSettingsPage";
 import { NotificationsSettingsPage } from "@/pages/settings/NotificationsSettingsPage";
+import { LegalSettingsPage } from "@/pages/settings/LegalSettingsPage";
+import { LegalPublicPage } from "@/pages/legal/LegalPublicPage";
 import { SubscriptionPage } from "@/pages/SubscriptionPage";
 import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
 
@@ -35,6 +37,7 @@ export const App = () => (
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/accept-invite" element={<AcceptInvitePage />} />
+      <Route path="/legal/:docId" element={<LegalPublicPage />} />
       <Route element={<RequireAuth />}>
         <Route path="/app" element={<AppShell />}>
           <Route index element={<OverviewPage />} />
@@ -56,6 +59,8 @@ export const App = () => (
             <Route path="team" element={<TeamSettingsPage />} />
             <Route path="activities" element={<ActivitiesSettingsPage />} />
             <Route path="notifications" element={<NotificationsSettingsPage />} />
+            <Route path="legal" element={<LegalSettingsPage />} />
+            <Route path="legal/:docId" element={<LegalSettingsPage />} />
           </Route>
         </Route>
       </Route>

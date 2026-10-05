@@ -50,8 +50,29 @@ model User {
   members     OrganizationMember[]
   invitationsSent Invitation[] @relation("InvitationInviter")
   preference  UserPreference?
+  legalAcceptance LegalAcceptance?
 
   @@map("users")
+}
+
+/// Proof of Terms + Privacy acceptance at signup (or later re-accept).
+model LegalAcceptance {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  termsVersion   String
+  privacyVersion String
+  acceptedAt     DateTime @default(now())
+  ipAddress      String?
+  userAgent      String?
+  /// signup | reaccept
+  source         String   @default("signup")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([acceptedAt])
+  @@map("legal_acceptances")
 }
 
 /// Per-user UI preferences (theme belongs to the user, not the organization).

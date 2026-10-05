@@ -222,6 +222,13 @@ export type Opportunity = {
   };
 };
 
+export type LegalAcceptance = {
+  termsVersion: string;
+  privacyVersion: string;
+  acceptedAt: string;
+  source: string;
+};
+
 export type SaasMeResponse = {
   userId: string;
   user: SaasUser | null;
@@ -230,6 +237,8 @@ export type SaasMeResponse = {
   emailEnabled?: boolean;
   activeOrganizationId: string | null;
   organizations: SaasOrganization[];
+  legalAcceptance?: LegalAcceptance | null;
+  currentLegalVersions?: { terms: string; privacy: string };
 };
 
 export type AttentionEvent = {
@@ -1042,6 +1051,15 @@ export const saasApi = {
     request<{ theme: ThemePreference }>("/api/saas/me/preferences", {
       method: "PUT",
       body: JSON.stringify({ theme }),
+    }),
+  acceptLegal: (input: {
+    termsVersion: string;
+    privacyVersion: string;
+    source?: "signup" | "reaccept";
+  }) =>
+    request<{ legalAcceptance: LegalAcceptance }>("/api/saas/me/legal-acceptance", {
+      method: "POST",
+      body: JSON.stringify(input),
     }),
   createOrganization: (name: string) =>
     request<{ organization: { id: string; name: string; slug: string } }>(

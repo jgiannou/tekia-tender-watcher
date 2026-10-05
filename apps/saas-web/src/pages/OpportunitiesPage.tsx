@@ -240,7 +240,7 @@ export const OpportunitiesPage = () => {
         </div>
       ) : null}
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
           ["Χωρίς παρακολούθηση", String(unfollowed)],
           ["Υψηλή συνάφεια", String(highScore)],

@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { saasApi } from "@/lib/api";
+import { currentLegalAcceptancePayload } from "@/legal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,10 +20,15 @@ export const SignupPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [organizationName, setOrganizationName] = useState("ARC Tenders");
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!acceptedLegal) {
+      toast.error("Πρέπει να αποδεχτείτε τους Όρους Χρήσης και την Πολιτική Απορρήτου.");
+      return;
+    }
     setSubmitting(true);
     try {
       const result = await authClient.signUp.email({
@@ -39,6 +45,24 @@ export const SignupPage = () => {
       }
       if (session.data) {
         authClient.hydrateSession(session.data);
+      }
+
+      // Persist acceptance proof (version + timestamp + request metadata on server).
+      const legalVersions = currentLegalAcceptancePayload();
+      let acceptanceSaved = false;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await saasApi.acceptLegal({ ...legalVersions, source: "signup" });
+          acceptanceSaved = true;
+          break;
+        } catch {
+          await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+        }
+      }
+      if (!acceptanceSaved) {
+        throw new Error(
+          "Ο λογαριασμός δημιουργήθηκε αλλά η αποδοχή όρων απέτυχε. Συνδεθείτε και δοκιμάστε ξανά από τις Ρυθμίσεις → Νομικά.",
+        );
       }
 
       if (!inviteFlow) {
@@ -134,7 +158,62 @@ export const SignupPage = () => {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
-            <Button className="w-full" disabled={submitting} type="submit">
+
+            <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-3">
+              <label
+                htmlFor="accept-legal"
+                className="flex cursor-pointer items-start gap-3 text-sm leading-snug"
+              >
+                <input
+                  id="accept-legal"
+                  type="checkbox"
+                  checked={acceptedLegal}
+                  onChange={(e) => setAcceptedLegal(e.target.checked)}
+                  required
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-border accent-primary"
+                  aria-label="Αποδοχή Όρων Χρήσης και Πολιτικής Απορρήτου"
+                />
+                <span className="text-muted-foreground">
+                  Αποδέχομαι τους{" "}
+                  <Link
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                    to="/legal/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Όρους Χρήσης
+                  </Link>{" "}
+                  και την{" "}
+                  <Link
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                    to="/legal/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Πολιτική Απορρήτου
+                  </Link>
+                  . Έχω ενημερωθεί για τα{" "}
+                  <Link
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                    to="/legal/cookies"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    cookies
+                  </Link>
+                  .
+                </span>
+              </label>
+            </div>
+
+            <Button
+              className="w-full"
+              disabled={submitting || !acceptedLegal}
+              type="submit"
+            >
               {submitting ? "Δημιουργία…" : "Δημιουργία λογαριασμού"}
             </Button>
           </form>

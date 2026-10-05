@@ -60,6 +60,7 @@ export const resetSaasDatabase = async (prisma: PrismaClient) => {
   await prisma.account.deleteMany();
   await prisma.verification.deleteMany();
   await prisma.userPreference.deleteMany();
+  await prisma.legalAcceptance.deleteMany();
   await prisma.organization.deleteMany();
   await prisma.user.deleteMany();
   await prisma.tender.deleteMany();

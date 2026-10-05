@@ -29,6 +29,11 @@ import {
   setActiveOrganization,
 } from "./services/organizations.js";
 import {
+  getLegalAcceptance,
+  recordLegalAcceptance,
+} from "./services/legal-acceptance.js";
+import { CURRENT_LEGAL_VERSIONS } from "./legal/versions.js";
+import {
   acceptOrganizationInvitation,
   cancelOrganizationInvitation,
   createOrganizationInvitation,
@@ -193,7 +198,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
 
   app.get("/api/saas/me", requireSession, async (c) => {
     const userId = c.get("userId");
-    const [memberships, user, preference] = await Promise.all([
+    const [memberships, user, preference, legalAcceptance] = await Promise.all([
       listUserOrganizations(deps.prisma, userId),
       deps.prisma.user.findUnique({
         where: { id: userId },
@@ -206,7 +211,26 @@ export const createSaasApp = (deps: SaasAppDeps) => {
         },
       }),
       getUserPreference(deps.prisma, userId),
+      getLegalAcceptance(deps.prisma, userId),
     ]);
+
+    // New Better Auth sessions often start with null activeOrganizationId.
+    // Heal to the first membership so org-scoped APIs keep returning data.
+    let activeOrganizationId = c.get("activeOrganizationId");
+    const membershipIds = new Set(memberships.map((m) => m.organization.id));
+    if (
+      (!activeOrganizationId || !membershipIds.has(activeOrganizationId)) &&
+      memberships[0]
+    ) {
+      activeOrganizationId = memberships[0].organization.id;
+      await setActiveOrganization(deps.prisma, {
+        userId,
+        sessionToken: c.get("sessionToken"),
+        organizationId: activeOrganizationId,
+      });
+      c.set("activeOrganizationId", activeOrganizationId);
+    }
+
     return c.json({
       userId,
       user: user
@@ -221,14 +245,52 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       theme: preference.theme,
       gemiConfigured: companyRegistry.isConfigured(),
       emailEnabled: String(process.env.EMAIL_ENABLED || "").toLowerCase() === "true",
-      activeOrganizationId: c.get("activeOrganizationId"),
+      activeOrganizationId,
       organizations: memberships.map((m) => ({
         id: m.organization.id,
         name: m.organization.name,
         slug: m.organization.slug,
         role: m.role,
       })),
+      legalAcceptance: legalAcceptance
+        ? {
+            termsVersion: legalAcceptance.termsVersion,
+            privacyVersion: legalAcceptance.privacyVersion,
+            acceptedAt: legalAcceptance.acceptedAt.toISOString(),
+            source: legalAcceptance.source,
+          }
+        : null,
+      currentLegalVersions: CURRENT_LEGAL_VERSIONS,
     });
+  });
+
+  app.post("/api/saas/me/legal-acceptance", requireSession, async (c) => {
+    const body = z
+      .object({
+        termsVersion: z.string().min(1),
+        privacyVersion: z.string().min(1),
+        source: z.enum(["signup", "reaccept"]).optional(),
+      })
+      .parse(await c.req.json());
+    const acceptance = await recordLegalAcceptance(deps.prisma, {
+      userId: c.get("userId"),
+      termsVersion: body.termsVersion,
+      privacyVersion: body.privacyVersion,
+      source: body.source ?? "signup",
+      ipAddress: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      userAgent: c.req.header("user-agent") ?? null,
+    });
+    return c.json(
+      {
+        legalAcceptance: {
+          termsVersion: acceptance.termsVersion,
+          privacyVersion: acceptance.privacyVersion,
+          acceptedAt: acceptance.acceptedAt.toISOString(),
+          source: acceptance.source,
+        },
+      },
+      201,
+    );
   });
 
   app.patch("/api/saas/me/profile", requireSession, async (c) => {

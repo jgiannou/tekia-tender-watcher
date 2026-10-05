@@ -25,6 +25,10 @@ const sections = [
     title: "Χρέωση",
     items: [{ to: "/app/subscription", label: "Συνδρομή / πλάνα" }],
   },
+  {
+    title: "Νομικά",
+    items: [{ to: "/app/settings/legal", label: "Όροι & απόρρητο" }],
+  },
 ] as const;
 
 export const SettingsLayout = () => (
@@ -36,20 +40,20 @@ export const SettingsLayout = () => (
           Διαμόρφωση λογαριασμού και οργανισμού.
         </p>
       </div>
-      <nav className="space-y-4" aria-label="Ρυθμίσεις">
+      <nav className="space-y-3" aria-label="Ρυθμίσεις">
         {sections.map((section) => (
           <div key={section.title}>
             <div className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {section.title}
             </div>
-            <div className="space-y-0.5">
+            <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:block lg:space-y-0.5 lg:overflow-visible lg:px-0 lg:pb-0">
               {section.items.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   className={({ isActive }) =>
                     cn(
-                      "block rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                      "block shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                       isActive && "bg-muted font-medium text-foreground",
                     )
                   }

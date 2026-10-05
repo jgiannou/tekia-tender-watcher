@@ -169,6 +169,41 @@ describe("SaaS cross-tenant isolation", () => {
     expect(forbidden().status).toBe(403);
   });
 
+  it("blocks creating more than 3 owned organizations per account", async () => {
+    const { app } = createSaasTestApp(prisma);
+    const user = await signUpAndGetCookie(app, {
+      name: "Limit User",
+      email: `limit-${Date.now()}@example.com`,
+      password: "password123",
+    });
+
+    for (let i = 1; i <= 3; i += 1) {
+      const created = await authedJson<{ organization: { id: string } }>(
+        app,
+        "/api/saas/organizations",
+        {
+          cookie: user.cookie,
+          method: "POST",
+          body: { name: `Owned Org ${i}` },
+        },
+      );
+      expect(created.status).toBe(201);
+    }
+
+    const blocked = await authedJson<{ message?: string; error?: string }>(
+      app,
+      "/api/saas/organizations",
+      {
+        cookie: user.cookie,
+        method: "POST",
+        body: { name: "Owned Org 4" },
+      },
+    );
+    expect(blocked.status).toBe(409);
+    expect(blocked.json.error).toBe("conflict");
+    expect(blocked.json.message).toMatch(/3 οργανισμούς/);
+  });
+
   it("service-level membership is required even without HTTP", async () => {
     const userA = await prisma.user.create({
       data: { name: "Svc A", email: "svc-a@example.com", emailVerified: true },

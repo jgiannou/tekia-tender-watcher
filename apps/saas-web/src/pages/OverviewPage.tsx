@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Eye, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
+import { CreateOrganizationDialog } from "@/components/CreateOrganizationDialog";
 import { IconAction } from "@/components/IconAction";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
@@ -84,12 +85,12 @@ export const OverviewPage = () => {
     activeOrganization,
     user,
     loading: sessionLoading,
-    createOrganization,
   } = useSessionContext();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overview, setOverview] = useState<SaasOverview | null>(null);
   const [pdfPreview, setPdfPreview] = useState<Opportunity | null>(null);
+  const [createOrgOpen, setCreateOrgOpen] = useState(false);
 
   const load = async () => {
     if (!activeOrganization) {
@@ -145,15 +146,18 @@ export const OverviewPage = () => {
 
   if (!activeOrganization) {
     return (
-      <EmptyState
-        title="Δημιουργήστε οργανισμό"
-        description="Μετά την εγγραφή δημιουργήστε οργανισμό για να ξεκινήσετε."
-        actionLabel="Δημιουργία οργανισμού"
-        onAction={() => {
-          const name = window.prompt("Όνομα οργανισμού");
-          if (name?.trim()) void createOrganization(name.trim());
-        }}
-      />
+      <>
+        <EmptyState
+          title="Δημιουργήστε οργανισμό"
+          description="Μετά την εγγραφή δημιουργήστε οργανισμό για να ξεκινήσετε — ξεχωριστή εταιρεία με δωρεάν δοκιμή."
+          actionLabel="Δημιουργία οργανισμού"
+          onAction={() => setCreateOrgOpen(true)}
+        />
+        <CreateOrganizationDialog
+          open={createOrgOpen}
+          onOpenChange={setCreateOrgOpen}
+        />
+      </>
     );
   }
 
@@ -286,8 +290,8 @@ export const OverviewPage = () => {
             }`}
           >
             <Card>
-              <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
-                <div>
+              <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
+                <div className="min-w-0">
                   <CardTitle className="text-base">Νέες ευκαιρίες</CardTitle>
                   <CardDescription>
                     Από τις αποθηκευμένες αναζητήσεις σας.
@@ -429,7 +433,7 @@ export const OverviewPage = () => {
 
             {nextActions.length > 0 ? (
               <Card>
-                <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
+                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
                   <div>
                     <CardTitle className="text-base">Επόμενες ενέργειες</CardTitle>
                     <CardDescription>
@@ -466,7 +470,7 @@ export const OverviewPage = () => {
 
           {overview.monitoring.length > 0 ? (
             <Card>
-              <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
+              <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
                 <div>
                   <CardTitle className="text-base">Παρακολουθούμενα</CardTitle>
                   <CardDescription>
@@ -569,7 +573,7 @@ export const OverviewPage = () => {
 
             {overview.documentsAttention.length > 0 ? (
               <Card>
-                <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-3">
+                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
                   <div>
                     <CardTitle className="text-base">Έγγραφα που λήγουν</CardTitle>
                     <CardDescription>

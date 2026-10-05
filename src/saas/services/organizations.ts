@@ -1,8 +1,14 @@
 import type { MemberRole, PrismaClient } from "@prisma/client";
-import { badRequest, forbidden, notFound } from "../errors.js";
+import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { requireOrgMembership } from "../auth/org-context.js";
 import { PLAN_KEYS, TRIAL_DURATION_MS } from "../plans/catalog.js";
 import { assertCanAddOrganizationMember } from "./entitlements.js";
+
+/** Max organizations a single user may create/own (anti trial-spam). Invites do not count. */
+export const MAX_OWNED_ORGANIZATIONS = 3;
+
+const OWNED_ORG_LIMIT_MESSAGE =
+  "Μπορείτε να δημιουργήσετε έως 3 οργανισμούς με τον ίδιο λογαριασμό.";
 
 const slugify = (name: string): string =>
   name
@@ -12,6 +18,11 @@ const slugify = (name: string): string =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 48) || `org-${Date.now()}`;
 
+export const countOwnedOrganizations = (prisma: PrismaClient, userId: string) =>
+  prisma.organizationMember.count({
+    where: { userId, role: "OWNER" },
+  });
+
 export const createOrganization = async (
   prisma: PrismaClient,
   input: { userId: string; name: string; slug?: string },
@@ -19,11 +30,23 @@ export const createOrganization = async (
   const name = input.name.trim();
   if (!name) throw badRequest("organization_name_required");
 
+  const ownedCount = await countOwnedOrganizations(prisma, input.userId);
+  if (ownedCount >= MAX_OWNED_ORGANIZATIONS) {
+    throw conflict(OWNED_ORG_LIMIT_MESSAGE);
+  }
+
   let slug = (input.slug?.trim() || slugify(name)).toLowerCase();
   const existing = await prisma.organization.findUnique({ where: { slug } });
   if (existing) slug = `${slug}-${Date.now().toString(36)}`;
 
   return prisma.$transaction(async (tx) => {
+    const ownedInTx = await tx.organizationMember.count({
+      where: { userId: input.userId, role: "OWNER" },
+    });
+    if (ownedInTx >= MAX_OWNED_ORGANIZATIONS) {
+      throw conflict(OWNED_ORG_LIMIT_MESSAGE);
+    }
+
     const organization = await tx.organization.create({
       data: { name, slug },
     });
