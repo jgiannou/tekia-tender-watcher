@@ -210,9 +210,9 @@ export const OverviewPage = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-2xl font-semibold tracking-tight">
             Καλημέρα, {displayName}
           </h2>
@@ -269,13 +269,13 @@ export const OverviewPage = () => {
         </Card>
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {metrics.map((metric) => (
               <Link
                 key={metric.label}
                 to={metric.href}
                 title={metric.hint}
-                className="rounded-lg border border-border px-4 py-3 transition-colors hover:bg-muted/40"
+                className="min-w-0 rounded-lg border border-border px-4 py-3 transition-colors hover:bg-muted/40"
               >
                 <div className="text-xs text-muted-foreground">{metric.label}</div>
                 <div className="mt-1 text-2xl font-semibold">{metric.value}</div>
@@ -285,12 +285,12 @@ export const OverviewPage = () => {
           </div>
 
           <div
-            className={`grid gap-4 ${
+            className={`grid min-w-0 gap-4 ${
               nextActions.length === 0 ? "lg:grid-cols-1" : "lg:grid-cols-2"
             }`}
           >
-            <Card>
-              <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
+            <Card className="min-w-0 overflow-hidden">
+              <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 p-4 pb-3 sm:p-5 sm:pb-3">
                 <div className="min-w-0">
                   <CardTitle className="text-base">Νέες ευκαιρίες</CardTitle>
                   <CardDescription>
@@ -301,17 +301,19 @@ export const OverviewPage = () => {
                   <Link to="/app/opportunities">Όλες</Link>
                 </Button>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="min-w-0 space-y-3 p-4 pt-0 sm:p-5 sm:pt-0">
                 {digestAttention.length > 0
                   ? digestAttention.slice(0, 2).map((event) => (
                       <div
                         key={event.id}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2.5"
+                        className="flex min-w-0 flex-col gap-2 rounded-md border border-border px-3 py-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
                       >
-                        <div className="min-w-0 text-sm font-medium">{event.title}</div>
-                        <div className="flex gap-2">
+                        <div className="min-w-0 break-words text-sm font-medium">
+                          {event.title}
+                        </div>
+                        <div className="flex min-w-0 flex-wrap gap-2">
                           <Button size="sm" variant="outline" asChild>
-                            <Link to={attentionEventHref(event)}>Προβολή ευκαιριών</Link>
+                            <Link to={attentionEventHref(event)}>Προβολή</Link>
                           </Button>
                           {!event.readAt ? (
                             <Button
@@ -323,7 +325,7 @@ export const OverviewPage = () => {
                                   .then(load)
                               }
                             >
-                              Σήμανση ειδοποίησης ως αναγνωσμένης
+                              Αναγνώστηκε
                             </Button>
                           ) : null}
                         </div>
@@ -353,19 +355,19 @@ export const OverviewPage = () => {
                       return (
                         <div
                           key={opportunity.id}
-                          className="space-y-2 rounded-md border border-border p-3"
+                          className="min-w-0 space-y-2 rounded-md border border-border p-3"
                         >
-                          <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <Badge>{opportunity.tender.recordType}</Badge>
                             <ScoreBadge score={topScore} />
-                            <span className="text-xs text-muted-foreground">
+                            <span className="min-w-0 break-words text-xs text-muted-foreground">
                               {profileName}
                             </span>
                           </div>
-                          <div className="font-medium leading-snug">
+                          <div className="break-words font-medium leading-snug">
                             {opportunity.tender.title || "—"}
                           </div>
-                          <div className="text-sm text-muted-foreground">
+                          <div className="break-words text-sm text-muted-foreground">
                             {opportunity.tender.contractingAuthority || "—"} ·{" "}
                             {formatMoney(opportunity.tender.budgetWithoutVat)}
                           </div>
@@ -391,7 +393,7 @@ export const OverviewPage = () => {
                             ) : null}
                           </div>
                           {primaryReason ? (
-                            <div className="text-xs text-muted-foreground">
+                            <div className="break-words text-xs text-muted-foreground">
                               {primaryReason}
                             </div>
                           ) : null}
@@ -432,7 +434,7 @@ export const OverviewPage = () => {
             </Card>
 
             {nextActions.length > 0 ? (
-              <Card>
+              <Card className="min-w-0 overflow-hidden">
                 <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
                   <div>
                     <CardTitle className="text-base">Επόμενες ενέργειες</CardTitle>

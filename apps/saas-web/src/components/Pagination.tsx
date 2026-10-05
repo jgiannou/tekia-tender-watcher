@@ -43,27 +43,29 @@ export const Pagination = ({
   return (
     <nav
       aria-label="Σελιδοποίηση"
-      className="flex flex-wrap items-center justify-between gap-3 pt-1"
+      className="flex min-w-0 flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3"
     >
-      <p className="text-xs text-muted-foreground">
+      <p className="min-w-0 text-xs text-muted-foreground">
         {total == null
           ? `Σελίδα ${page}${totalPages > 0 ? ` από ${totalPages}` : ""}`
           : `Εμφάνιση ${rangeStart}–${rangeEnd} από ${total}`}
       </p>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
         <Button
           variant="outline"
           size="sm"
           disabled={disabled || page <= 1}
           onClick={() => onPageChange(page - 1)}
         >
-          Προηγούμενη
+          <span className="sm:hidden">Προηγ.</span>
+          <span className="hidden sm:inline">Προηγούμενη</span>
         </Button>
         {pages.map((item) => (
           <Button
             key={item}
             variant={item === page ? "default" : "outline"}
             size="sm"
+            className="min-w-8 px-2.5"
             disabled={disabled}
             onClick={() => onPageChange(item)}
             aria-label={`Σελίδα ${item}`}
@@ -78,7 +80,8 @@ export const Pagination = ({
           disabled={disabled || !canGoNext}
           onClick={() => onPageChange(page + 1)}
         >
-          Επόμενη
+          <span className="sm:hidden">Επόμ.</span>
+          <span className="hidden sm:inline">Επόμενη</span>
         </Button>
       </div>
     </nav>
