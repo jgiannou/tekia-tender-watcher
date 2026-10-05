@@ -129,12 +129,17 @@ export const createAdminRoutes = (deps: {
    * Ops bootstrap: verify email + set org plan (trial|basic|pro) without Stripe.
    * Used by ARC Tenders Ops Desk / one-shot grants. Requires SAAS_ENABLED + Prisma.
    */
-  app.post("/admin/saas/grant-plan", async (c) => {
+  const grantPlanHandler = async (c: {
+    req: { json: () => Promise<unknown> };
+    json: (body: unknown, status?: number) => Response;
+  }) => {
     const schema = z.object({
       email: z.string().email(),
       planKey: z.enum(["trial", "basic", "pro"]).default("pro"),
       organizationId: z.string().min(1).optional(),
       verifyEmail: z.boolean().optional().default(true),
+      /** Optional: reset credential password (ops bootstrap). */
+      password: z.string().min(8).optional(),
     });
     let body: unknown = {};
     try {
@@ -172,6 +177,30 @@ export const createAdminRoutes = (deps: {
           where: { id: user.id },
           data: { emailVerified: true },
         });
+      }
+
+      if (parsed.data.password) {
+        const { hashPassword } = await import("better-auth/crypto");
+        const hashed = await hashPassword(parsed.data.password);
+        const account = await prisma.account.findFirst({
+          where: { userId: user.id, providerId: "credential" },
+        });
+        if (account) {
+          await prisma.account.update({
+            where: { id: account.id },
+            data: { password: hashed },
+          });
+        } else {
+          await prisma.account.create({
+            data: {
+              id: `cred_${user.id}`,
+              accountId: user.id,
+              providerId: "credential",
+              userId: user.id,
+              password: hashed,
+            },
+          });
+        }
       }
 
       const memberships = await prisma.organizationMember.findMany({
@@ -218,7 +247,6 @@ export const createAdminRoutes = (deps: {
           planKey,
           trialEndsAt,
           cancelAtPeriodEnd: false,
-          canceledAt: null,
         },
       });
 
@@ -248,7 +276,10 @@ export const createAdminRoutes = (deps: {
         500,
       );
     }
-  });
+  };
+
+  app.post("/admin/saas/grant-plan", grantPlanHandler);
+  app.post("/admin/grant-plan", grantPlanHandler);
 
   return app;
 };
