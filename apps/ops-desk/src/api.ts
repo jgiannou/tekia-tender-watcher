@@ -9,6 +9,10 @@ export type OpsStats = {
   users: number;
   organizations: number;
   memberships: number;
+  usersLast7d?: number;
+  usersLast24h?: number;
+  orgsLast7d?: number;
+  unverifiedUsers?: number;
   byPlan: {
     trial: number;
     basic: number;

@@ -4,6 +4,7 @@ import {
   createSandbox,
   fetchHealthOps,
   fetchLogs,
+  fetchProductEvents,
   fetchRequests,
   fetchStats,
   grantPlan,
@@ -17,6 +18,7 @@ import {
   type HealthOps,
   type LogEntry,
   type OpsStats,
+  type ProductEventEntry,
   type RequestEntry,
 } from "./api";
 import { DetailModal, type DrillState } from "./DetailModal";
@@ -50,6 +52,8 @@ export const App = () => {
   const [stats, setStats] = useState<OpsStats | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [requests, setRequests] = useState<RequestEntry[]>([]);
+  const [productEvents, setProductEvents] = useState<ProductEventEntry[]>([]);
+  const [productEventType, setProductEventType] = useState("all");
   const [health, setHealth] = useState<HealthOps | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -89,6 +93,7 @@ export const App = () => {
     setStats(null);
     setLogs([]);
     setRequests([]);
+    setProductEvents([]);
     setHealth(null);
     setSavedNote(
       isElectron
@@ -106,6 +111,7 @@ export const App = () => {
     setStats(null);
     setLogs([]);
     setRequests([]);
+    setProductEvents([]);
     setHealth(null);
     setError(null);
     setDrill(null);
@@ -126,10 +132,15 @@ export const App = () => {
         fetchLogs(cfg, { level: logLevel, limit: 100, q: query }),
         fetchRequests(cfg, { errors: errorsOnlyHttp, limit: 100 }),
         fetchHealthOps(cfg),
+        fetchProductEvents(cfg, {
+          limit: 40,
+          type: productEventType === "all" ? undefined : productEventType,
+        }),
       ]);
-      const [logsResult, requestsResult, healthResult] = settled;
+      const [logsResult, requestsResult, healthResult, eventsResult] = settled;
       setLogs(logsResult.status === "fulfilled" ? logsResult.value : []);
       setRequests(requestsResult.status === "fulfilled" ? requestsResult.value : []);
+      setProductEvents(eventsResult.status === "fulfilled" ? eventsResult.value : []);
       setHealth(
         healthResult.status === "fulfilled"
           ? healthResult.value
@@ -148,7 +159,11 @@ export const App = () => {
             },
       );
       const failed = settled
-        .map((r, i) => (r.status === "rejected" ? (["logs", "requests", "health"] as const)[i] : null))
+        .map((r, i) =>
+          r.status === "rejected"
+            ? (["logs", "requests", "health", "product-events"] as const)[i]
+            : null,
+        )
         .filter(Boolean);
       if (failed.length > 0) {
         setError(`Connected to stats. Missing ops routes: ${failed.join(", ")} — deploy latest API.`);
@@ -168,7 +183,7 @@ export const App = () => {
     const id = window.setInterval(() => void refresh(config), config.pollSeconds * 1000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config, logLevel, errorsOnlyHttp]);
+  }, [config, logLevel, errorsOnlyHttp, productEventType]);
 
   const openExternalUrl = async (url: string) => {
     if (window.arcTendersOps?.openExternal) {
@@ -247,9 +262,22 @@ export const App = () => {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <h1>ARC Tenders Ops</h1>
+          <h1>
+            <img
+              src="/favicon.png"
+              alt=""
+              width={28}
+              height={28}
+              style={{
+                verticalAlign: "middle",
+                marginRight: 10,
+                borderRadius: 7,
+              }}
+            />
+            ARC Tenders Ops
+          </h1>
           <p>
-            {activePreset.label} pulse — users, plans, errors &amp; logs
+            {activePreset.label} pulse — signups, product actions, plans &amp; errors
             {isElectron ? " · Electron" : ""}
           </p>
         </div>
@@ -426,7 +454,11 @@ export const App = () => {
             >
               <div className="label">Users</div>
               <div className="value">{stats?.users ?? "—"}</div>
-              <div className="sub">{stats ? `${stats.memberships} memberships · open` : "—"}</div>
+              <div className="sub">
+                {stats
+                  ? `+${stats.usersLast24h ?? 0} 24h · +${stats.usersLast7d ?? 0} 7d · unverified ${stats.unverifiedUsers ?? 0}`
+                  : "—"}
+              </div>
             </button>
             <button
               type="button"
@@ -438,7 +470,7 @@ export const App = () => {
               <div className="value">{stats?.organizations ?? "—"}</div>
               <div className="sub">
                 {stats
-                  ? `active ${stats.byBillingStatus.active} · past due ${stats.byBillingStatus.past_due}`
+                  ? `+${stats.orgsLast7d ?? 0} 7d · active ${stats.byBillingStatus.active} · past due ${stats.byBillingStatus.past_due}`
                   : "—"}
               </div>
             </button>
@@ -598,6 +630,87 @@ export const App = () => {
               </div>
             </section>
           </div>
+
+          <section className="panel fade-in panel-wide" aria-label="Product analytics">
+            <div className="panel-toolbar">
+              <h3>Product events</h3>
+              <div className="top-actions">
+                <select
+                  aria-label="Product event type filter"
+                  value={productEventType}
+                  onChange={(e) => setProductEventType(e.target.value)}
+                >
+                  <option value="all">all types</option>
+                  <option value="user_signed_up">user_signed_up</option>
+                  <option value="email_verified">email_verified</option>
+                  <option value="login_succeeded">login_succeeded</option>
+                  <option value="organization_created">organization_created</option>
+                  <option value="trial_started">trial_started</option>
+                  <option value="watch_profile_created">watch_profile_created</option>
+                  <option value="tender_followed">tender_followed</option>
+                  <option value="checkout_started">checkout_started</option>
+                  <option value="subscription_started">subscription_started</option>
+                </select>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() =>
+                    openDrill({ kind: "product-events", title: "Product events" })
+                  }
+                  disabled={!connected}
+                  aria-label="Open full product events list"
+                >
+                  Open full list
+                </button>
+              </div>
+            </div>
+            <div className="panel-body" style={{ maxHeight: 280 }}>
+              {productEvents.length === 0 ? (
+                <div className="empty">
+                  No product events yet — new signups, logins, orgs, follows, and checkouts appear here.
+                </div>
+              ) : (
+                productEvents.slice(0, 40).map((row) => (
+                  <button
+                    type="button"
+                    className="row evt clickable-row"
+                    key={row.id}
+                    onClick={() => {
+                      if (row.userId) {
+                        const label =
+                          row.userEmail ||
+                          row.userName ||
+                          `${row.userId.slice(0, 10)}…`;
+                        openDrill({
+                          kind: "trial-activity",
+                          title: `Activity · ${label}`,
+                          userId: row.userId,
+                        });
+                        return;
+                      }
+                      openDrill({ kind: "product-events", title: "Product events" });
+                    }}
+                    aria-label={`Open timeline for ${row.type}`}
+                  >
+                    <div className="ts">{formatTime(row.createdAt)}</div>
+                    <div className="level info">{row.type}</div>
+                    <div className="msg">
+                      {row.userEmail ||
+                        row.userName ||
+                        (row.entityType && row.entityId
+                          ? `${row.entityType}:${row.entityId.slice(0, 12)}…`
+                          : row.userId
+                            ? `user ${row.userId.slice(0, 12)}…`
+                            : "—")}
+                      {row.organizationName ? (
+                        <code>{row.organizationName}</code>
+                      ) : null}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
         </main>
       </div>
 

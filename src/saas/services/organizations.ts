@@ -1,6 +1,7 @@
 import type { MemberRole, PrismaClient } from "@prisma/client";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { requireOrgMembership } from "../auth/org-context.js";
+import { trackProductEventSafe } from "../ops/product-events.js";
 import { PLAN_KEYS, TRIAL_DURATION_MS } from "../plans/catalog.js";
 import { assertCanAddOrganizationMember } from "./entitlements.js";
 
@@ -91,6 +92,22 @@ export const createOrganization = async (
         trialEndsAt: new Date(Date.now() + TRIAL_DURATION_MS),
         extraSeats: 0,
       },
+    });
+    return organization;
+  }).then((organization) => {
+    trackProductEventSafe(prisma, {
+      type: "organization_created",
+      userId: input.userId,
+      organizationId: organization.id,
+      entityType: "organization",
+      entityId: organization.id,
+      metadata: { name: organization.name, slug: organization.slug },
+    });
+    trackProductEventSafe(prisma, {
+      type: "trial_started",
+      userId: input.userId,
+      organizationId: organization.id,
+      metadata: { planKey: PLAN_KEYS.trial },
     });
     return organization;
   });

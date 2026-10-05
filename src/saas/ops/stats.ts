@@ -4,14 +4,21 @@ import { getLogStats } from "./logger.js";
 const PAID_PLAN_KEYS = ["basic", "pro"] as const;
 
 export const collectOpsStats = async (prisma: PrismaClient) => {
-  const [users, organizations, memberships, subs] = await Promise.all([
-    prisma.user.count(),
-    prisma.organization.count(),
-    prisma.organizationMember.count(),
-    prisma.subscription.findMany({
-      select: { planKey: true, status: true, organizationId: true },
-    }),
-  ]);
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [users, organizations, memberships, subs, usersLast7d, usersLast24h, orgsLast7d, unverifiedUsers] =
+    await Promise.all([
+      prisma.user.count(),
+      prisma.organization.count(),
+      prisma.organizationMember.count(),
+      prisma.subscription.findMany({
+        select: { planKey: true, status: true, organizationId: true },
+      }),
+      prisma.user.count({ where: { createdAt: { gte: weekAgo } } }),
+      prisma.user.count({ where: { createdAt: { gte: dayAgo } } }),
+      prisma.organization.count({ where: { createdAt: { gte: weekAgo } } }),
+      prisma.user.count({ where: { emailVerified: false } }),
+    ]);
 
   const byPlan = { trial: 0, basic: 0, pro: 0 };
   const byBillingStatus = {
@@ -54,6 +61,10 @@ export const collectOpsStats = async (prisma: PrismaClient) => {
     users,
     organizations,
     memberships,
+    usersLast7d,
+    usersLast24h,
+    orgsLast7d,
+    unverifiedUsers,
     byPlan,
     byBillingStatus,
     payingOrgs: payingOrgIds.size,

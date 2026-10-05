@@ -19,3 +19,5 @@ apps/dashboard/*.tsbuildinfo
 apps/desktop/dist-electron/
 apps/desktop/renderer-dist/
 apps/desktop/release/
+apps/ops-desk/release/
+apps/ops-desk/dist/

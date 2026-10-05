@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { requireOrgMembership } from "../auth/org-context.js";
 import { notFound } from "../errors.js";
+import { trackProductEventSafe } from "../ops/product-events.js";
 import { assertCanFollowTender } from "./entitlements.js";
 
 export const followTender = async (
@@ -66,6 +67,16 @@ export const followTender = async (
       },
     });
 
+    return row;
+  }).then((row) => {
+    trackProductEventSafe(prisma, {
+      type: "tender_followed",
+      userId: input.userId,
+      organizationId: input.organizationId,
+      entityType: "tender",
+      entityId: input.tenderId,
+      metadata: { organizationTenderId: row.id },
+    });
     return row;
   });
 };

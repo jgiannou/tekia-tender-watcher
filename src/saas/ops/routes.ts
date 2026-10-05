@@ -172,14 +172,105 @@ export const registerOpsAdminRoutes = (
     }
   });
 
-  app.get("/admin/ops/product-events", async (c) => c.json({ data: [] }));
+  app.get("/admin/ops/product-events", async (c) => {
+    try {
+      const { getPrisma } = await import("../../db/prisma.js");
+      const prisma = getPrisma();
+      const userId = c.req.query("userId") || undefined;
+      const organizationId = c.req.query("organizationId") || undefined;
+      const type = c.req.query("type") || undefined;
+      const from = c.req.query("from") || undefined;
+      const to = c.req.query("to") || undefined;
+      const limit = Math.min(Math.max(Number(c.req.query("limit") || 100), 1), 500);
+
+      const createdAt: { gte?: Date; lte?: Date } = {};
+      if (from) {
+        const d = new Date(from);
+        if (!Number.isNaN(d.getTime())) createdAt.gte = d;
+      }
+      if (to) {
+        const d = new Date(to);
+        if (!Number.isNaN(d.getTime())) createdAt.lte = d;
+      }
+
+      const rows = await prisma.productEvent.findMany({
+        where: {
+          ...(userId ? { userId } : {}),
+          ...(organizationId ? { organizationId } : {}),
+          ...(type ? { type } : {}),
+          ...(Object.keys(createdAt).length ? { createdAt } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      });
+
+      const userIds = [
+        ...new Set(rows.map((r) => r.userId).filter((id): id is string => Boolean(id))),
+      ];
+      const orgIds = [
+        ...new Set(
+          rows.map((r) => r.organizationId).filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      const [users, orgs] = await Promise.all([
+        userIds.length
+          ? prisma.user.findMany({
+              where: { id: { in: userIds } },
+              select: { id: true, email: true, name: true },
+            })
+          : Promise.resolve([]),
+        orgIds.length
+          ? prisma.organization.findMany({
+              where: { id: { in: orgIds } },
+              select: { id: true, name: true },
+            })
+          : Promise.resolve([]),
+      ]);
+      const userById = new Map(users.map((u) => [u.id, u]));
+      const orgById = new Map(orgs.map((o) => [o.id, o.name]));
+
+      return c.json({
+        data: rows.map((r) => {
+          const user = r.userId ? userById.get(r.userId) : undefined;
+          return {
+            id: r.id,
+            type: r.type,
+            userId: r.userId,
+            userEmail: user?.email ?? null,
+            userName: user?.name ?? null,
+            organizationId: r.organizationId,
+            organizationName: r.organizationId
+              ? orgById.get(r.organizationId) ?? null
+              : null,
+            sessionId: r.sessionId,
+            requestId: r.requestId,
+            entityType: r.entityType,
+            entityId: r.entityId,
+            metadata: r.metadata,
+            createdAt: r.createdAt.toISOString(),
+          };
+        }),
+      });
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : String(error) },
+        500,
+      );
+    }
+  });
 
   app.get("/admin/ops/trials/:userId/activity", async (c) => {
     const userId = c.req.param("userId");
     try {
       const { getPrisma } = await import("../../db/prisma.js");
       const prisma = getPrisma();
-      const [user, membership] = await Promise.all([
+      const limit = Math.min(Math.max(Number(c.req.query("limit") || 200), 1), 500);
+      const [rows, user, membership] = await Promise.all([
+        prisma.productEvent.findMany({
+          where: { userId },
+          orderBy: { createdAt: "asc" },
+          take: limit,
+        }),
         prisma.user.findUnique({
           where: { id: userId },
           select: { id: true, email: true, name: true },
@@ -211,7 +302,14 @@ export const registerOpsAdminRoutes = (
               organizationName: null,
               deleted: true,
             },
-        data: [] as unknown[],
+        data: rows.map((r) => ({
+          timestamp: r.createdAt.toISOString(),
+          event: r.type,
+          ...(r.entityId ? { entityId: r.entityId } : {}),
+          ...(r.entityType ? { entityType: r.entityType } : {}),
+          ...(r.sessionId ? { sessionId: r.sessionId } : {}),
+          ...(r.requestId ? { requestId: r.requestId } : {}),
+        })),
       });
     } catch (error) {
       return c.json(

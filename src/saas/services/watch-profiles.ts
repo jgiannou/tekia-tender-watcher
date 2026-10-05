@@ -557,6 +557,16 @@ export const createWatchProfile = async (
     },
   });
 
+  const { trackProductEventSafe } = await import("../ops/product-events.js");
+  trackProductEventSafe(prisma, {
+    type: "watch_profile_created",
+    userId: input.userId,
+    organizationId,
+    entityType: "watch_profile",
+    entityId: profile.id,
+    metadata: { name: profile.name, source: input.source ?? "MANUAL" },
+  });
+
   // The route returns as soon as the profile is PENDING. Creation enqueues a
   // scan only when verification + plan quota allow it.
   if (!scanBlock && profile.enabled) {

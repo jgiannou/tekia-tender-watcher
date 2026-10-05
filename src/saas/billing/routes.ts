@@ -27,6 +27,7 @@ import {
   stripeSubscriptionPeriodEnd,
   syncSubscriptionFromStripe,
 } from "./sync.js";
+import { trackProductEventSafe } from "../ops/product-events.js";
 
 type BillingVariables = {
   userId: string;
@@ -346,6 +347,16 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
           },
         },
       });
+      trackProductEventSafe(prisma, {
+        type: "checkout_started",
+        userId,
+        organizationId: orgId,
+        metadata: {
+          plan: body.plan,
+          interval,
+          extraSeats,
+        },
+      });
       return c.json({ url: session.url, mode: "checkout" });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -481,6 +492,15 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
             planMeta: session.metadata?.plan ?? sub.metadata?.plan ?? null,
             extraSeatsMeta:
               session.metadata?.extraSeats ?? sub.metadata?.extraSeats ?? null,
+          });
+          trackProductEventSafe(prisma, {
+            type: "subscription_started",
+            organizationId,
+            metadata: {
+              plan: session.metadata?.plan ?? sub.metadata?.plan ?? null,
+              interval: session.metadata?.interval ?? null,
+              stripeSubscriptionId: sub.id,
+            },
           });
         }
       }

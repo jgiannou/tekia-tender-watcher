@@ -884,3 +884,23 @@ model PollRun {
   @@index([startedAt])
   @@map("poll_runs")
 }
+
+/// First-party product analytics for Ops Desk. No FK so events survive deletes.
+model ProductEvent {
+  id             String   @id @default(cuid())
+  type           String
+  userId         String?
+  organizationId String?
+  sessionId      String?
+  requestId      String?
+  entityType     String?
+  entityId       String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@index([userId, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([sessionId, createdAt])
+  @@map("product_events")
+}

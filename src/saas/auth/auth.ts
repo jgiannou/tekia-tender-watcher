@@ -8,6 +8,7 @@ import {
   sendMail,
   verificationEmailCopy,
 } from "../mail/mail.js";
+import { trackProductEventSafe } from "../ops/product-events.js";
 
 export const createSaasAuth = (prisma: PrismaClient, config: SaasConfig) =>
   betterAuth({
@@ -52,6 +53,11 @@ export const createSaasAuth = (prisma: PrismaClient, config: SaasConfig) =>
           html: copy.html,
           text: copy.text,
         });
+        trackProductEventSafe(prisma, {
+          type: "email_verification_sent",
+          userId: user.id,
+          metadata: { email: user.email },
+        });
         if (!sent && process.env.NODE_ENV !== "production") {
           console.info("[email] verification URL (dev)", { userId: user.id, url });
         }
@@ -61,13 +67,49 @@ export const createSaasAuth = (prisma: PrismaClient, config: SaasConfig) =>
       user: {
         create: {
           after: async (user) => {
+            trackProductEventSafe(prisma, {
+              type: "user_signed_up",
+              userId: user.id,
+              metadata: { email: user.email, name: user.name },
+            });
             // Tests / local without SMTP: auto-verify so scan flows stay usable.
             if (!isEmailEnabled()) {
               await prisma.user.update({
                 where: { id: user.id },
                 data: { emailVerified: true },
               });
+              trackProductEventSafe(prisma, {
+                type: "email_verified",
+                userId: user.id,
+                metadata: { auto: true, reason: "email_disabled" },
+              });
             }
+          },
+        },
+        update: {
+          after: async (user) => {
+            if (!user.emailVerified) return;
+            const existing = await prisma.productEvent.findFirst({
+              where: { userId: user.id, type: "email_verified" },
+              select: { id: true },
+            });
+            if (existing) return;
+            trackProductEventSafe(prisma, {
+              type: "email_verified",
+              userId: user.id,
+              metadata: { email: user.email },
+            });
+          },
+        },
+      },
+      session: {
+        create: {
+          after: async (session) => {
+            trackProductEventSafe(prisma, {
+              type: "login_succeeded",
+              userId: session.userId,
+              sessionId: session.id,
+            });
           },
         },
       },
