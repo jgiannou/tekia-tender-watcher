@@ -636,7 +636,29 @@ export const SavedSearchesPage = () => {
                           : ""}
                       </CardDescription>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          profileScansBlocked ||
+                          !profile.enabled ||
+                          busy ||
+                          (((profile.scanState ?? "").toUpperCase() === "PENDING" ||
+                            (profile.scanState ?? "").toUpperCase() === "RUNNING") &&
+                            !canForceRetryStuckScan(profile))
+                        }
+                        onClick={() => void handleRescan(profile)}
+                        aria-label={`Σάρωση για ${profile.name}`}
+                      >
+                        {((profile.scanState ?? "").toUpperCase() === "RUNNING" ||
+                          (profile.scanState ?? "").toUpperCase() === "PENDING") &&
+                        !canForceRetryStuckScan(profile)
+                          ? "Σάρωση…"
+                          : canForceRetryStuckScan(profile)
+                            ? "Επανεκκίνηση"
+                            : "Σάρωση"}
+                      </Button>
                       <IconAction label="Προβολή" onClick={() => setViewProfile(profile)}>
                         <Eye />
                       </IconAction>
@@ -663,11 +685,13 @@ export const SavedSearchesPage = () => {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             disabled={
-                              ((profile.scanState ?? "").toUpperCase() ===
+                              profileScansBlocked ||
+                              !profile.enabled ||
+                              (((profile.scanState ?? "").toUpperCase() ===
                                 "PENDING" ||
                                 (profile.scanState ?? "").toUpperCase() ===
                                   "RUNNING") &&
-                              !canForceRetryStuckScan(profile)
+                                !canForceRetryStuckScan(profile))
                             }
                             onClick={() => void handleRescan(profile)}
                           >
@@ -804,6 +828,26 @@ export const SavedSearchesPage = () => {
                         : "Τελευταίες 30 ημέρες"}
                 </div>
                 <div className="flex flex-wrap gap-2 pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      profileScansBlocked ||
+                      !viewProfile.enabled ||
+                      (((viewProfile.scanState ?? "").toUpperCase() === "PENDING" ||
+                        (viewProfile.scanState ?? "").toUpperCase() === "RUNNING") &&
+                        !canForceRetryStuckScan(viewProfile))
+                    }
+                    onClick={() => void handleRescan(viewProfile)}
+                  >
+                    {((viewProfile.scanState ?? "").toUpperCase() === "RUNNING" ||
+                      (viewProfile.scanState ?? "").toUpperCase() === "PENDING") &&
+                    !canForceRetryStuckScan(viewProfile)
+                      ? "Σάρωση…"
+                      : canForceRetryStuckScan(viewProfile)
+                        ? "Επανεκκίνηση"
+                        : "Σάρωση"}
+                  </Button>
                   <Button size="sm" onClick={() => openEdit(viewProfile)}>
                     Επεξεργασία
                   </Button>

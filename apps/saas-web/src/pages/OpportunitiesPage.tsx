@@ -13,7 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { saasApi, type Opportunity, type WatchProfile } from "@/lib/api";
+import {
+  saasApi,
+  type Opportunity,
+  type SaasEntitlementsResponse,
+  type WatchProfile,
+} from "@/lib/api";
 
 type OpportunitySort = "newest" | "oldest" | "score" | "deadline";
 
@@ -23,6 +28,23 @@ const SORT_OPTIONS: Array<{ value: OpportunitySort; label: string }> = [
   { value: "score", label: "Υψηλότερη συνάφεια" },
   { value: "deadline", label: "Κοντινότερη προθεσμία" },
 ];
+
+const SCAN_FORCE_RETRY_MS = 3 * 60 * 1000;
+
+const canForceRetryStuckScan = (profile: WatchProfile): boolean => {
+  const state = (profile.scanState ?? "").toUpperCase();
+  if (state !== "RUNNING" && state !== "PENDING") return false;
+  const started = profile.updatedAt ? new Date(profile.updatedAt).getTime() : NaN;
+  if (Number.isNaN(started)) return false;
+  return Date.now() - started >= SCAN_FORCE_RETRY_MS;
+};
+
+const isScanBusy = (profile: WatchProfile): boolean => {
+  const state = (profile.scanState ?? "").toUpperCase();
+  return (
+    (state === "PENDING" || state === "RUNNING") && !canForceRetryStuckScan(profile)
+  );
+};
 
 const parseSort = (raw: string | null): OpportunitySort => {
   if (raw === "oldest" || raw === "score" || raw === "deadline" || raw === "newest") {
@@ -140,7 +162,11 @@ export const OpportunitiesPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [profiles, setProfiles] = useState<WatchProfile[]>([]);
+  const [entitlements, setEntitlements] = useState<SaasEntitlementsResponse | null>(
+    null,
+  );
   const [selected, setSelected] = useState<Opportunity | null>(null);
+  const [scanBusy, setScanBusy] = useState(false);
 
   const filtered = useMemo(() => {
     const base = profileFilter
@@ -171,9 +197,10 @@ export const OpportunitiesPage = () => {
     if (!opts?.silent) setLoading(true);
     setError(null);
     try {
-      const [oppData, profileData] = await Promise.all([
+      const [oppData, profileData, ent] = await Promise.all([
         saasApi.listOpportunities(activeOrganization.id, { sort }),
         saasApi.listWatchProfiles(activeOrganization.id),
+        saasApi.getEntitlements(activeOrganization.id).catch(() => null),
       ]);
       setOpportunities(
         oppData.opportunities.map((row) => ({
@@ -182,6 +209,7 @@ export const OpportunitiesPage = () => {
         })),
       );
       setProfiles(profileData.profiles);
+      setEntitlements(ent);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης");
     } finally {
@@ -192,6 +220,70 @@ export const OpportunitiesPage = () => {
   useEffect(() => {
     void load();
   }, [activeOrganization?.id]);
+
+  const scanInFlight = profiles.some((profile) =>
+    ["PENDING", "RUNNING"].includes((profile.scanState ?? "").toUpperCase()),
+  );
+
+  useEffect(() => {
+    if (!activeOrganization || !scanInFlight) return;
+    const timer = window.setInterval(() => {
+      void load({ silent: true });
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [activeOrganization?.id, scanInFlight]);
+
+  const enabledProfiles = useMemo(
+    () => profiles.filter((p) => p.enabled),
+    [profiles],
+  );
+
+  const scanTargets = useMemo(() => {
+    if (!profileFilter) return enabledProfiles;
+    return enabledProfiles.filter((p) => p.id === profileFilter);
+  }, [enabledProfiles, profileFilter]);
+
+  const scanAccess = entitlements?.scanAccess ?? null;
+  const profileScansBlocked = scanAccess
+    ? !scanAccess.canRunManualProfileScan
+    : false;
+  const anyTargetScanning = scanTargets.some(isScanBusy);
+
+  const handleScan = async () => {
+    if (!activeOrganization) return;
+    if (scanTargets.length === 0) {
+      toast.message(
+        profileFilter
+          ? "Η αποθηκευμένη αναζήτηση δεν είναι ενεργή."
+          : "Δεν υπάρχουν ενεργές αποθηκευμένες αναζητήσεις.",
+      );
+      return;
+    }
+    if (profileScansBlocked) {
+      toast.error("Η χειροκίνητη σάρωση δεν είναι διαθέσιμη για τον λογαριασμό σας.");
+      return;
+    }
+    setScanBusy(true);
+    try {
+      await Promise.all(
+        scanTargets.map((profile) =>
+          saasApi.scanWatchProfile(activeOrganization.id, profile.id, {
+            force: canForceRetryStuckScan(profile),
+          }),
+        ),
+      );
+      toast.success(
+        scanTargets.length === 1
+          ? `Η σάρωση ξεκίνησε για «${scanTargets[0]?.name}».`
+          : `Ξεκίνησαν ${scanTargets.length} σαρώσεις.`,
+      );
+      await load({ silent: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία σάρωσης");
+    } finally {
+      setScanBusy(false);
+    }
+  };
 
   const handleFollow = async (opportunity: Opportunity) => {
     if (!activeOrganization) return;
@@ -241,13 +333,19 @@ export const OpportunitiesPage = () => {
   }
   if (error) return <ErrorState description={error} onRetry={() => void load()} />;
 
-  const enabledProfiles = profiles.filter((p) => p.enabled);
   const scanning = profiles.some(
     (p) => p.enabled && (p.scanState ?? "").toUpperCase() === "RUNNING",
   );
   const unfollowed = filtered.filter((o) => !o.following).length;
   const highScore = filtered.filter((o) => (o.score ?? 0) >= 70).length;
   const following = filtered.filter((o) => o.following).length;
+
+  const scanButtonLabel = (() => {
+    if (scanBusy || anyTargetScanning) return "Σάρωση…";
+    if (profileFilter && filterProfileName) return `Σάρωση «${filterProfileName}»`;
+    if (scanTargets.length > 1) return `Σάρωση (${scanTargets.length})`;
+    return "Σάρωση";
+  })();
 
   type EmptyVariant = "no-active" | "scanning" | "none-found";
   let emptyVariant: EmptyVariant = "none-found";
@@ -317,7 +415,19 @@ export const OpportunitiesPage = () => {
               ))}
             </Select>
           </div>
-          <div className="flex gap-2">
+          <Button
+            onClick={() => void handleScan()}
+            disabled={
+              scanBusy ||
+              profileScansBlocked ||
+              scanTargets.length === 0 ||
+              anyTargetScanning
+            }
+            aria-label="Σάρωση αποθηκευμένων αναζητήσεων"
+          >
+            {scanButtonLabel}
+          </Button>
+          <div className="flex gap-2 pb-1">
             <Badge variant="secondary">REQ</Badge>
             <Badge variant="outline">PROC</Badge>
           </div>
