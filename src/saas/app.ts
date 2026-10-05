@@ -87,7 +87,7 @@ import {
 import { getEntitlementsView } from "./services/entitlements.js";
 import { registerBillingRoutes } from "./billing/routes.js";
 import { createOpsEnterHandler } from "./ops/enter.js";
-import { listOpportunities } from "./services/opportunities.js";
+import { listOpportunities, markOpportunitySeen } from "./services/opportunities.js";
 import {
   createWatchProfile,
   deleteWatchProfile,
@@ -1049,8 +1049,18 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       opportunities: result.opportunities,
       total: result.total,
       unfollowed: result.unfollowed,
+      unreadNewCount: result.unreadNewCount,
       sort,
     });
+  });
+
+  app.post("/api/saas/opportunities/:id/seen", requireSession, async (c) => {
+    const result = await markOpportunitySeen(deps.prisma, {
+      userId: c.get("userId"),
+      organizationId: resolveOrgId(c),
+      organizationTenderId: c.req.param("id"),
+    });
+    return c.json(result);
   });
 
   app.get("/api/saas/watch-profiles/:id", requireSession, async (c) => {

@@ -168,6 +168,13 @@ export const TenderDetailPage = () => {
         setOpportunity(oppData.opportunities[0] ?? null);
         setWorkflow(workflowData.workflow);
 
+        const firstOpp = oppData.opportunities[0];
+        if (firstOpp?.isNew) {
+          void saasApi
+            .markOpportunitySeen(activeOrganization.id, firstOpp.id)
+            .catch(() => null);
+        }
+
         if (workflowData.workflow.organizationTender) {
           const ws = await saasApi
             .tenderWorkspace(activeOrganization.id, data.tender.id)

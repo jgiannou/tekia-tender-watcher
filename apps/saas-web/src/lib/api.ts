@@ -209,6 +209,9 @@ export type Opportunity = {
   scoreReasons: unknown;
   matchMeta: OpportunityMatchMeta | null;
   following: boolean;
+  /** Unread NEW_OPPORTUNITY attention from a saved-search scan. */
+  isNew?: boolean;
+  attentionEventId?: string | null;
   watchProfileId: string | null;
   watchProfile?: { id: string; name: string } | null;
   tender: {
@@ -1460,11 +1463,17 @@ export const saasApi = {
       opportunities: Opportunity[];
       total?: number;
       unfollowed?: number;
+      unreadNewCount?: number;
       sort?: "newest" | "oldest" | "score" | "deadline";
     }>(`/api/saas/opportunities${qs ? `?${qs}` : ""}`, {
       organizationId,
     });
   },
+  markOpportunitySeen: (organizationId: string, opportunityId: string) =>
+    request<{ ok: true; updated: number }>(
+      `/api/saas/opportunities/${opportunityId}/seen`,
+      { method: "POST", organizationId },
+    ),
   kimdisMeta: (organizationId: string) =>
     request<{
       contractTypes: Record<string, string>;

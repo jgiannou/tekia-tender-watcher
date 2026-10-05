@@ -19,6 +19,7 @@ import {
   type SaasEntitlementsResponse,
   type WatchProfile,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 type OpportunitySort = "newest" | "oldest" | "score" | "deadline";
 
@@ -172,8 +173,15 @@ export const OpportunitiesPage = () => {
     const base = profileFilter
       ? opportunities.filter((row) => matchesProfile(row, profileFilter))
       : opportunities;
-    return sortOpportunities(base, sort);
+    const sorted = sortOpportunities(base, sort);
+    // Unread search matches stay pinned above the chosen sort.
+    return [...sorted].sort((a, b) => Number(Boolean(b.isNew)) - Number(Boolean(a.isNew)));
   }, [opportunities, profileFilter, sort]);
+
+  const unreadNewCount = useMemo(
+    () => filtered.filter((row) => row.isNew).length,
+    [filtered],
+  );
 
   const filterProfileName =
     profiles.find((profile) => profile.id === profileFilter)?.name ?? null;
@@ -322,6 +330,22 @@ export const OpportunitiesPage = () => {
     }
   };
 
+  const handleMarkSeen = async (opportunity: Opportunity) => {
+    if (!activeOrganization || !opportunity.isNew) return;
+    setOpportunities((prev) =>
+      prev.map((row) =>
+        row.id === opportunity.id
+          ? { ...row, isNew: false, attentionEventId: null }
+          : row,
+      ),
+    );
+    try {
+      await saasApi.markOpportunitySeen(activeOrganization.id, opportunity.id);
+    } catch {
+      // Keep optimistic clear; next reload restores if the call failed.
+    }
+  };
+
   if (loading && opportunities.length === 0) return <PageSkeleton />;
   if (!activeOrganization) {
     return (
@@ -394,6 +418,9 @@ export const OpportunitiesPage = () => {
           <h2 className="text-2xl font-semibold tracking-tight">Ευκαιρίες</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Ό,τι βρήκαν αυτόματα οι αποθηκευμένες αναζητήσεις σας.
+            {unreadNewCount > 0
+              ? ` · ${unreadNewCount} νέ${unreadNewCount === 1 ? "α" : "ες"} — περάστε πάνω ή ανοίξτε για να αφαιρεθεί η επισήμανση`
+              : ""}
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
@@ -493,11 +520,22 @@ export const OpportunitiesPage = () => {
             const meta = parseMatchMeta(opportunity.matchMeta);
             const profilesMatched = meta?.matchedProfiles ?? [];
             const topScore = meta?.highestScore ?? opportunity.score ?? 0;
+            const isNew = Boolean(opportunity.isNew);
             return (
-              <Card key={opportunity.id}>
+              <Card
+                key={opportunity.id}
+                className={cn(
+                  isNew &&
+                    "border-primary/50 bg-primary/5 shadow-md shadow-primary/10 ring-1 ring-primary/20",
+                )}
+                onPointerEnter={() => {
+                  if (isNew) void handleMarkSeen(opportunity);
+                }}
+              >
                 <CardContent className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-start md:justify-between">
                   <div className="min-w-0 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
+                      {isNew ? <Badge variant="default">Νέα</Badge> : null}
                       <Badge>{opportunity.tender.recordType}</Badge>
                       <span className="font-mono text-xs text-muted-foreground">
                         {opportunity.tender.referenceNumber}
@@ -548,12 +586,20 @@ export const OpportunitiesPage = () => {
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
                     <IconAction
                       label="Προεπισκόπηση PDF"
-                      onClick={() => setSelected(opportunity)}
+                      onClick={() => {
+                        void handleMarkSeen(opportunity);
+                        setSelected(opportunity);
+                      }}
                     >
                       <Eye />
                     </IconAction>
                     <Button size="sm" variant="outline" asChild>
-                      <Link to={tenderPath(opportunity)}>Άνοιγμα</Link>
+                      <Link
+                        to={tenderPath(opportunity)}
+                        onClick={() => void handleMarkSeen(opportunity)}
+                      >
+                        Άνοιγμα
+                      </Link>
                     </Button>
                     {!opportunity.following ? (
                       <Button size="sm" onClick={() => void handleFollow(opportunity)}>

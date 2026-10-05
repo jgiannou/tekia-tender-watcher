@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { requireOrgMembership } from "../auth/org-context.js";
+import { notFound } from "../errors.js";
 import { parseMatchMeta } from "./watch-match.js";
 
 const opportunityWhere = (organizationId: string, tenderId?: string) => ({
@@ -8,7 +9,12 @@ const opportunityWhere = (organizationId: string, tenderId?: string) => ({
   pipelineStage: { not: "DISMISSED" as const },
   // SQL NULL trap: `NOT (ignoreReason IN (...))` excludes null rows.
   AND: [
-    { NOT: { relevanceStatus: "EXPIRED" as const } },
+    {
+      OR: [
+        { relevanceStatus: null },
+        { NOT: { relevanceStatus: "EXPIRED" as const } },
+      ],
+    },
     {
       OR: [
         { ignoreReason: null },
@@ -169,13 +175,96 @@ export const listOpportunities = async (
     rows.filter(passesOpportunityFilter),
     sort,
   );
-  const unfollowed = filtered.filter((row) => !row.following).length;
+  const unreadNew = await loadUnreadNewOpportunityIds(
+    prisma,
+    organizationId,
+    filtered.map((row) => row.id),
+  );
+
+  const withFlags = filtered.map((row) => {
+    const attentionEventId = unreadNew.get(row.id) ?? null;
+    return {
+      ...row,
+      isNew: Boolean(attentionEventId),
+      attentionEventId,
+    };
+  });
+
+  // Keep unread search matches at the top so new arrivals are obvious.
+  withFlags.sort((a, b) => Number(b.isNew) - Number(a.isNew));
+
+  const unfollowed = withFlags.filter((row) => !row.following).length;
   const opportunities =
-    input.limit != null ? filtered.slice(0, Math.max(0, input.limit)) : filtered;
+    input.limit != null
+      ? withFlags.slice(0, Math.max(0, input.limit))
+      : withFlags;
 
   return {
     opportunities,
-    total: filtered.length,
+    total: withFlags.length,
     unfollowed,
+    unreadNewCount: unreadNew.size,
   };
+};
+
+const loadUnreadNewOpportunityIds = async (
+  prisma: PrismaClient,
+  organizationId: string,
+  organizationTenderIds: string[],
+): Promise<Map<string, string>> => {
+  const map = new Map<string, string>();
+  if (organizationTenderIds.length === 0) return map;
+  const events = await prisma.organizationAttentionEvent.findMany({
+    where: {
+      organizationId,
+      organizationTenderId: { in: organizationTenderIds },
+      type: "NEW_OPPORTUNITY",
+      readAt: null,
+    },
+    select: { id: true, organizationTenderId: true },
+    orderBy: { createdAt: "desc" },
+  });
+  for (const event of events) {
+    if (!map.has(event.organizationTenderId)) {
+      map.set(event.organizationTenderId, event.id);
+    }
+  }
+  return map;
+};
+
+/** Mark NEW_OPPORTUNITY attention as read once the user opens the opportunity. */
+export const markOpportunitySeen = async (
+  prisma: PrismaClient,
+  input: {
+    userId: string;
+    organizationId: string | null;
+    organizationTenderId: string;
+  },
+) => {
+  const { organizationId } = await requireOrgMembership(
+    prisma,
+    input.userId,
+    input.organizationId,
+  );
+
+  const orgTender = await prisma.organizationTender.findFirst({
+    where: {
+      id: input.organizationTenderId,
+      organizationId,
+    },
+    select: { id: true },
+  });
+  if (!orgTender) throw notFound("opportunity_not_found");
+
+  const result = await prisma.organizationAttentionEvent.updateMany({
+    where: {
+      organizationId,
+      organizationTenderId: orgTender.id,
+      type: "NEW_OPPORTUNITY",
+      readAt: null,
+    },
+    data: { readAt: new Date() },
+  });
+
+  return { ok: true as const, updated: result.count };
 };
