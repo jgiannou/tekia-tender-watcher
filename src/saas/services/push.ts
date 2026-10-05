@@ -133,7 +133,7 @@ const sendExpoPush = async (messages: ExpoPushMessage[]) => {
   return { sent: messages.length, tickets: payload?.data ?? [] };
 };
 
-/** Send a direct test push to all enabled devices for a user. */
+/** Send demo pushes shaped like real attention alerts for this user. */
 export const sendTestPushToUser = async (
   prisma: PrismaClient,
   userId: string,
@@ -152,18 +152,95 @@ export const sendTestPushToUser = async (
   });
   if (devices.length === 0) return { sent: 0, skipped: 1, tickets: [] };
 
-  const messages: ExpoPushMessage[] = devices.map((device) => ({
-    to: device.token,
-    title: "ARC Tenders",
-    body: "Δοκιμαστική ειδοποίηση — push με ήχο στην οθόνη κλειδώματος.",
-    sound: "default",
-    priority: "high",
-    channelId: "arc-tenders-alerts",
-    data: {
-      test: true,
-      url: "arctenders://notifications",
-    },
-  }));
+  const memberships = await prisma.organizationMember.findMany({
+    where: { userId },
+    select: { organizationId: true },
+  });
+  const orgIds = memberships.map((m) => m.organizationId);
+
+  const recentEvents =
+    orgIds.length === 0
+      ? []
+      : await prisma.organizationAttentionEvent.findMany({
+          where: { organizationId: { in: orgIds } },
+          orderBy: { createdAt: "desc" },
+          take: 3,
+          select: {
+            id: true,
+            type: true,
+            title: true,
+            organizationTender: {
+              select: {
+                tender: {
+                  select: { referenceNumber: true, recordType: true },
+                },
+              },
+            },
+          },
+        });
+
+  const samples =
+    recentEvents.length > 0
+      ? recentEvents.map((event) => {
+          const ref = event.organizationTender.tender.referenceNumber;
+          const recordType = event.organizationTender.tender.recordType;
+          return {
+            title: "ARC Tenders",
+            body: `${event.title}\n${bodyForEvent(event.title, event.type)}`,
+            data: {
+              attentionEventId: event.id,
+              type: event.type,
+              referenceNumber: ref,
+              recordType,
+              test: true,
+              url: `arctenders://tenders/${recordType}/${encodeURIComponent(ref)}`,
+            },
+          };
+        })
+      : [
+          {
+            title: "ARC Tenders",
+            body: "Νέα ευκαιρία στο inbox σας.\nΠρόσκληση για υποβολή προσφοράς — Πακέτα λογισμικού",
+            data: {
+              type: "NEW_OPPORTUNITY",
+              test: true,
+              url: "arctenders://notifications",
+            },
+          },
+          {
+            title: "ARC Tenders",
+            body: "Νέα εξέλιξη σε παρακολουθούμενο διαγωνισμό.\nΣχετική κατακύρωση εντοπίστηκε",
+            data: {
+              type: "RELATED_AWARD_DISCOVERED",
+              test: true,
+              url: "arctenders://notifications",
+            },
+          },
+          {
+            title: "ARC Tenders",
+            body: "Ενημέρωση προθεσμίας.\nΛήγει σε 3 ημέρες — τελική υποβολή",
+            data: {
+              type: "DEADLINE_APPROACHING",
+              test: true,
+              url: "arctenders://notifications",
+            },
+          },
+        ];
+
+  const messages: ExpoPushMessage[] = [];
+  for (const sample of samples) {
+    for (const device of devices) {
+      messages.push({
+        to: device.token,
+        title: sample.title,
+        body: sample.body,
+        sound: "default",
+        priority: "high",
+        channelId: "arc-tenders-alerts",
+        data: sample.data,
+      });
+    }
+  }
 
   const result = await sendExpoPush(messages);
   return { sent: result.sent, skipped: 0, tickets: result.tickets };
