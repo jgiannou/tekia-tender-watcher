@@ -144,7 +144,11 @@ const pushGoogleConsentUpdate = (analytics: boolean, marketing: boolean): void =
   });
 };
 
-const injectGoogleTagManager = (containerId: string): void => {
+const injectGoogleTagManager = (
+  containerId: string,
+  analytics: boolean,
+  marketing: boolean,
+): void => {
   if (gtmInjected || typeof document === "undefined") return;
   if (!containerId.startsWith("GTM-")) return;
   if (document.getElementById("arc-gtm-script")) {
@@ -154,13 +158,14 @@ const injectGoogleTagManager = (containerId: string): void => {
 
   gtmInjected = true;
   const gtag = ensureGtag();
-  // Defaults before container evaluates tags (Consent Mode v2).
+  // We only inject after the user already chose — set that state BEFORE gtm.js
+  // so All Pages / Google Tag evaluate with analytics_storage granted.
+  // (Default=denied then later update is too late: All Pages will not re-fire.)
   gtag("consent", "default", {
-    analytics_storage: "denied",
-    ad_storage: "denied",
-    ad_user_data: "denied",
-    ad_personalization: "denied",
-    wait_for_update: 500,
+    analytics_storage: consentValue(analytics),
+    ad_storage: consentValue(marketing),
+    ad_user_data: consentValue(marketing),
+    ad_personalization: consentValue(marketing),
   });
   window.dataLayer?.push({
     "gtm.start": new Date().getTime(),
@@ -185,10 +190,13 @@ export const loadOptionalTrackersIfAllowed = (): void => {
   const marketing = hasConsent("marketing");
   if (!analytics && !marketing) return;
 
-  injectGoogleTagManager(TRACKING_IDS.gtm);
-  pushGoogleConsentUpdate(analytics, marketing);
+  if (!gtmInjected && !document.getElementById("arc-gtm-script")) {
+    injectGoogleTagManager(TRACKING_IDS.gtm, analytics, marketing);
+  } else {
+    gtmInjected = true;
+    pushGoogleConsentUpdate(analytics, marketing);
+  }
 
-  // Optional: tell GTM which categories were granted (for custom triggers).
   window.dataLayer?.push({
     event: "arc_consent_update",
     arc_analytics: analytics,
