@@ -92,7 +92,7 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
                 "έως 20 παρακολουθούμενοι διαγωνισμοί",
                 "250 MB αρχεία",
                 "2 περιοδικές σαρώσεις / ημέρα",
-                "Email digest",
+                "Email digest 1×/ημέρα για εξελίξεις παρακολούθησης",
                 "Matching + score + λόγοι",
                 "Vault, καταγραφή ενδιαφέροντος & υποβολής",
               ]
@@ -103,7 +103,7 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
                 "έως 100 παρακολουθούμενοι διαγωνισμοί",
                 "2 GB αρχεία",
                 "6 περιοδικές σαρώσεις / ημέρα",
-                "Άμεσα email",
+                "Άμεσα email για κάθε εξέλιξη παρακολούθησης",
                 "Προχωρημένα φίλτρα αναζήτησης",
                 "Προτεραιότητα υποστήριξης",
               ],

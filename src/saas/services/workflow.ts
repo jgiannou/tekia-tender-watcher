@@ -36,6 +36,8 @@ const ORGANIZATION_EVENT_LABELS: Record<string, string> = {
   PREPARATION_STARTED: "Ξεκίνησε η προετοιμασία",
   SUBMITTED: "Καταγράφηκε υποβολή",
   RESULT_CONFIRMED: "Επιβεβαιώθηκε αποτέλεσμα",
+  RELATED_ACT_CONFIRMED: "Επιβεβαιώθηκε σχετική πράξη",
+  RELATED_ACT_DISMISSED: "Απορρίφθηκε πιθανή σχετική πράξη",
 };
 
 const expectedDevelopmentFor = (input: {
@@ -281,12 +283,20 @@ export const getOrganizationTenderWorkflow = async (
   ];
 
   for (const link of relatedActs) {
+    const needsConfirm =
+      link.confidence === "LIKELY" || link.confidence === "POSSIBLE";
     const official =
-      link.targetTender.recordType === "PROC"
-        ? "Δημοσιεύτηκε σχετική επίσημη πρόσκληση"
-        : link.targetTender.recordType === "AWRD"
-          ? "Δημοσιεύτηκε απόφαση ανάθεσης"
-          : "Δημοσιεύτηκε σχετική πράξη ΚΗΜΔΗΣ";
+      needsConfirm
+        ? link.targetTender.recordType === "PROC"
+          ? "Πιθανή σχετική επίσημη πρόσκληση"
+          : link.targetTender.recordType === "AWRD"
+            ? "Πιθανή σχετική απόφαση ανάθεσης"
+            : "Πιθανή σχετική πράξη ΚΗΜΔΗΣ"
+        : link.targetTender.recordType === "PROC"
+          ? "Δημοσιεύτηκε σχετική επίσημη πρόσκληση"
+          : link.targetTender.recordType === "AWRD"
+            ? "Δημοσιεύτηκε απόφαση ανάθεσης"
+            : "Δημοσιεύτηκε σχετική πράξη ΚΗΜΔΗΣ";
     timeline.push({
       kind: "official",
       key: `rel-${link.id}`,
@@ -312,6 +322,18 @@ export const getOrganizationTenderWorkflow = async (
         [outreachMethod, organizationTender.outreachLedger?.recipient]
           .filter(Boolean)
           .join(" · ") || null;
+    } else if (event.eventType === "RESULT_CONFIRMED") {
+      try {
+        const parsed = JSON.parse(event.note ?? "{}") as { result?: string };
+        subtitle =
+          parsed.result === "WON"
+            ? "Επιτυχία"
+            : parsed.result === "LOST"
+              ? "Ανεπιτυχές"
+              : null;
+      } catch {
+        subtitle = event.note;
+      }
     } else if (event.eventType === "SUBMITTED") {
       const fromNote = parseSubmissionEventNote(event.note);
       if (fromNote) {
@@ -386,6 +408,7 @@ export const getOrganizationTenderWorkflow = async (
           amountWithoutVat: organizationTender.submissions[0].amountWithoutVat,
           notes: organizationTender.submissions[0].notes,
           submittedByUserId: organizationTender.submissions[0].submittedByUserId,
+          result: organizationTender.submissions[0].result,
         }
       : null,
     outreach: organizationTender.outreachLedger

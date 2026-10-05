@@ -3,9 +3,10 @@
  * Only TWO public plans: Basic + Pro. No Business/Enterprise yet.
  * Pro extra seats are a recurring add-on, not a third plan.
  *
- * Basic entitlements are locked (full procurement lifecycle, DIGEST email,
- * advanced filters off). Pro differentiates on volume/seats/speed/support —
- * not by crippling Basic workflow features.
+ * Basic entitlements are locked (full procurement lifecycle, DIGEST email =
+ * related-act updates once/day, advanced filters off). Pro differentiates on
+ * volume/seats/speed/support (IMMEDIATE related-act email) — not by crippling
+ * Basic workflow features.
  */
 
 export const PLAN_KEYS = {

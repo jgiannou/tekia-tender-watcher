@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -27,11 +28,18 @@ const tenderHref = (row: FormalSubmissionRow) => {
   return `/app/tenders/${type}/${encodeURIComponent(row.tender.referenceNumber)}`;
 };
 
+const resultBadge = (result: string) => {
+  if (result === "WON") return <Badge variant="success">Επιτυχία</Badge>;
+  if (result === "LOST") return <Badge variant="destructive">Ανεπιτυχές</Badge>;
+  return <Badge variant="outline">Εκκρεμεί</Badge>;
+};
+
 export const SubmissionsPage = () => {
   const { activeOrganization } = useSessionContext();
   const [rows, setRows] = useState<FormalSubmissionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = async () => {
     if (!activeOrganization) {
@@ -54,6 +62,37 @@ export const SubmissionsPage = () => {
     void load();
   }, [activeOrganization?.id]);
 
+  const handleConfirmResult = async (
+    row: FormalSubmissionRow,
+    result: "WON" | "LOST",
+  ) => {
+    if (!activeOrganization) return;
+    const confirmed = window.confirm(
+      result === "WON"
+        ? "Να επιβεβαιωθεί επιτυχία (WON); Η παρακολούθηση θα σταματήσει."
+        : "Να επιβεβαιωθεί ανεπιτυχές αποτέλεσμα (LOST); Η παρακολούθηση θα σταματήσει.",
+    );
+    if (!confirmed) return;
+    setBusyId(row.id);
+    try {
+      await saasApi.confirmSubmissionResult(activeOrganization.id, row.id, {
+        result,
+      });
+      toast.success(
+        result === "WON"
+          ? "Καταχωρήθηκε επιτυχία."
+          : "Καταχωρήθηκε ανεπιτυχές αποτέλεσμα.",
+      );
+      await load();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Αποτυχία καταχώρησης αποτελέσματος",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   if (loading) return <PageSkeleton />;
   if (!activeOrganization) {
     return (
@@ -71,7 +110,8 @@ export const SubmissionsPage = () => {
         <h2 className="text-2xl font-semibold tracking-tight">Υποβολές</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Καταγεγραμμένες τυπικές υποβολές που δηλώσατε εσείς — όχι αυτόματη αποστολή από
-          την εφαρμογή. Η παρακολούθηση αποτελέσματος συνεχίζεται.
+          την εφαρμογή. Η παρακολούθηση αποτελέσματος συνεχίζεται μέχρι να επιβεβαιώσετε
+          WON/LOST.
         </p>
       </div>
       {rows.length === 0 ? (
@@ -97,8 +137,11 @@ export const SubmissionsPage = () => {
                     <span className="font-mono text-xs text-muted-foreground">
                       {row.tender.referenceNumber}
                     </span>
+                    {resultBadge(row.result)}
                     <Badge variant={row.monitoringActive ? "success" : "outline"}>
-                      {row.monitoringActive ? "Παρακολούθηση ενεργή" : "Παρακολούθηση ανενεργή"}
+                      {row.monitoringActive
+                        ? "Παρακολούθηση ενεργή"
+                        : "Παρακολούθηση ανενεργή"}
                     </Badge>
                   </div>
                   <div className="text-sm font-medium">{row.tender.title || "Χωρίς τίτλο"}</div>
@@ -117,9 +160,30 @@ export const SubmissionsPage = () => {
                     Καταχώρηση από: {row.submittedBy?.name || row.submittedBy?.email || "—"}
                   </div>
                 </div>
-                <Button size="sm" variant="outline" asChild>
-                  <Link to={tenderHref(row)}>Άνοιγμα</Link>
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {row.result === "PENDING" ? (
+                    <>
+                      <Button
+                        size="sm"
+                        disabled={busyId === row.id}
+                        onClick={() => void handleConfirmResult(row, "WON")}
+                      >
+                        Επιτυχία
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyId === row.id}
+                        onClick={() => void handleConfirmResult(row, "LOST")}
+                      >
+                        Ανεπιτυχές
+                      </Button>
+                    </>
+                  ) : null}
+                  <Button size="sm" variant="outline" asChild>
+                    <Link to={tenderHref(row)}>Άνοιγμα</Link>
+                  </Button>
+                </div>
               </div>
             ))}
           </CardContent>

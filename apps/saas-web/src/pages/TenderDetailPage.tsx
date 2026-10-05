@@ -26,6 +26,7 @@ import {
   saasApi,
   type KimdisSearchItem,
   type Opportunity,
+  type OutreachDraft,
   type TenderWorkflow,
   type TenderWorkspaceResponse,
   type VaultDocument,
@@ -61,6 +62,29 @@ const formatDateTimeLocalValue = (date = new Date()) => {
 const OUTREACH_METHODS = ["EMAIL", "PHONE", "PORTAL", "PHYSICAL", "OTHER"] as const;
 const SUBMISSION_METHODS = ["PORTAL", "EMAIL", "PHYSICAL", "OTHER"] as const;
 
+/** REQ → αίτημα, PROC → διαγωνισμός (avoid generic «νήμα»). */
+const tenderKindLabel = (type: string | null | undefined) => {
+  if (type === "PROC") {
+    return {
+      nominative: "διαγωνισμός",
+      genitive: "διαγωνισμού",
+      accusative: "τον διαγωνισμό",
+    };
+  }
+  if (type === "AWRD") {
+    return {
+      nominative: "ανάθεση",
+      genitive: "ανάθεσης",
+      accusative: "την ανάθεση",
+    };
+  }
+  return {
+    nominative: "αίτημα",
+    genitive: "αιτήματος",
+    accusative: "το αίτημα",
+  };
+};
+
 export const TenderDetailPage = () => {
   const { activeOrganization } = useSessionContext();
   const navigate = useNavigate();
@@ -88,6 +112,15 @@ export const TenderDetailPage = () => {
   const [outreachAt, setOutreachAt] = useState(formatDateTimeLocalValue());
   const [outreachDocs, setOutreachDocs] = useState<VaultDocument[]>([]);
   const [outreachPickerOpen, setOutreachPickerOpen] = useState(false);
+  const [outreachSubject, setOutreachSubject] = useState("");
+  const [outreachBody, setOutreachBody] = useState("");
+  const [outreachContactName, setOutreachContactName] = useState("");
+  const [outreachContactDept, setOutreachContactDept] = useState("");
+  const [outreachContactEmail, setOutreachContactEmail] = useState("");
+  const [outreachContactPhone, setOutreachContactPhone] = useState("");
+  const [outreachUnresolved, setOutreachUnresolved] = useState<string[]>([]);
+  const [outreachSuggestedSource, setOutreachSuggestedSource] = useState<string>("none");
+  const [draftLoading, setDraftLoading] = useState(false);
 
   const [submissionMethod, setSubmissionMethod] = useState<string>("PORTAL");
   const [submissionRef, setSubmissionRef] = useState("");
@@ -167,6 +200,7 @@ export const TenderDetailPage = () => {
   const outreach = workflow?.outreach ?? null;
   const hasOutreach = Boolean(outreach?.sentAt);
   const isSubmitted = workflow?.organizationTender?.pipelineStage === "SUBMITTED";
+  const kind = tenderKindLabel(item?.recordType ?? recordType);
 
   const handleFollow = async () => {
     if (!activeOrganization || !item) return;
@@ -177,6 +211,86 @@ export const TenderDetailPage = () => {
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Αποτυχία παρακολούθησης");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUnfollow = async () => {
+    if (!activeOrganization || !tenderId) return;
+    const confirmed = window.confirm(
+      `Να διακοπεί η παρακολούθηση αυτού του ${kind.genitive}; Δεν θα ειδοποιείστε για νέες σχετικές πράξεις.`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      await saasApi.unfollowTender(activeOrganization.id, tenderId);
+      toast.success("Διακόπηκε η παρακολούθηση.");
+      await load();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Αποτυχία διακοπής παρακολούθησης",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleConfirmResult = async (result: "WON" | "LOST") => {
+    if (!activeOrganization || !workflow?.latestSubmission?.id) return;
+    const confirmed = window.confirm(
+      result === "WON"
+        ? "Να επιβεβαιωθεί επιτυχία (WON); Η παρακολούθηση θα σταματήσει."
+        : "Να επιβεβαιωθεί ανεπιτυχές αποτέλεσμα (LOST); Η παρακολούθηση θα σταματήσει.",
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      await saasApi.confirmSubmissionResult(
+        activeOrganization.id,
+        workflow.latestSubmission.id,
+        { result },
+      );
+      toast.success(
+        result === "WON"
+          ? "Καταχωρήθηκε επιτυχία. Η παρακολούθηση ολοκληρώθηκε."
+          : "Καταχωρήθηκε ανεπιτυχές αποτέλεσμα. Η παρακολούθηση ολοκληρώθηκε.",
+      );
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία καταχώρησης αποτελέσματος");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleConfirmRelatedAct = async (linkId: string) => {
+    if (!activeOrganization) return;
+    setBusy(true);
+    try {
+      await saasApi.confirmRelatedAct(activeOrganization.id, linkId);
+      toast.success("Επιβεβαιώθηκε η σχετική πράξη.");
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία επιβεβαίωσης");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDismissRelatedAct = async (linkId: string) => {
+    if (!activeOrganization) return;
+    const confirmed = window.confirm(
+      `Να σημειωθεί ότι αυτή η πράξη δεν σχετίζεται με ${kind.accusative};`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      await saasApi.dismissRelatedAct(activeOrganization.id, linkId);
+      toast.success("Απορρίφθηκε η πιθανή σχετική πράξη.");
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία απόρριψης");
     } finally {
       setBusy(false);
     }
@@ -217,19 +331,166 @@ export const TenderDetailPage = () => {
     }
   };
 
+  const applyDraftToForm = (draft: OutreachDraft) => {
+    setOutreachSubject(draft.subject);
+    setOutreachBody(draft.body);
+    setOutreachUnresolved(draft.unresolvedKeys);
+    setOutreachContactName(draft.contacts.name ?? "");
+    setOutreachContactDept(draft.contacts.department ?? "");
+    setOutreachContactEmail(draft.contacts.email ?? "");
+    setOutreachContactPhone(draft.contacts.phone ?? "");
+    setOutreachSuggestedSource(draft.suggestedContacts.source);
+    if (draft.contacts.email) {
+      setOutreachRecipient(draft.contacts.email);
+    }
+  };
+
+  const handleOpenOutreach = async () => {
+    setOutreachOpen(true);
+    if (!activeOrganization || !tenderId) return;
+    setDraftLoading(true);
+    try {
+      const { draft } = await saasApi.getOutreachDraft(
+        activeOrganization.id,
+        tenderId,
+      );
+      applyDraftToForm(draft);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Αποτυχία φόρτωσης προτύπου",
+      );
+    } finally {
+      setDraftLoading(false);
+    }
+  };
+
+  const handleRegenerateDraft = async () => {
+    if (!activeOrganization || !tenderId) return;
+    setBusy(true);
+    try {
+      const { draft } = await saasApi.saveOutreachDraft(
+        activeOrganization.id,
+        tenderId,
+        {
+          regenerate: true,
+          contacts: {
+            name: outreachContactName.trim() || null,
+            department: outreachContactDept.trim() || null,
+            email: outreachContactEmail.trim() || null,
+            phone: outreachContactPhone.trim() || null,
+          },
+        },
+      );
+      applyDraftToForm(draft);
+      toast.success("Το email ξαναδημιουργήθηκε από το πρότυπο.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία προτύπου");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSaveContacts = async () => {
+    if (!activeOrganization || !tenderId) return;
+    setBusy(true);
+    try {
+      const { draft } = await saasApi.saveOutreachDraft(
+        activeOrganization.id,
+        tenderId,
+        {
+          subject: outreachSubject,
+          body: outreachBody,
+          manualEdited: true,
+          contacts: {
+            name: outreachContactName.trim() || null,
+            department: outreachContactDept.trim() || null,
+            email: outreachContactEmail.trim() || null,
+            phone: outreachContactPhone.trim() || null,
+          },
+        },
+      );
+      applyDraftToForm(draft);
+      toast.success("Αποθηκεύτηκαν επαφές και πρόχειρο.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία αποθήκευσης");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleGenerateCompanyProfile = async () => {
+    if (!activeOrganization) return;
+    setBusy(true);
+    try {
+      const result = await saasApi.generateCompanyProfile(activeOrganization.id);
+      setOutreachDocs((prev) => {
+        if (prev.some((d) => d.id === result.document.id)) return prev;
+        return [...prev, result.document];
+      });
+      toast.success(
+        result.created
+          ? "Δημιουργήθηκε εταιρικό προφίλ και προστέθηκε στα συνημμένα."
+          : "Ανανεώθηκε το εταιρικό προφίλ και προστέθηκε στα συνημμένα.",
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Αποτυχία δημιουργίας προφίλ",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCopyOutreach = async () => {
+    const text = `Θέμα: ${outreachSubject}\n\n${outreachBody}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Αντιγράφηκε θέμα + κείμενο.");
+    } catch {
+      toast.error("Αποτυχία αντιγραφής");
+    }
+  };
+
+  const mailtoHref = (() => {
+    const to = outreachContactEmail.trim() || outreachRecipient.trim();
+    if (!to) return null;
+    const params = new URLSearchParams();
+    if (outreachSubject.trim()) params.set("subject", outreachSubject.trim());
+    if (outreachBody.trim()) params.set("body", outreachBody.trim());
+    return `mailto:${encodeURIComponent(to)}?${params.toString()}`;
+  })();
+
   const handleOutreach = async () => {
     if (!activeOrganization || !tenderId) return;
     setBusy(true);
     try {
+      await saasApi.saveOutreachDraft(activeOrganization.id, tenderId, {
+        subject: outreachSubject,
+        body: outreachBody,
+        manualEdited: true,
+        contacts: {
+          name: outreachContactName.trim() || null,
+          department: outreachContactDept.trim() || null,
+          email: outreachContactEmail.trim() || null,
+          phone: outreachContactPhone.trim() || null,
+        },
+      });
       await saasApi.recordOutreach(activeOrganization.id, tenderId, {
         sentAt: new Date(outreachAt).toISOString(),
         method: outreachMethod,
-        recipient: outreachRecipient.trim() || null,
+        recipient:
+          outreachRecipient.trim() ||
+          outreachContactEmail.trim() ||
+          null,
+        subject: outreachSubject.trim() || null,
+        body: outreachBody.trim() || null,
         externalReference: outreachReference.trim() || null,
         notes: outreachNotes.trim() || null,
         documentIds: outreachDocs.map((doc) => doc.id),
       });
-      toast.success("Καταγράφηκε. Παρακολουθούμε το ΚΗΜΔΗΣ για επίσημη πρόσκληση.");
+      toast.success(
+        "Καταγράφηκε. Προστέθηκε αυτόματα στα Παρακολουθούμενα — παρακολουθούμε για επίσημη πρόσκληση.",
+      );
       setOutreachOpen(false);
       setOutreachDocs([]);
       await load();
@@ -341,17 +602,21 @@ export const TenderDetailPage = () => {
 
   const matchMeta = opportunity?.matchMeta;
 
+  const canPrepareOutreach =
+    item.recordType === "REQ" && !hasOutreach;
+
   const primaryAction = (() => {
+    // Outreach is available before Follow — recording as sent auto-follows.
+    if (canPrepareOutreach && (!following || nextActionCode === "RECORD_OUTREACH")) {
+      return {
+        label: "Προετοιμασία Εκδήλωσης Ενδιαφέροντος",
+        onClick: () => void handleOpenOutreach(),
+      };
+    }
     if (!following) {
       return {
         label: "Παρακολούθηση",
         onClick: () => void handleFollow(),
-      };
-    }
-    if (nextActionCode === "RECORD_OUTREACH") {
-      return {
-        label: "Καταγραφή Εκδήλωσης Ενδιαφέροντος",
-        onClick: () => setOutreachOpen(true),
       };
     }
     if (nextActionCode === "START_PREPARATION") {
@@ -394,8 +659,16 @@ export const TenderDetailPage = () => {
           <p className="text-sm text-muted-foreground">
             {item.contractingAuthority || "—"}
           </p>
+          <p
+            className="text-3xl font-bold tracking-tight tabular-nums text-foreground sm:text-4xl"
+            aria-label={`Αξία χωρίς ΦΠΑ ${formatMoney(item.budgetWithoutVat)}`}
+          >
+            {formatMoney(item.budgetWithoutVat)}
+            <span className="ml-2 align-middle text-sm font-medium text-muted-foreground">
+              χωρίς ΦΠΑ
+            </span>
+          </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span>Αξία: {formatMoney(item.budgetWithoutVat)}</span>
             <span>Καταχώριση: {formatDate(item.submissionDate || item.signedDate)}</span>
             {item.finalSubmissionDate ? (
               <span>Καταληκτική: {formatDate(item.finalSubmissionDate)}</span>
@@ -419,6 +692,36 @@ export const TenderDetailPage = () => {
               {primaryAction.label}
             </Button>
           ) : null}
+          {canPrepareOutreach &&
+          following &&
+          nextActionCode !== "RECORD_OUTREACH" ? (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => void handleOpenOutreach()}
+            >
+              Προετοιμασία Εκδήλωσης Ενδιαφέροντος
+            </Button>
+          ) : null}
+          {!following &&
+          primaryAction?.label !== "Παρακολούθηση" ? (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => void handleFollow()}
+            >
+              Παρακολούθηση
+            </Button>
+          ) : null}
+          {following ? (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => void handleUnfollow()}
+            >
+              Διακοπή παρακολούθησης
+            </Button>
+          ) : null}
           {tenderId ? (
             <Button
               variant="outline"
@@ -437,21 +740,75 @@ export const TenderDetailPage = () => {
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Νέα εξέλιξη</CardTitle>
             <CardDescription>
-              {relatedProcs.length > 0
-                ? "Εντοπίστηκε σχετική επίσημη πρόσκληση."
-                : "Δημοσιεύτηκε σχετική απόφαση ανάθεσης."}
+              {relatedProcs.some(
+                (link) =>
+                  link.confidence === "LIKELY" || link.confidence === "POSSIBLE",
+              )
+                ? "Πιθανή σχετική δημοσίευση — επιβεβαιώστε ή απορρίψτε."
+                : relatedProcs.length > 0
+                  ? "Εντοπίστηκε σχετική επίσημη πρόσκληση."
+                  : "Δημοσιεύτηκε σχετική απόφαση ανάθεσης."}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            {[...relatedProcs, ...relatedAwards].map((link) => (
-              <Button key={link.id} size="sm" variant="outline" asChild>
-                <Link
-                  to={`/app/tenders/${link.targetTender.recordType === "PROC" ? "PROC" : "REQ"}/${encodeURIComponent(link.targetTender.referenceNumber)}`}
+          <CardContent className="space-y-3">
+            {[...relatedProcs, ...relatedAwards].map((link) => {
+              const needsReview =
+                link.confidence === "LIKELY" || link.confidence === "POSSIBLE";
+              const type =
+                link.targetTender.recordType === "PROC" ? "PROC" : "REQ";
+              return (
+                <div
+                  key={link.id}
+                  className="flex flex-col gap-2 rounded-md border border-border/70 bg-background/70 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  Προβολή {link.targetTender.recordType} {link.targetTender.referenceNumber}
-                </Link>
-              </Button>
-            ))}
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={needsReview ? "outline" : "success"}>
+                        {needsReview
+                          ? "Πιθανή σχέση"
+                          : link.confidence === "CONFIRMED"
+                            ? "Επιβεβαιωμένη"
+                            : link.confidence}
+                      </Badge>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {link.targetTender.recordType} {link.targetTender.referenceNumber}
+                      </span>
+                    </div>
+                    <div className="text-sm font-medium">
+                      {link.targetTender.title || "—"}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {needsReview ? (
+                      <>
+                        <Button
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => void handleConfirmRelatedAct(link.id)}
+                        >
+                          Επιβεβαίωση
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => void handleDismissRelatedAct(link.id)}
+                        >
+                          Δεν σχετίζεται
+                        </Button>
+                      </>
+                    ) : null}
+                    <Button size="sm" variant="outline" asChild>
+                      <Link
+                        to={`/app/tenders/${type}/${encodeURIComponent(link.targetTender.referenceNumber)}`}
+                      >
+                        Προβολή
+                      </Link>
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
             {relatedProcs.length > 0 && !isSubmitted && nextActionCode !== "RECORD_SUBMISSION" ? (
               <Button size="sm" disabled={busy} onClick={() => void handlePrepare()}>
                 Έναρξη προετοιμασίας
@@ -463,49 +820,178 @@ export const TenderDetailPage = () => {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          {/* 2 — Current organization state */}
-          {following ? (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Κατάσταση εταιρείας</CardTitle>
-                <CardDescription>
-                  Τι έχουμε κάνει εμείς και τι περιμένουμε από το ΚΗΜΔΗΣ.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <div>
-                    <span className="text-muted-foreground">Στάδιο: </span>
-                    {workflow?.stageLabel}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Παρακολούθηση: </span>
-                    {workflow?.organizationTender?.monitoringActive ? "Ενεργή" : "Ανενεργή"}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Εκδήλωση ενδιαφέροντος: </span>
-                    {hasOutreach ? formatDate(outreach?.sentAt) : "Δεν έχει καταγραφεί"}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Υποβολή: </span>
-                    {workflow?.latestSubmission
-                      ? `${formatDateTime(workflow.latestSubmission.submittedAt)} · ${submissionMethodLabel(workflow.latestSubmission.submissionMethod)}${workflow.latestSubmission.externalReference ? ` · ${workflow.latestSubmission.externalReference}` : ""}`
-                      : "Δεν έχει καταγραφεί"}
-                  </div>
-                </div>
-                {workflow?.expectedDevelopment ? (
-                  <div className="rounded-md border border-border px-3 py-2">
-                    <div className="font-medium">
-                      Αναμενόμενη επίσημη εξέλιξη: {workflow.expectedDevelopment.label}
-                    </div>
-                    <p className="text-muted-foreground">
-                      {workflow.expectedDevelopment.description}
+          {/* Next action — always in main column so the page is never empty */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Επόμενη ενέργεια</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="font-medium">{workflow?.nextAction.label}</div>
+              <p className="text-muted-foreground">{workflow?.nextAction.description}</p>
+              {primaryAction ? (
+                <Button size="sm" disabled={busy} onClick={primaryAction.onClick}>
+                  {primaryAction.label}
+                </Button>
+              ) : null}
+              {canPrepareOutreach ? (
+                <p className="text-xs text-muted-foreground">
+                  Η καταγραφή δεν στέλνει email στον φορέα — καταγράφει ό,τι κάνατε εσείς
+                  και ξεκινά αυτόματα παρακολούθηση.
+                </p>
+              ) : null}
+              {following && isSubmitted ? (
+                <Button size="sm" variant="outline" onClick={() => setSubmissionOpen(true)}>
+                  Καταγραφή νέας υποβολής
+                </Button>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {/* History under next action */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Ιστορικό {kind.genitive}</CardTitle>
+              <CardDescription>
+                Μόνο γεγονότα που έχουν συμβεί — επίσημες πράξεις ΚΗΜΔΗΣ και ενέργειες της
+                εταιρείας.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="max-h-72 space-y-3 overflow-y-auto pr-1">
+              {(() => {
+                const timeline = (workflow?.timeline ?? []).filter((entry) =>
+                  following ? true : entry.kind === "official",
+                );
+                if (timeline.length === 0) {
+                  return (
+                    <p className="text-sm text-muted-foreground">
+                      Δεν υπάρχουν ακόμη γεγονότα για αυτό το {kind.nominative}.
                     </p>
+                  );
+                }
+                return timeline.map((entry) => {
+                const official = entry.kind === "official";
+                return (
+                  <div
+                    key={entry.key}
+                    className={`flex gap-3 rounded-md border px-3 py-3 ${
+                      official ? "border-border bg-muted/40" : "border-dashed border-border"
+                    }`}
+                  >
+                    <div className="mt-0.5 shrink-0 text-muted-foreground">
+                      {official ? (
+                        <Landmark className="h-4 w-4" />
+                      ) : (
+                        <Building2 className="h-4 w-4" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium">{entry.title}</span>
+                        <Badge variant={official ? "secondary" : "outline"}>
+                          {official ? "ΚΗΜΔΗΣ" : "Εταιρεία"}
+                        </Badge>
+                        {entry.isNew ? <Badge variant="warning">Νέο</Badge> : null}
+                      </div>
+                      {entry.adam ? (
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {entry.adam}
+                        </div>
+                      ) : null}
+                      {entry.subtitle ? (
+                        <div className="text-sm text-muted-foreground">{entry.subtitle}</div>
+                      ) : null}
+                      <div className="text-xs text-muted-foreground">
+                        {formatDateTime(entry.at)}
+                      </div>
+                    </div>
                   </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          ) : null}
+                );
+              });
+              })()}
+            </CardContent>
+          </Card>
+
+          {/* Company state — always visible */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Κατάσταση εταιρείας</CardTitle>
+              <CardDescription>
+                Τι έχουμε κάνει εμείς και τι περιμένουμε από το ΚΗΜΔΗΣ.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {!following ? (
+                <p className="text-muted-foreground">
+                  Δεν παρακολουθείται ακόμη. Ξεκινήστε με εκδήλωση ενδιαφέροντος ή
+                  πατήστε Παρακολούθηση.
+                </p>
+              ) : (
+                <>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <span className="text-muted-foreground">Στάδιο: </span>
+                      {workflow?.stageLabel}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Παρακολούθηση: </span>
+                      {workflow?.organizationTender?.monitoringActive
+                        ? "Ενεργή"
+                        : "Ανενεργή"}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Εκδήλωση ενδιαφέροντος: </span>
+                      {hasOutreach ? formatDate(outreach?.sentAt) : "Δεν έχει καταγραφεί"}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Υποβολή: </span>
+                      {workflow?.latestSubmission
+                        ? `${formatDateTime(workflow.latestSubmission.submittedAt)} · ${submissionMethodLabel(workflow.latestSubmission.submissionMethod)}${workflow.latestSubmission.externalReference ? ` · ${workflow.latestSubmission.externalReference}` : ""}`
+                        : "Δεν έχει καταγραφεί"}
+                    </div>
+                  </div>
+                  {workflow?.latestSubmission ? (
+                    <div className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2">
+                      <span className="text-sm text-muted-foreground">Αποτέλεσμα:</span>
+                      {workflow.latestSubmission.result === "WON" ? (
+                        <Badge variant="success">Επιτυχία</Badge>
+                      ) : workflow.latestSubmission.result === "LOST" ? (
+                        <Badge variant="destructive">Ανεπιτυχές</Badge>
+                      ) : (
+                        <>
+                          <Badge variant="outline">Εκκρεμεί</Badge>
+                          <Button
+                            size="sm"
+                            disabled={busy}
+                            onClick={() => void handleConfirmResult("WON")}
+                          >
+                            Επιτυχία
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => void handleConfirmResult("LOST")}
+                          >
+                            Ανεπιτυχές
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                  {workflow?.expectedDevelopment ? (
+                    <div className="rounded-md border border-border px-3 py-2">
+                      <div className="font-medium">
+                        Αναμενόμενη επίσημη εξέλιξη: {workflow.expectedDevelopment.label}
+                      </div>
+                      <p className="text-muted-foreground">
+                        {workflow.expectedDevelopment.description}
+                      </p>
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Recorded outreach detail incl. vault documents */}
           {hasOutreach ? (
@@ -556,59 +1042,7 @@ export const TenderDetailPage = () => {
             </Card>
           ) : null}
 
-          {/* 4 — Real timeline: official KIMDIS acts vs company actions */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Ιστορικό νήματος</CardTitle>
-              <CardDescription>
-                Μόνο γεγονότα που έχουν συμβεί — επίσημες πράξεις ΚΗΜΔΗΣ και ενέργειες της
-                εταιρείας.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {(workflow?.timeline ?? []).map((entry) => {
-                const official = entry.kind === "official";
-                return (
-                  <div
-                    key={entry.key}
-                    className={`flex gap-3 rounded-md border px-3 py-3 ${
-                      official ? "border-border bg-muted/40" : "border-dashed border-border"
-                    }`}
-                  >
-                    <div className="mt-0.5 shrink-0 text-muted-foreground">
-                      {official ? (
-                        <Landmark className="h-4 w-4" />
-                      ) : (
-                        <Building2 className="h-4 w-4" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium">{entry.title}</span>
-                        <Badge variant={official ? "secondary" : "outline"}>
-                          {official ? "ΚΗΜΔΗΣ" : "Εταιρεία"}
-                        </Badge>
-                        {entry.isNew ? <Badge variant="warning">Νέο</Badge> : null}
-                      </div>
-                      {entry.adam ? (
-                        <div className="font-mono text-xs text-muted-foreground">
-                          {entry.adam}
-                        </div>
-                      ) : null}
-                      {entry.subtitle ? (
-                        <div className="text-sm text-muted-foreground">{entry.subtitle}</div>
-                      ) : null}
-                      <div className="text-xs text-muted-foreground">
-                        {formatDateTime(entry.at)}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </CardContent>
-          </Card>
-
-          {/* 5 — Tender workspace reusing Company Vault */}
+          {/* Tender workspace reusing Company Vault */}
           {workspace?.workspace ? (
             <Card>
               <CardHeader className="pb-3">
@@ -665,33 +1099,8 @@ export const TenderDetailPage = () => {
           ) : null}
         </div>
 
-        {/* 3 — Next recommended action */}
+        {/* Right rail — context only */}
         <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Επόμενη ενέργεια</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="font-medium">{workflow?.nextAction.label}</div>
-              <p className="text-muted-foreground">{workflow?.nextAction.description}</p>
-              {primaryAction ? (
-                <Button size="sm" disabled={busy} onClick={primaryAction.onClick}>
-                  {primaryAction.label}
-                </Button>
-              ) : null}
-              {following && !hasOutreach && item.recordType === "REQ" ? (
-                <p className="text-xs text-muted-foreground">
-                  Η καταγραφή δεν στέλνει email στον φορέα — καταγράφει ό,τι κάνατε εσείς.
-                </p>
-              ) : null}
-              {following && isSubmitted ? (
-                <Button size="sm" variant="outline" onClick={() => setSubmissionOpen(true)}>
-                  Καταγραφή νέας υποβολής
-                </Button>
-              ) : null}
-            </CardContent>
-          </Card>
-
           {matchMeta?.matchedProfiles?.length ? (
             <Card>
               <CardHeader className="pb-3">
@@ -716,7 +1125,6 @@ export const TenderDetailPage = () => {
             </Card>
           ) : null}
 
-          {/* 6 — Official source information */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Επίσημη πηγή</CardTitle>
@@ -724,7 +1132,12 @@ export const TenderDetailPage = () => {
             <CardContent className="space-y-2 text-sm">
               <div>Τύπος: {item.recordType}</div>
               <div className="font-mono text-xs">{item.adam}</div>
-              <div>Αξία: {formatMoney(item.budgetWithoutVat)}</div>
+              <div className="text-lg font-semibold tabular-nums">
+                Αξία: {formatMoney(item.budgetWithoutVat)}
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  χωρίς ΦΠΑ
+                </span>
+              </div>
               <div>Καταχώριση: {formatDate(item.submissionDate || item.signedDate)}</div>
               {item.finalSubmissionDate ? (
                 <div>Καταληκτική: {formatDate(item.finalSubmissionDate)}</div>
@@ -755,109 +1168,227 @@ export const TenderDetailPage = () => {
       />
 
       <Dialog open={outreachOpen} onOpenChange={setOutreachOpen}>
-        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Καταγραφή Εκδήλωσης Ενδιαφέροντος</DialogTitle>
+            <DialogTitle>Προετοιμασία Εκδήλωσης Ενδιαφέροντος</DialogTitle>
             <DialogDescription>
-              Καταγράφει ενέργεια που κάνατε εσείς. Η εφαρμογή δεν στέλνει τίποτα στον φορέα
-              και αυτό δεν αποτελεί υποβολή.
+              Συμπληρώστε επαφή φορέα, ετοιμάστε το email από πρότυπο, επισυνάψτε εταιρικό
+              προφίλ — και καταγράψτε όταν το στείλετε εσείς. Η εφαρμογή δεν στέλνει τίποτα
+              αυτόματα.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label htmlFor="outreach-at">Ημερομηνία / ώρα</Label>
-              <Input
-                id="outreach-at"
-                type="datetime-local"
-                value={outreachAt}
-                onChange={(e) => setOutreachAt(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="outreach-method">Μέθοδος</Label>
-              <Select
-                id="outreach-method"
-                value={outreachMethod}
-                onChange={(e) => setOutreachMethod(e.target.value)}
-              >
-                {OUTREACH_METHODS.map((method) => (
-                  <option key={method} value={method}>
-                    {outreachMethodLabel(method)}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="outreach-recipient">Παραλήπτης / επαφή</Label>
-              <Input
-                id="outreach-recipient"
-                value={outreachRecipient}
-                onChange={(e) => setOutreachRecipient(e.target.value)}
-                placeholder="Τμήμα προμηθειών, email ή όνομα"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Σχετικά έγγραφα εταιρείας</Label>
-              {outreachDocs.length ? (
-                <ul className="space-y-1 text-sm">
-                  {outreachDocs.map((doc) => (
-                    <li key={doc.id} className="flex items-center justify-between gap-2">
-                      <span className="truncate">{doc.name}</span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() =>
-                          setOutreachDocs((prev) => prev.filter((d) => d.id !== doc.id))
-                        }
-                      >
-                        Αφαίρεση
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  Π.χ. Εκδήλωση Ενδιαφέροντος, Company Profile, Συνοδευτική επιστολή.
-                </p>
-              )}
-              <div className="flex flex-wrap gap-2">
+          {draftLoading ? (
+            <p className="text-sm text-muted-foreground">Φόρτωση προτύπου…</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-md border border-border bg-muted/30 p-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Επαφή φορέα (από αίτημα)</p>
+                  {outreachSuggestedSource === "extracted" ? (
+                    <Badge variant="outline">Βρέθηκε στο κείμενο</Badge>
+                  ) : outreachSuggestedSource === "stored" ? (
+                    <Badge variant="outline">Αποθηκευμένη</Badge>
+                  ) : (
+                    <Badge variant="outline">Συμπληρώστε χειροκίνητα</Badge>
+                  )}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="oc-name">Όνομα</Label>
+                    <Input
+                      id="oc-name"
+                      value={outreachContactName}
+                      onChange={(e) => setOutreachContactName(e.target.value)}
+                      placeholder="π.χ. Υπεύθυνος προμηθειών"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="oc-dept">Τμήμα</Label>
+                    <Input
+                      id="oc-dept"
+                      value={outreachContactDept}
+                      onChange={(e) => setOutreachContactDept(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="oc-email">Email</Label>
+                    <Input
+                      id="oc-email"
+                      type="email"
+                      value={outreachContactEmail}
+                      onChange={(e) => {
+                        setOutreachContactEmail(e.target.value);
+                        setOutreachRecipient(e.target.value);
+                      }}
+                      placeholder="name@orga.gr"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="oc-phone">Τηλέφωνο</Label>
+                    <Input
+                      id="oc-phone"
+                      value={outreachContactPhone}
+                      onChange={(e) => setOutreachContactPhone(e.target.value)}
+                    />
+                  </div>
+                </div>
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setOutreachPickerOpen(true)}
+                  disabled={busy}
+                  onClick={() => void handleSaveContacts()}
                 >
-                  Επιλογή από Έγγραφα Εταιρείας
+                  Αποθήκευση επαφών
                 </Button>
-                <Button size="sm" variant="ghost" asChild>
-                  <Link to="/app/documents">Μεταφόρτωση νέου αρχείου</Link>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label htmlFor="outreach-subject">Θέμα email (από πρότυπο)</Label>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => void handleRegenerateDraft()}
+                  >
+                    Επαναδημιουργία από πρότυπο
+                  </Button>
+                </div>
+                <Input
+                  id="outreach-subject"
+                  value={outreachSubject}
+                  onChange={(e) => setOutreachSubject(e.target.value)}
+                />
+                <Label htmlFor="outreach-body">Κείμενο</Label>
+                <Textarea
+                  id="outreach-body"
+                  className="min-h-[220px] font-sans text-sm"
+                  value={outreachBody}
+                  onChange={(e) => setOutreachBody(e.target.value)}
+                />
+                {outreachUnresolved.length ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Συμπληρώστε στα στοιχεία εταιρείας:{" "}
+                    {outreachUnresolved.map((k) => `{{${k}}}`).join(", ")}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleCopyOutreach()}
+                  >
+                    Αντιγραφή
+                  </Button>
+                  {mailtoHref ? (
+                    <Button size="sm" variant="outline" asChild>
+                      <a href={mailtoHref}>Άνοιγμα στο email σας</a>
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="outreach-at">Ημερομηνία / ώρα αποστολής</Label>
+                  <Input
+                    id="outreach-at"
+                    type="datetime-local"
+                    value={outreachAt}
+                    onChange={(e) => setOutreachAt(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="outreach-method">Μέθοδος</Label>
+                  <Select
+                    id="outreach-method"
+                    value={outreachMethod}
+                    onChange={(e) => setOutreachMethod(e.target.value)}
+                  >
+                    {OUTREACH_METHODS.map((method) => (
+                      <option key={method} value={method}>
+                        {outreachMethodLabel(method)}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Συνημμένα από Έγγραφα Εταιρείας</Label>
+                {outreachDocs.length ? (
+                  <ul className="space-y-1 text-sm">
+                    {outreachDocs.map((doc) => (
+                      <li
+                        key={doc.id}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span className="truncate">{doc.name}</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setOutreachDocs((prev) =>
+                              prev.filter((d) => d.id !== doc.id),
+                            )
+                          }
+                        >
+                          Αφαίρεση
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Προτείνεται εταιρικό προφίλ + συνοδευτικά.
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => void handleGenerateCompanyProfile()}
+                  >
+                    Δημιουργία εταιρικού προφίλ
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setOutreachPickerOpen(true)}
+                  >
+                    Επιλογή από Έγγραφα
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="outreach-reference">Αναφορά / αριθμός μηνύματος</Label>
+                <Input
+                  id="outreach-reference"
+                  value={outreachReference}
+                  onChange={(e) => setOutreachReference(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="outreach-notes">Σημειώσεις</Label>
+                <Textarea
+                  id="outreach-notes"
+                  value={outreachNotes}
+                  onChange={(e) => setOutreachNotes(e.target.value)}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setOutreachOpen(false)}>
+                  Ακύρωση
+                </Button>
+                <Button disabled={busy} onClick={() => void handleOutreach()}>
+                  Καταγραφή ως απεσταλμένο
                 </Button>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="outreach-reference">Αναφορά / αριθμός μηνύματος</Label>
-              <Input
-                id="outreach-reference"
-                value={outreachReference}
-                onChange={(e) => setOutreachReference(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="outreach-notes">Σημειώσεις</Label>
-              <Textarea
-                id="outreach-notes"
-                value={outreachNotes}
-                onChange={(e) => setOutreachNotes(e.target.value)}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setOutreachOpen(false)}>
-                Ακύρωση
-              </Button>
-              <Button disabled={busy} onClick={() => void handleOutreach()}>
-                Καταγραφή
-              </Button>
-            </div>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
 

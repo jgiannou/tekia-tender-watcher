@@ -521,6 +521,8 @@ export type TenderWorkflow = {
   relatedActs: Array<{
     id: string;
     relationType: string;
+    confidence: string;
+    detectionMethod?: string | null;
     targetTender: {
       id: string;
       referenceNumber: string;
@@ -540,6 +542,7 @@ export type TenderWorkflow = {
     amountWithoutVat: number | null;
     notes: string | null;
     submittedByUserId: string | null;
+    result?: string | null;
   } | null;
   workspaceDocumentCount: number;
   stageLabel: string;
@@ -908,6 +911,33 @@ export type VaultDocument = {
   updatedAt?: string;
   createdAt: string;
   folder?: { id: string; name: string } | null;
+};
+
+export type OutreachDraft = {
+  subject: string;
+  body: string;
+  documentTitle: string;
+  unresolvedKeys: string[];
+  manualEdited: boolean;
+  status: "DRAFT" | "READY" | "SENT";
+  contacts: {
+    name: string | null;
+    department: string | null;
+    email: string | null;
+    phone: string | null;
+  };
+  suggestedContacts: {
+    email: string | null;
+    phone: string | null;
+    source: "stored" | "extracted" | "none";
+  };
+  company: {
+    legalName: string | null;
+    brandName: string | null;
+    email: string | null;
+    phone: string | null;
+    contactName: string | null;
+  };
 };
 
 export const DOCUMENT_TYPE_OPTIONS = [
@@ -1410,6 +1440,11 @@ export const saasApi = {
       `/api/saas/tenders/${tenderId}/follow`,
       { method: "POST", organizationId },
     ),
+  unfollowTender: (organizationId: string, tenderId: string) =>
+    request<{ organizationTender: unknown }>(
+      `/api/saas/tenders/${tenderId}/unfollow`,
+      { method: "POST", organizationId },
+    ),
   dismissTender: (
     organizationId: string,
     tenderId: string,
@@ -1437,6 +1472,16 @@ export const saasApi = {
       `/api/saas/tenders/${tenderId}/workflow`,
       { organizationId },
     ),
+  confirmRelatedAct: (organizationId: string, linkId: string) =>
+    request<{ relatedActLink: { id: string; confidence: string } }>(
+      `/api/saas/related-acts/${linkId}/confirm`,
+      { method: "POST", organizationId },
+    ),
+  dismissRelatedAct: (organizationId: string, linkId: string) =>
+    request<{ relatedActLink: { id: string; confidence: string } }>(
+      `/api/saas/related-acts/${linkId}/dismiss`,
+      { method: "POST", organizationId },
+    ),
   recordOutreach: (
     organizationId: string,
     tenderId: string,
@@ -1445,6 +1490,7 @@ export const saasApi = {
       method?: string | null;
       recipient?: string | null;
       subject?: string | null;
+      body?: string | null;
       notes?: string | null;
       externalReference?: string | null;
       documentIds?: string[];
@@ -1458,6 +1504,45 @@ export const saasApi = {
         body: JSON.stringify(input),
       },
     ),
+  getOutreachDraft: (organizationId: string, tenderId: string) =>
+    request<{ draft: OutreachDraft }>(
+      `/api/saas/tenders/${tenderId}/outreach-draft`,
+      { organizationId },
+    ),
+  saveOutreachDraft: (
+    organizationId: string,
+    tenderId: string,
+    input: {
+      subject?: string | null;
+      body?: string | null;
+      manualEdited?: boolean;
+      regenerate?: boolean;
+      contacts?: {
+        name?: string | null;
+        department?: string | null;
+        email?: string | null;
+        phone?: string | null;
+      };
+    },
+  ) =>
+    request<{ draft: OutreachDraft }>(
+      `/api/saas/tenders/${tenderId}/outreach-draft`,
+      {
+        method: "PUT",
+        organizationId,
+        body: JSON.stringify(input),
+      },
+    ),
+  generateCompanyProfile: (organizationId: string) =>
+    request<{
+      document: VaultDocument;
+      created: boolean;
+      name: string;
+    }>("/api/saas/vault/company-profile/generate", {
+      method: "POST",
+      organizationId,
+      body: JSON.stringify({}),
+    }),
   startPreparation: (organizationId: string, tenderId: string) =>
     request<{ organizationTender: unknown }>(
       `/api/saas/tenders/${tenderId}/prepare`,
@@ -1486,6 +1571,19 @@ export const saasApi = {
       `/api/saas/tenders/${tenderId}/submissions`,
       {
         method: "POST",
+        organizationId,
+        body: JSON.stringify(input),
+      },
+    ),
+  confirmSubmissionResult: (
+    organizationId: string,
+    submissionId: string,
+    input: { result: "WON" | "LOST"; notes?: string | null },
+  ) =>
+    request<{ submission: FormalSubmissionRow; organizationTender: unknown }>(
+      `/api/saas/submissions/${submissionId}/result`,
+      {
+        method: "PATCH",
         organizationId,
         body: JSON.stringify(input),
       },

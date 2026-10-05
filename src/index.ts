@@ -97,6 +97,12 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
     const { runPeriodicWatchProfileScans } = await import(
       "./saas/jobs/periodic-watch-scans.js"
     );
+    const { monitorFollowedThreads } = await import(
+      "./saas/jobs/monitor-followed-threads.js"
+    );
+    const { flushRelatedActEmailDigests } = await import(
+      "./saas/services/notify.js"
+    );
     const { app: saasApp } = createSaasApp({ prisma: getPrisma(), kimdis });
     app.route("/", saasApp);
     console.log("saas API: enabled (/api/auth/* , /api/saas/*)");
@@ -105,14 +111,45 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
     const periodicExpression = "15 */4 * * *";
     if (cron.validate(periodicExpression)) {
       cron.schedule(periodicExpression, () => {
-        void runPeriodicWatchProfileScans(getPrisma(), kimdis).catch((error) => {
+        void (async () => {
+          await runPeriodicWatchProfileScans(getPrisma(), kimdis);
+          // Discover related acts on followed threads (Pro gets immediate email).
+          await monitorFollowedThreads(getPrisma());
+        })().catch((error) => {
           console.error(
-            "periodic watch scan error:",
+            "periodic watch/monitor error:",
             error instanceof Error ? error.message : error,
           );
         });
       });
       console.log(`saas periodic scans: cron ${periodicExpression}`);
+    }
+
+    // Basic/Trial: one related-act email digest per day (Europe/Athens morning).
+    const relatedDigestExpression = "0 7 * * *";
+    if (cron.validate(relatedDigestExpression)) {
+      cron.schedule(
+        relatedDigestExpression,
+        () => {
+          void flushRelatedActEmailDigests(getPrisma())
+            .then((summary) => {
+              console.log(
+                "[email] related-act digest flush",
+                JSON.stringify(summary),
+              );
+            })
+            .catch((error) => {
+              console.error(
+                "related-act digest flush error:",
+                error instanceof Error ? error.message : error,
+              );
+            });
+        },
+        { timezone: "Europe/Athens" },
+      );
+      console.log(
+        `saas related-act email digest: cron ${relatedDigestExpression} Europe/Athens`,
+      );
     }
   } catch (error) {
     console.error(

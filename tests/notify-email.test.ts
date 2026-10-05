@@ -7,6 +7,7 @@ import {
 import { createOrganization } from "../src/saas/services/organizations.js";
 import {
   deliverAttentionEmail,
+  flushRelatedActEmailDigests,
   shouldEmailAttentionType,
 } from "../src/saas/services/notify.js";
 import { upsertCanonicalTender } from "../src/saas/services/tenders.js";
@@ -33,7 +34,7 @@ describe("attention email delivery", () => {
     await prisma.$disconnect();
   });
 
-  it("plan policy: digests + related, not per-match opportunity mail", () => {
+  it("plan policy: digests always; related only on IMMEDIATE (Pro)", () => {
     expect(shouldEmailAttentionType("NEW_OPPORTUNITY", "IMMEDIATE")).toBe(false);
     expect(shouldEmailAttentionType("NEW_OPPORTUNITY", "DIGEST")).toBe(false);
     expect(shouldEmailAttentionType("OPPORTUNITY_DIGEST", "DIGEST")).toBe(true);
@@ -42,6 +43,9 @@ describe("attention email delivery", () => {
     );
     expect(
       shouldEmailAttentionType("RELATED_PROC_DISCOVERED", "DIGEST"),
+    ).toBe(false);
+    expect(
+      shouldEmailAttentionType("RELATED_PROC_DISCOVERED", "IMMEDIATE"),
     ).toBe(true);
   });
 
@@ -188,5 +192,184 @@ describe("attention email delivery", () => {
     const result = await deliverAttentionEmail(prisma, event.id);
     expect(result).toBe("skipped");
     expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it("Basic DIGEST skips immediate related-act mail; flush sends one digest", async () => {
+    const sendMail = vi.fn(async () => ({ messageId: "digest" }));
+    __setMailTransportForTests({ sendMail } as never);
+
+    const user = await prisma.user.create({
+      data: {
+        name: "Notify Basic",
+        email: `notify-basic-${Date.now()}@example.com`,
+        emailVerified: true,
+      },
+    });
+    const organization = await createOrganization(prisma, {
+      userId: user.id,
+      name: "Notify Basic Org",
+    });
+    await prisma.subscription.update({
+      where: { organizationId: organization.id },
+      data: { planKey: "basic", status: "ACTIVE", trialEndsAt: null },
+    });
+    await prisma.organizationSettings.update({
+      where: { organizationId: organization.id },
+      data: {
+        notifications: {
+          emailEnabled: true,
+          recipients: [user.email],
+          events: {
+            newOpportunity: true,
+            relatedActOnFollowed: true,
+            postSubmissionUpdate: true,
+          },
+        },
+      },
+    });
+
+    const source = await upsertCanonicalTender(prisma, {
+      referenceNumber: "26REQ-REL-SRC",
+      recordType: "REQ",
+      title: "Αίτημα ιστοσελίδας",
+      contractingAuthority: "Δήμος Test",
+      submissionDate: new Date(),
+    });
+    const related = await upsertCanonicalTender(prisma, {
+      referenceNumber: "26PROC-REL-TGT",
+      recordType: "PROC",
+      title: "Πρόσκληση ιστοσελίδας",
+      contractingAuthority: "Δήμος Test",
+      submissionDate: new Date(),
+    });
+    const orgTender = await prisma.organizationTender.create({
+      data: {
+        organizationId: organization.id,
+        tenderId: source.id,
+        relevanceStatus: "RELEVANT",
+        following: true,
+        score: 80,
+      },
+    });
+    const event = await prisma.organizationAttentionEvent.create({
+      data: {
+        organizationId: organization.id,
+        organizationTenderId: orgTender.id,
+        relatedTenderId: related.id,
+        type: "RELATED_PROC_DISCOVERED",
+        title: related.title ?? "related",
+        dedupeKey: `RELATED_PROC_DISCOVERED:${source.id}:${related.id}`,
+        metadata: {
+          referenceNumber: related.referenceNumber,
+          relatedTenderTitle: related.title,
+          authority: related.contractingAuthority,
+          recordType: "PROC",
+          sourceReferenceNumber: source.referenceNumber,
+          sourceTenderTitle: source.title,
+          sourceRecordType: "REQ",
+          confidence: "LIKELY",
+        },
+      },
+    });
+
+    expect(await deliverAttentionEmail(prisma, event.id)).toBe("skipped");
+    expect(sendMail).not.toHaveBeenCalled();
+
+    const flush = await flushRelatedActEmailDigests(prisma);
+    expect(flush.sent).toBe(1);
+    expect(sendMail).toHaveBeenCalledTimes(1);
+    const mailArg = sendMail.mock.calls[0]?.[0] as { subject?: string; html?: string };
+    expect(mailArg.subject).toMatch(/εξέλιξ(η|εις) παρακολούθησης/i);
+    expect(mailArg.html).toContain("Άνοιγμα στο ARC Tenders");
+    expect(mailArg.html).toContain("Πρόσκληση ιστοσελίδας");
+    expect(mailArg.html).not.toContain("arctenders.gr");
+    const delivery = await prisma.notificationDelivery.findFirst({
+      where: { organizationAttentionEventId: event.id },
+    });
+    expect(delivery?.status).toBe("SENT");
+    expect(delivery?.templateKey).toBe("attention.related_act_digest");
+  });
+
+  it("Pro IMMEDIATE sends related-act mail right away", async () => {
+    const sendMail = vi.fn(async () => ({ messageId: "now" }));
+    __setMailTransportForTests({ sendMail } as never);
+
+    const user = await prisma.user.create({
+      data: {
+        name: "Notify Pro Rel",
+        email: `notify-pro-rel-${Date.now()}@example.com`,
+        emailVerified: true,
+      },
+    });
+    const organization = await createOrganization(prisma, {
+      userId: user.id,
+      name: "Notify Pro Rel Org",
+    });
+    await prisma.subscription.update({
+      where: { organizationId: organization.id },
+      data: { planKey: "pro", status: "ACTIVE", trialEndsAt: null },
+    });
+    await prisma.organizationSettings.update({
+      where: { organizationId: organization.id },
+      data: {
+        notifications: {
+          emailEnabled: true,
+          recipients: [user.email],
+          events: {
+            newOpportunity: true,
+            relatedActOnFollowed: true,
+            postSubmissionUpdate: true,
+          },
+        },
+      },
+    });
+
+    const source = await upsertCanonicalTender(prisma, {
+      referenceNumber: "26REQ-REL-PRO",
+      recordType: "REQ",
+      title: "Αίτημα Pro",
+      contractingAuthority: "Δήμος Pro",
+      submissionDate: new Date(),
+    });
+    const related = await upsertCanonicalTender(prisma, {
+      referenceNumber: "26PROC-REL-PRO",
+      recordType: "PROC",
+      title: "Πρόσκληση Pro",
+      contractingAuthority: "Δήμος Pro",
+      submissionDate: new Date(),
+    });
+    const orgTender = await prisma.organizationTender.create({
+      data: {
+        organizationId: organization.id,
+        tenderId: source.id,
+        relevanceStatus: "RELEVANT",
+        following: true,
+        score: 88,
+      },
+    });
+    const event = await prisma.organizationAttentionEvent.create({
+      data: {
+        organizationId: organization.id,
+        organizationTenderId: orgTender.id,
+        relatedTenderId: related.id,
+        type: "RELATED_PROC_DISCOVERED",
+        title: related.title ?? "related",
+        dedupeKey: `RELATED_PROC_DISCOVERED:${source.id}:${related.id}`,
+        metadata: {
+          referenceNumber: related.referenceNumber,
+          relatedTenderTitle: related.title,
+          sourceReferenceNumber: source.referenceNumber,
+          sourceTenderTitle: source.title,
+          sourceRecordType: "REQ",
+          confidence: "LIKELY",
+        },
+      },
+    });
+
+    expect(await deliverAttentionEmail(prisma, event.id)).toBe("sent");
+    expect(sendMail).toHaveBeenCalledTimes(1);
+    const mailArg = sendMail.mock.calls[0]?.[0] as { html?: string };
+    expect(mailArg.html).toContain("Άνοιγμα στο ARC Tenders");
+    expect(mailArg.html).toContain("Αίτημα που παρακολουθείται");
   });
 });

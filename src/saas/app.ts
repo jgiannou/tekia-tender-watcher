@@ -39,12 +39,21 @@ import {
 } from "./services/invitations.js";
 import { recordOutreachSent } from "./services/outreach.js";
 import {
+  getOutreachDraft,
+  saveOutreachDraft,
+} from "./services/outreach-draft.js";
+import { generateCompanyProfileDocument } from "./services/company-profile-doc.js";
+import {
   WORKSPACE_SECTIONS,
   addWorkspaceDocuments,
   getTenderWorkspace,
   removeWorkspaceDocument,
 } from "./services/workspace.js";
-import { listFormalSubmissions, recordFormalSubmission } from "./services/submission.js";
+import {
+  confirmRelatedActLink,
+  dismissRelatedActLink,
+} from "./services/related-acts.js";
+import { listFormalSubmissions, recordFormalSubmission, confirmSubmissionResult } from "./services/submission.js";
 import {
   getOrganizationTenderWorkflow,
   listMonitoringPipeline,
@@ -1125,6 +1134,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
           method: z.string().nullable().optional(),
           recipient: z.string().nullable().optional(),
           subject: z.string().nullable().optional(),
+          body: z.string().nullable().optional(),
           notes: z.string().nullable().optional(),
           externalReference: z.string().nullable().optional(),
           documentIds: z.array(z.string()).optional(),
@@ -1138,11 +1148,74 @@ export const createSaasApp = (deps: SaasAppDeps) => {
         method: body.method,
         recipient: body.recipient,
         subject: body.subject,
+        body: body.body,
         notes: body.notes,
         externalReference: body.externalReference,
         documentIds: body.documentIds,
       });
       return c.json({ organizationTender: row });
+    },
+  );
+
+  app.get(
+    "/api/saas/tenders/:tenderId/outreach-draft",
+    requireSession,
+    async (c) => {
+      const organizationId = resolveOrgId(c);
+      const draft = await getOutreachDraft(deps.prisma, {
+        userId: c.get("userId"),
+        organizationId: organizationId!,
+        tenderId: c.req.param("tenderId"),
+      });
+      return c.json({ draft });
+    },
+  );
+
+  app.put(
+    "/api/saas/tenders/:tenderId/outreach-draft",
+    requireSession,
+    async (c) => {
+      const organizationId = resolveOrgId(c);
+      const body = z
+        .object({
+          subject: z.string().nullable().optional(),
+          body: z.string().nullable().optional(),
+          manualEdited: z.boolean().optional(),
+          regenerate: z.boolean().optional(),
+          contacts: z
+            .object({
+              name: z.string().nullable().optional(),
+              department: z.string().nullable().optional(),
+              email: z.string().nullable().optional(),
+              phone: z.string().nullable().optional(),
+            })
+            .optional(),
+        })
+        .parse(await c.req.json().catch(() => ({})));
+      const draft = await saveOutreachDraft(deps.prisma, {
+        userId: c.get("userId"),
+        organizationId: organizationId!,
+        tenderId: c.req.param("tenderId"),
+        subject: body.subject,
+        body: body.body,
+        manualEdited: body.manualEdited,
+        regenerate: body.regenerate,
+        contacts: body.contacts,
+      });
+      return c.json({ draft });
+    },
+  );
+
+  app.post(
+    "/api/saas/vault/company-profile/generate",
+    requireSession,
+    async (c) => {
+      const organizationId = resolveOrgId(c);
+      const result = await generateCompanyProfileDocument(deps.prisma, {
+        userId: c.get("userId"),
+        organizationId: organizationId!,
+      });
+      return c.json(result);
     },
   );
 
@@ -1153,6 +1226,28 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     });
     return c.json({ submissions });
   });
+
+  app.patch(
+    "/api/saas/submissions/:submissionId/result",
+    requireSession,
+    async (c) => {
+      const organizationId = resolveOrgId(c);
+      const body = z
+        .object({
+          result: z.enum(["WON", "LOST"]),
+          notes: z.string().nullable().optional(),
+        })
+        .parse(await c.req.json());
+      const updated = await confirmSubmissionResult(deps.prisma, {
+        userId: c.get("userId"),
+        organizationId: organizationId!,
+        submissionId: c.req.param("submissionId"),
+        result: body.result,
+        notes: body.notes,
+      });
+      return c.json(updated);
+    },
+  );
 
   app.post(
     "/api/saas/tenders/:tenderId/submissions",
@@ -1245,6 +1340,32 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     });
     return c.json({ workflow });
   });
+
+  app.post(
+    "/api/saas/related-acts/:linkId/confirm",
+    requireSession,
+    async (c) => {
+      const link = await confirmRelatedActLink(deps.prisma, {
+        userId: c.get("userId"),
+        organizationId: resolveOrgId(c),
+        relatedActLinkId: c.req.param("linkId"),
+      });
+      return c.json({ relatedActLink: link });
+    },
+  );
+
+  app.post(
+    "/api/saas/related-acts/:linkId/dismiss",
+    requireSession,
+    async (c) => {
+      const link = await dismissRelatedActLink(deps.prisma, {
+        userId: c.get("userId"),
+        organizationId: resolveOrgId(c),
+        relatedActLinkId: c.req.param("linkId"),
+      });
+      return c.json({ relatedActLink: link });
+    },
+  );
 
   app.post(
     "/api/saas/tenders/:tenderId/prepare",

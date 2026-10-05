@@ -2,6 +2,7 @@ import type { AttentionEventType, PrismaClient } from "@prisma/client";
 import { requireOrgMembership } from "../auth/org-context.js";
 import { notFound } from "../errors.js";
 import { attentionTitleFor, pruneAttentionEventsForOrg } from "./attention.js";
+import { assertCanFollowTender } from "./entitlements.js";
 
 export type OutreachDocumentRef = {
   documentId: string;
@@ -53,6 +54,7 @@ export const recordOutreachSent = async (
     notes?: string | null;
     externalReference?: string | null;
     documentIds?: string[];
+    body?: string | null;
   },
 ) => {
   await requireOrgMembership(prisma, input.userId, input.organizationId);
@@ -61,6 +63,23 @@ export const recordOutreachSent = async (
     where: { id: input.tenderId },
   });
   if (!tender) throw notFound("tender_not_found");
+
+  const existingOrgTender = await prisma.organizationTender.findUnique({
+    where: {
+      organizationId_tenderId: {
+        organizationId: input.organizationId,
+        tenderId: input.tenderId,
+      },
+    },
+  });
+  // Recording outreach auto-follows; enforce follow limits when newly following.
+  if (!existingOrgTender?.following) {
+    await assertCanFollowTender(prisma, {
+      userId: input.userId,
+      organizationId: input.organizationId,
+      tenderId: input.tenderId,
+    });
+  }
 
   const documents = await resolveOutreachDocuments(prisma, {
     organizationId: input.organizationId,
@@ -111,6 +130,7 @@ export const recordOutreachSent = async (
         organizationTenderId: orgTender.id,
         status: "SENT",
         subject: input.subject ?? null,
+        body: input.body ?? null,
         notes: input.notes ?? null,
         recipient: input.recipient ?? null,
         sentAt,
@@ -124,6 +144,7 @@ export const recordOutreachSent = async (
       update: {
         status: "SENT",
         subject: input.subject ?? null,
+        body: input.body ?? null,
         notes: input.notes ?? null,
         recipient: input.recipient ?? null,
         sentAt,

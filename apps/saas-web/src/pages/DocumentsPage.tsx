@@ -233,10 +233,40 @@ export const DocumentsPage = () => {
             Company Vault — επαναχρησιμοποιήσιμα έγγραφα οργανισμού για κάθε διαγωνισμό.
           </p>
         </div>
-        <Button onClick={() => setUploadOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Μεταφόρτωση
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              if (!activeOrganization) return;
+              void (async () => {
+                try {
+                  const result = await saasApi.generateCompanyProfile(
+                    activeOrganization.id,
+                  );
+                  toast.success(
+                    result.created
+                      ? "Δημιουργήθηκε εταιρικό προφίλ στο φάκελο 08"
+                      : "Ανανεώθηκε το εταιρικό προφίλ",
+                  );
+                  await loadFolders();
+                  await loadDocuments();
+                } catch (err) {
+                  toast.error(
+                    err instanceof Error
+                      ? err.message
+                      : "Αποτυχία δημιουργίας προφίλ",
+                  );
+                }
+              })();
+            }}
+          >
+            Δημιουργία εταιρικού προφίλ
+          </Button>
+          <Button onClick={() => setUploadOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Μεταφόρτωση
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

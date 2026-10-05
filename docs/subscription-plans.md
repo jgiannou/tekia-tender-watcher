@@ -15,7 +15,7 @@ Commercial SaaS only. Does **not** apply to the internal TEKIA Electron / SQLite
 | Active followed tenders | 20 | 100 (provisional) |
 | Storage | 250 MB | 2 GB (provisional) |
 | Periodic scans / day | 2 | 6 |
-| Email mode | DIGEST | IMMEDIATE (provisional) |
+| Email mode | DIGEST — related-act updates **1×/day** grouped | IMMEDIATE — related-act update emailed **right away** |
 | Advanced watch filters | no | yes (provisional) |
 
 Above 20 Pro seats: show  

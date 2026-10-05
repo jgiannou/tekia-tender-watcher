@@ -133,6 +133,7 @@ describe("SaaS watch-match scoring", () => {
     );
     expect(result.qualifies).toBe(true);
     expect(result.matchedKeywords).toContain("ιστοσελίδα");
+    expect(result.score).toBe(48);
     expect(result.reasons.some((r) => r.includes("ιστοσελίδα"))).toBe(true);
   });
 
@@ -144,6 +145,25 @@ describe("SaaS watch-match scoring", () => {
     expect(result.qualifies).toBe(true);
     expect(result.matchedKeywords).toEqual(["ιστοσελίδα"]);
     expect(result.reasons[0]).toContain("ιστοσελίδα");
+    expect(result.score).toBe(48);
+  });
+
+  it("does not stack synonym keywords to 100%", () => {
+    const criteria = criteriaFromWatchProfile({
+      ...balancedCriteria,
+      keywords: ["ιστοσελίδα", "website", "ιστότοπος"],
+      cpvs: ["72413000-8"],
+    });
+    const result = scoreKimdisItemAgainstProfile(
+      criteria,
+      baseItem({
+        title: "Συντήρηση ιστοσελίδας Δήμου",
+        cpvs: ["72413000-8"],
+      }),
+    );
+    expect(result.qualifies).toBe(true);
+    expect(result.score).toBe(86); // 48 title cluster + 38 CPV
+    expect(result.score).toBeLessThan(100);
   });
 
   it("matches keyword in description haystack at body weight", () => {
@@ -157,5 +177,47 @@ describe("SaaS watch-match scoring", () => {
     expect(result.qualifies).toBe(true);
     expect(result.score).toBe(35);
     expect(result.reasons.some((r) => r.includes("στο κείμενο"))).toBe(true);
+  });
+
+  it("rejects directed invitation titles (Sparti-style) in BALANCED mode", () => {
+    const result = scoreKimdisItemAgainstProfile(
+      balancedCriteria,
+      baseItem({
+        recordType: "PROC",
+        title:
+          "Πρόσκληση κατάθεσης προσφοράς για την υπηρεσία με τίτλο: «Συντήρηση ιστοσελίδας» (www.sparti.gov.gr)",
+        adam: "26PROC019704619",
+      }),
+    );
+    expect(result.targetedInvitation).toBe(true);
+    expect(result.qualifies).toBe(false);
+    expect(result.rejected).toBe(true);
+    expect(result.score).toBeLessThanOrEqual(22);
+  });
+
+  it("rejects closed / direct-award procedure types", () => {
+    const result = scoreKimdisItemAgainstProfile(
+      balancedCriteria,
+      baseItem({
+        recordType: "PROC",
+        title: "Συντήρηση ιστοσελίδας Δήμου",
+        procedureType: "Απευθείας ανάθεση",
+      }),
+    );
+    expect(result.targetedInvitation).toBe(true);
+    expect(result.qualifies).toBe(false);
+  });
+
+  it("keeps open website maintenance invites eligible", () => {
+    const result = scoreKimdisItemAgainstProfile(
+      balancedCriteria,
+      baseItem({
+        title:
+          "Υπηρεσίες Συντήρησης, Καλής Λειτουργίας, Υποστήριξης, της Ιστοσελίδας του Δήμου Κορδελιού- Ευόσμου",
+      }),
+    );
+    expect(result.targetedInvitation).toBe(false);
+    expect(result.qualifies).toBe(true);
+    expect(result.score).toBe(48);
   });
 });

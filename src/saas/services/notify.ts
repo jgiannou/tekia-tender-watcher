@@ -47,15 +47,16 @@ export const orgEmailMode = async (
 };
 
 /**
- * Opportunity emails are always DDA-style digests (one mail, many items).
- * NEW_OPPORTUNITY stays in-app only. Related acts stay immediate.
- * emailMode reserved for future cadence differences (both plans get digests now).
+ * Opportunity digests always email.
+ * Related-act / deadline updates: IMMEDIATE (Pro) only — DIGEST (Basic/Trial)
+ * is flushed once/day by flushRelatedActEmailDigests.
+ * NEW_OPPORTUNITY stays in-app only.
  */
 export const shouldEmailAttentionType = (
   type: AttentionEventType,
-  _emailMode: "DIGEST" | "IMMEDIATE",
+  emailMode: "DIGEST" | "IMMEDIATE",
 ): boolean => {
-  if (RELATED_TYPES.has(type)) return true;
+  if (RELATED_TYPES.has(type)) return emailMode === "IMMEDIATE";
   if (type === "NEW_OPPORTUNITY") return false;
   if (type === "OPPORTUNITY_DIGEST") return true;
   if (type === "SUBMISSION_RECORDED" || type === "OUTREACH_RECORDED") {
@@ -63,6 +64,9 @@ export const shouldEmailAttentionType = (
   }
   return false;
 };
+
+export const isRelatedAttentionType = (type: AttentionEventType): boolean =>
+  RELATED_TYPES.has(type);
 
 const eventPrefEnabled = (
   type: AttentionEventType,
@@ -108,10 +112,112 @@ const resolveRecipients = async (
 
 const copyKindFor = (
   type: AttentionEventType,
-): "new_opportunity" | "digest" | "related_act" => {
+): "new_opportunity" | "digest" | "related_act" | "related_act_digest" => {
   if (type === "OPPORTUNITY_DIGEST") return "digest";
   if (RELATED_TYPES.has(type)) return "related_act";
   return "new_opportunity";
+};
+
+const relatedEventInclude = {
+  organizationTender: {
+    include: {
+      tender: {
+        select: {
+          id: true,
+          referenceNumber: true,
+          title: true,
+          recordType: true,
+          contractingAuthority: true,
+        },
+      },
+    },
+  },
+  relatedTender: {
+    select: {
+      id: true,
+      referenceNumber: true,
+      title: true,
+      recordType: true,
+      contractingAuthority: true,
+      budgetWithoutVat: true,
+      submissionDate: true,
+      finalSubmissionDate: true,
+    },
+  },
+} as const;
+
+const companyNameFromSettings = (
+  company: unknown,
+): string | null => {
+  if (!company || typeof company !== "object") return null;
+  const raw = company as Record<string, unknown>;
+  if (typeof raw.legalName === "string" && raw.legalName.trim()) {
+    return raw.legalName.trim();
+  }
+  if (typeof raw.distinctiveTitle === "string" && raw.distinctiveTitle.trim()) {
+    return raw.distinctiveTitle.trim();
+  }
+  return null;
+};
+
+const relatedItemFromEvent = (event: {
+  title: string;
+  metadata: unknown;
+  organizationTender?: {
+    tender?: {
+      referenceNumber: string;
+      title: string | null;
+      recordType: string;
+      contractingAuthority: string | null;
+    } | null;
+  } | null;
+  relatedTender?: {
+    referenceNumber: string;
+    title: string | null;
+    recordType: string;
+    contractingAuthority: string | null;
+    budgetWithoutVat: number | null;
+    submissionDate: Date | null;
+    finalSubmissionDate: Date | null;
+  } | null;
+}) => {
+  const meta = asMeta(event.metadata);
+  const source = event.organizationTender?.tender ?? null;
+  const related = event.relatedTender ?? null;
+  return {
+    title:
+      metaString(meta, "relatedTenderTitle") ??
+      related?.title ??
+      event.title,
+    referenceNumber:
+      metaString(meta, "referenceNumber") ?? related?.referenceNumber ?? null,
+    authority:
+      metaString(meta, "authority") ??
+      related?.contractingAuthority ??
+      source?.contractingAuthority ??
+      null,
+    relatedRecordType:
+      metaString(meta, "recordType") ?? related?.recordType ?? null,
+    sourceReferenceNumber:
+      metaString(meta, "sourceReferenceNumber") ??
+      source?.referenceNumber ??
+      null,
+    sourceTenderTitle:
+      metaString(meta, "sourceTenderTitle") ?? source?.title ?? null,
+    sourceRecordType:
+      metaString(meta, "sourceRecordType") ?? source?.recordType ?? null,
+    confidence: metaString(meta, "confidence"),
+    budgetWithoutVat:
+      typeof related?.budgetWithoutVat === "number"
+        ? related.budgetWithoutVat
+        : metaNumber(meta, "budgetWithoutVat"),
+    submissionDate: related?.submissionDate
+      ? related.submissionDate.toISOString()
+      : metaString(meta, "submissionDate"),
+    finalSubmissionDate: related?.finalSubmissionDate
+      ? related.finalSubmissionDate.toISOString()
+      : metaString(meta, "finalSubmissionDate"),
+  };
 };
 
 /**
@@ -124,6 +230,7 @@ export const deliverAttentionEmail = async (
 ): Promise<"sent" | "skipped" | "failed"> => {
   const event = await prisma.organizationAttentionEvent.findUnique({
     where: { id: attentionEventId },
+    include: relatedEventInclude,
   });
   if (!event) return "skipped";
 
@@ -185,15 +292,7 @@ export const deliverAttentionEmail = async (
   }
 
   const meta = asMeta(event.metadata);
-  const companyRaw =
-    settings?.company && typeof settings.company === "object"
-      ? (settings.company as Record<string, unknown>)
-      : {};
-  const companyName =
-    (typeof companyRaw.legalName === "string" && companyRaw.legalName) ||
-    (typeof companyRaw.distinctiveTitle === "string" &&
-      companyRaw.distinctiveTitle) ||
-    null;
+  const companyName = companyNameFromSettings(settings?.company);
   const topMatchesRaw = meta.topMatches;
   const topMatches = Array.isArray(topMatchesRaw)
     ? topMatchesRaw
@@ -207,24 +306,38 @@ export const deliverAttentionEmail = async (
           budgetWithoutVat:
             typeof row.budgetWithoutVat === "number" ? row.budgetWithoutVat : null,
           recordType: typeof row.recordType === "string" ? row.recordType : null,
+          submissionDate:
+            typeof row.submissionDate === "string" ? row.submissionDate : null,
+          finalSubmissionDate:
+            typeof row.finalSubmissionDate === "string"
+              ? row.finalSubmissionDate
+              : null,
         }))
     : [];
+  const relatedItem = relatedItemFromEvent(event);
+  const kind = copyKindFor(event.type);
   const copy = attentionEmailCopy({
     title: event.title,
     appUrl: resolveSaasAppUrl(),
-    referenceNumber: metaString(meta, "referenceNumber"),
-    tenderTitle:
-      metaString(meta, "tenderTitle") ??
-      metaString(meta, "relatedTenderTitle") ??
-      metaString(meta, "sourceTenderTitle"),
-    authority: metaString(meta, "authority"),
+    referenceNumber: relatedItem.referenceNumber,
+    tenderTitle: relatedItem.title,
+    authority: relatedItem.authority,
     score: metaNumber(meta, "score"),
     profileName: metaString(meta, "profileName"),
     companyName,
     matchCount: metaNumber(meta, "matchCount"),
     newCount: metaNumber(meta, "newCount"),
     topMatches,
-    kind: copyKindFor(event.type),
+    kind,
+    sourceReferenceNumber: relatedItem.sourceReferenceNumber,
+    sourceTenderTitle: relatedItem.sourceTenderTitle,
+    sourceRecordType: relatedItem.sourceRecordType,
+    relatedRecordType: relatedItem.relatedRecordType,
+    confidence: relatedItem.confidence,
+    relationType: metaString(meta, "relationType"),
+    budgetWithoutVat: relatedItem.budgetWithoutVat,
+    submissionDate: relatedItem.submissionDate,
+    finalSubmissionDate: relatedItem.finalSubmissionDate,
   });
 
   try {
@@ -263,6 +376,143 @@ export const deliverAttentionEmail = async (
     console.error("[email] attention delivery failed:", message);
     return "failed";
   }
+};
+
+/**
+ * Basic / Trial: one daily email with all pending related-act updates.
+ * Pro never hits this path (those send immediately via deliverAttentionEmail).
+ */
+export const flushRelatedActEmailDigests = async (
+  prisma: PrismaClient,
+): Promise<{ orgs: number; events: number; sent: number; skipped: number }> => {
+  const since = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+  const pending = await prisma.organizationAttentionEvent.findMany({
+    where: {
+      type: { in: [...RELATED_TYPES] },
+      createdAt: { gte: since },
+      deliveries: {
+        none: {
+          channel: "EMAIL",
+          status: "SENT",
+        },
+      },
+    },
+    include: relatedEventInclude,
+    orderBy: { createdAt: "asc" },
+  });
+
+  const byOrg = new Map<string, typeof pending>();
+  for (const event of pending) {
+    const list = byOrg.get(event.organizationId) ?? [];
+    list.push(event);
+    byOrg.set(event.organizationId, list);
+  }
+
+  let sent = 0;
+  let skipped = 0;
+
+  for (const [organizationId, events] of byOrg) {
+    const emailMode = await orgEmailMode(prisma, organizationId);
+    if (emailMode !== "DIGEST") {
+      skipped += events.length;
+      continue;
+    }
+
+    const settings = await prisma.organizationSettings.findUnique({
+      where: { organizationId },
+      select: { notifications: true, company: true },
+    });
+    const prefs = normalizeNotifications(settings?.notifications);
+    if (!prefs.emailEnabled || !prefs.events.relatedActOnFollowed) {
+      skipped += events.length;
+      continue;
+    }
+
+    const recipients = await resolveRecipients(
+      prisma,
+      organizationId,
+      prefs.recipients,
+    );
+    if (recipients.length === 0) {
+      skipped += events.length;
+      continue;
+    }
+
+    if (!isEmailEnabled()) {
+      skipped += events.length;
+      continue;
+    }
+
+    const relatedItems = events.map((event) => relatedItemFromEvent(event));
+    const copy = attentionEmailCopy({
+      title: `${relatedItems.length} εξελίξεις σε παρακολουθήσεις`,
+      appUrl: resolveSaasAppUrl(),
+      companyName: companyNameFromSettings(settings?.company),
+      kind: "related_act_digest",
+      newCount: relatedItems.length,
+      relatedItems,
+    });
+
+    try {
+      for (const to of recipients) {
+        await sendMail({
+          to,
+          subject: copy.subject,
+          html: copy.html,
+          text: copy.text,
+        });
+      }
+      const now = new Date();
+      for (const event of events) {
+        const dedupeKey = `EMAIL:${event.id}`;
+        await prisma.notificationDelivery.upsert({
+          where: {
+            organizationId_dedupeKey: {
+              organizationId,
+              dedupeKey,
+            },
+          },
+          create: {
+            organizationId,
+            organizationAttentionEventId: event.id,
+            organizationTenderId: event.organizationTenderId,
+            channel: "EMAIL",
+            templateKey: "attention.related_act_digest",
+            dedupeKey,
+            status: "SENT",
+            sentAt: now,
+            subject: copy.subject,
+            bodyPreview: event.title.slice(0, 180),
+            payload: { recipients, digest: true },
+          },
+          update: {
+            status: "SENT",
+            sentAt: now,
+            subject: copy.subject,
+            bodyPreview: event.title.slice(0, 180),
+            error: null,
+            templateKey: "attention.related_act_digest",
+            payload: { recipients, digest: true },
+          },
+        });
+      }
+      sent += 1;
+    } catch (error) {
+      skipped += events.length;
+      console.error(
+        "[email] related-act digest failed:",
+        organizationId,
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  return {
+    orgs: byOrg.size,
+    events: pending.length,
+    sent,
+    skipped,
+  };
 };
 
 /** Fire-and-forget so domain paths never await SMTP. */

@@ -41,6 +41,8 @@ export type WatchMatchResult = {
   matchedCpvs: string[];
   qualifies: boolean;
   rejected: boolean;
+  /** True when title/procedure signals a directed invite (not open competition). */
+  targetedInvitation: boolean;
 };
 
 /** Recalled slightly so user keyword searches surface more real opportunities. */
@@ -49,6 +51,45 @@ const MODE_THRESHOLDS: Record<MatchingMode, number> = {
   BALANCED: 35,
   BROAD: 25,
 };
+
+/** Points — calibrated so a single title hit is ~mid band, not 100%. */
+const POINTS = {
+  titleFirstCluster: 48,
+  bodyFirstCluster: 35,
+  titleExtraCluster: 10,
+  bodyExtraCluster: 6,
+  maxExtraClusters: 2,
+  cpvFirst: 38,
+  cpvExtra: 8,
+  authority: 8,
+  contractType: 5,
+  procedureType: 5,
+  budgetInRange: 4,
+  /** Directed / closed invitations are not actionable for an uninvited firm. */
+  targetedPenalty: 55,
+  targetedScoreCap: 22,
+} as const;
+
+/** Procedure codes that usually mean invited/closed — not open competition. */
+const TARGETED_PROCEDURE_CODES = new Set(["2", "6", "12"]);
+
+/**
+ * Title/description patterns that indicate a directed invitation to submit an
+ * offer (often to a named/shortlist supplier), not an open tender.
+ * Patterns run on matchNorm (accent-stripped + inflection-softened) text.
+ * Deliberately excludes vague "Πρόσκληση για παροχή υπηρεσιών…" alone.
+ */
+const STRONG_TARGETED_TITLE_PATTERNS: readonly RegExp[] = [
+  /προσκληση\s+καταθεση\s+προσφορα/,
+  /προσκληση\s+υποβολη\s+(οικ\.?\s*)?προσφορα/,
+  /προσκληση\s+υποβολη\s+οικονομικη\s+προσφορα/,
+  /προσκληση\s+για\s+καταθεση\s+προσφορα/,
+  /καλειται\s+(η\s+)?εταιρεια/,
+  /καλειται\s+ο\s+οικονομικος\s+φορεας/,
+  /στους\s+(κατωθι|ακολουθους)\s+οικονομικους\s+φορεις/,
+  /μονο\s+(απο|στους)\s+προσκεκλημενους/,
+  /δεν\s+(λαμβανονται|γινονται)\s+.{0,60}?δεν\s+προσκληθ/,
+];
 
 export const effectiveScoreThreshold = (criteria: WatchProfileCriteria): number => {
   const mode = (criteria.matchingMode?.toUpperCase() ?? "BALANCED") as MatchingMode;
@@ -108,17 +149,26 @@ const KEYWORD_SYNONYM_CLUSTERS: readonly (readonly string[])[] = [
   ],
 ];
 
-const synonymLookup = (() => {
-  const map = new Map<string, string[]>();
-  for (const cluster of KEYWORD_SYNONYM_CLUSTERS) {
-    const expanded = cluster.map((term) => matchNorm(term)).filter(Boolean);
-    for (const term of expanded) {
-      const prev = map.get(term) ?? [];
-      map.set(term, [...new Set([...prev, ...expanded])]);
-    }
+const synonymLookup = new Map<string, string[]>();
+const clusterIdByTerm = new Map<string, string>();
+
+for (const cluster of KEYWORD_SYNONYM_CLUSTERS) {
+  const expanded = cluster.map((term) => matchNorm(term)).filter(Boolean);
+  if (expanded.length === 0) continue;
+  const clusterId = [...expanded].sort()[0]!;
+  for (const term of expanded) {
+    clusterIdByTerm.set(term, clusterId);
+    const prev = synonymLookup.get(term) ?? [];
+    synonymLookup.set(term, [...new Set([...prev, ...expanded])]);
   }
-  return map;
-})();
+}
+
+/** Stable id so "ιστοσελίδα" + "website" count as one topical hit. */
+export const keywordClusterId = (keyword: string): string => {
+  const base = matchNorm(keyword);
+  if (!base) return "";
+  return clusterIdByTerm.get(base) ?? base;
+};
 
 /** Expand a user keyword to itself + known synonyms (normalized for matching). */
 export const expandKeywordNeedles = (keyword: string): string[] => {
@@ -142,6 +192,43 @@ const cpvMatches = (profileCpv: string, tenderCpvs: string[]): boolean => {
   });
 };
 
+export type TargetedInvitationSignal = {
+  targeted: boolean;
+  reason: string | null;
+};
+
+/**
+ * Heuristic (no PDF): directed invite / closed procedure → firm cannot bid.
+ */
+export const detectTargetedInvitation = (
+  item: Pick<KimdisSearchItem, "title" | "description" | "procedureType">,
+): TargetedInvitationSignal => {
+  const hay = matchNorm(`${item.title} ${item.description ?? ""}`);
+  for (const pattern of STRONG_TARGETED_TITLE_PATTERNS) {
+    if (pattern.test(hay)) {
+      return {
+        targeted: true,
+        reason:
+          "Φαίνεται πρόσκληση σε συγκεκριμένους φορείς (όχι ανοιχτός διαγωνισμός)",
+      };
+    }
+  }
+
+  const procCode =
+    resolveProcedureTypeCode(item.procedureType ?? undefined) ??
+    item.procedureType?.trim() ??
+    "";
+  if (TARGETED_PROCEDURE_CODES.has(procCode)) {
+    const label = item.procedureType?.trim() || procCode;
+    return {
+      targeted: true,
+      reason: `Κλειστή / απευθείας διαδικασία («${label}») — δεν είναι ανοιχτή συμμετοχή`,
+    };
+  }
+
+  return { targeted: false, reason: null };
+};
+
 export const scoreKimdisItemAgainstProfile = (
   criteria: WatchProfileCriteria,
   item: KimdisSearchItem,
@@ -152,18 +239,24 @@ export const scoreKimdisItemAgainstProfile = (
   const matchedCpvs: string[] = [];
   let score = 0;
 
+  const empty = (
+    overrides: Partial<WatchMatchResult> = {},
+  ): WatchMatchResult => ({
+    score: 0,
+    reasons: [],
+    matchedKeywords: [],
+    matchedCpvs: [],
+    qualifies: false,
+    rejected: true,
+    targetedInvitation: false,
+    ...overrides,
+  });
+
   const recordTypes = criteria.recordTypes.length
     ? criteria.recordTypes
     : ["REQ", "PROC"];
   if (!recordTypes.includes(item.recordType)) {
-    return {
-      score: 0,
-      reasons: [],
-      matchedKeywords: [],
-      matchedCpvs: [],
-      qualifies: false,
-      rejected: true,
-    };
+    return empty();
   }
 
   const description = item.description?.trim() ?? "";
@@ -175,14 +268,9 @@ export const scoreKimdisItemAgainstProfile = (
     const needles = expandKeywordNeedles(neg);
     if (needles.length === 0) continue;
     if (textIncludesAny(haystack, needles)) {
-      return {
-        score: 0,
+      return empty({
         reasons: [`Αποκλείστηκε: αρνητική λέξη «${neg.trim()}»`],
-        matchedKeywords: [],
-        matchedCpvs: [],
-        qualifies: false,
-        rejected: true,
-      };
+      });
     }
   }
 
@@ -190,16 +278,9 @@ export const scoreKimdisItemAgainstProfile = (
     const authNeedle = matchNorm(criteria.authority);
     const authHay = matchNorm(item.contractingAuthority);
     if (!authHay.includes(authNeedle)) {
-      return {
-        score: 0,
-        reasons: [],
-        matchedKeywords: [],
-        matchedCpvs: [],
-        qualifies: false,
-        rejected: true,
-      };
+      return empty();
     }
-    score += 10;
+    score += POINTS.authority;
     reasons.push(`Αναθέτουσα: ${criteria.authority.trim()}`);
   }
 
@@ -208,17 +289,10 @@ export const scoreKimdisItemAgainstProfile = (
     const label = item.contractTypeLabel?.trim() ?? "";
     const labelCode = resolveContractTypeCode(label);
     if (code && labelCode && code !== labelCode) {
-      return {
-        score: 0,
-        reasons: [],
-        matchedKeywords: [],
-        matchedCpvs: [],
-        qualifies: false,
-        rejected: true,
-      };
+      return empty();
     }
     if (code || criteria.contractType.trim()) {
-      score += 8;
+      score += POINTS.contractType;
       reasons.push(`Τύπος σύμβασης: ${item.contractTypeLabel ?? criteria.contractType}`);
     }
   }
@@ -228,90 +302,103 @@ export const scoreKimdisItemAgainstProfile = (
     const procLabel = item.procedureType?.trim() ?? "";
     const procCode = resolveProcedureTypeCode(procLabel);
     if (code && procCode && code !== procCode) {
-      return {
-        score: 0,
-        reasons: [],
-        matchedKeywords: [],
-        matchedCpvs: [],
-        qualifies: false,
-        rejected: true,
-      };
+      return empty();
     }
     if (item.procedureType) {
-      score += 8;
+      score += POINTS.procedureType;
       reasons.push(`Διαδικασία: ${item.procedureType}`);
     }
   }
 
   const budget = item.budgetWithoutVat ?? item.budgetWithVat;
   if (criteria.minBudget != null && budget != null && budget < criteria.minBudget) {
-    return {
-      score: 0,
-      reasons: [],
-      matchedKeywords: [],
-      matchedCpvs: [],
-      qualifies: false,
-      rejected: true,
-    };
+    return empty();
   }
   if (criteria.maxBudget != null && budget != null && budget > criteria.maxBudget) {
-    return {
-      score: 0,
-      reasons: [],
-      matchedKeywords: [],
-      matchedCpvs: [],
-      qualifies: false,
-      rejected: true,
-    };
+    return empty();
   }
   if (budget != null && (criteria.minBudget != null || criteria.maxBudget != null)) {
-    score += 5;
+    score += POINTS.budgetInRange;
     reasons.push("Προϋπολογισμός εντός ορίων");
   }
 
-  // A single strong signal (title keyword or CPV) must be enough to qualify in
-  // BALANCED mode; extra signals add less so scores stay comparable.
+  // One score per synonym cluster — profile ["ιστοσελίδα","website"] must not
+  // stack to 100% on a single topical hit.
+  const scoredClusters = new Set<string>();
+  let extraClusters = 0;
+
   for (const kw of criteria.keywords) {
     const needles = expandKeywordNeedles(kw);
     if (needles.length === 0) continue;
-    const first = matchedKeywords.length === 0;
-    const label = kw.trim();
-    if (textIncludesAny(titleNorm, needles)) {
-      matchedKeywords.push(label);
-      score += first ? 45 : 12;
-      reasons.push(`λέξη-κλειδί «${label}» στον τίτλο`);
-    } else if (textIncludesAny(haystack, needles)) {
-      matchedKeywords.push(label);
-      // First body hit must clear BALANCED (35); title hits stay stronger.
-      score += first ? 35 : 8;
-      reasons.push(`λέξη-κλειδί «${label}» στο κείμενο`);
+    const clusterId = keywordClusterId(kw);
+    if (!clusterId || scoredClusters.has(clusterId)) continue;
+
+    const inTitle = textIncludesAny(titleNorm, needles);
+    const inBody = !inTitle && textIncludesAny(haystack, needles);
+    if (!inTitle && !inBody) continue;
+
+    scoredClusters.add(clusterId);
+    matchedKeywords.push(kw.trim());
+    const isFirst = scoredClusters.size === 1;
+
+    if (isFirst) {
+      score += inTitle ? POINTS.titleFirstCluster : POINTS.bodyFirstCluster;
+      reasons.push(
+        inTitle
+          ? `λέξη-κλειδί «${kw.trim()}» στον τίτλο`
+          : `λέξη-κλειδί «${kw.trim()}» στο κείμενο`,
+      );
+    } else if (extraClusters < POINTS.maxExtraClusters) {
+      extraClusters += 1;
+      score += inTitle ? POINTS.titleExtraCluster : POINTS.bodyExtraCluster;
+      reasons.push(
+        inTitle
+          ? `επιπλέον θέμα «${kw.trim()}» στον τίτλο`
+          : `επιπλέον θέμα «${kw.trim()}» στο κείμενο`,
+      );
     }
   }
 
   for (const cpv of criteria.cpvs) {
-    if (cpvMatches(cpv, item.cpvs)) {
-      const first = matchedCpvs.length === 0;
-      matchedCpvs.push(cpv.trim());
-      score += first ? 50 : 12;
-      reasons.push(`CPV ${cpv.trim()}`);
+    if (!cpvMatches(cpv, item.cpvs)) continue;
+    const first = matchedCpvs.length === 0;
+    matchedCpvs.push(cpv.trim());
+    score += first ? POINTS.cpvFirst : POINTS.cpvExtra;
+    reasons.push(`CPV ${cpv.trim()}`);
+  }
+
+  const targeted = detectTargetedInvitation(item);
+  if (targeted.targeted) {
+    score -= POINTS.targetedPenalty;
+    if (targeted.reason) reasons.push(targeted.reason);
+    score = Math.min(score, POINTS.targetedScoreCap);
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  if (criteria.keywords.length === 0 && criteria.cpvs.length === 0) {
+    return empty({ targetedInvitation: targeted.targeted });
+  }
+
+  // Directed invites: still surface at a low score only in BROAD; otherwise drop.
+  if (targeted.targeted) {
+    const mode = (criteria.matchingMode?.toUpperCase() ?? "BALANCED") as MatchingMode;
+    if (mode !== "BROAD") {
+      return empty({
+        score,
+        reasons,
+        matchedKeywords,
+        matchedCpvs,
+        qualifies: false,
+        rejected: true,
+        targetedInvitation: true,
+      });
     }
   }
 
-  score = Math.min(100, score);
-
-  if (criteria.keywords.length === 0 && criteria.cpvs.length === 0) {
-    return {
-      score: 0,
-      reasons: [],
-      matchedKeywords: [],
-      matchedCpvs: [],
-      qualifies: false,
-      rejected: true,
-    };
-  }
-
   const threshold = effectiveScoreThreshold(criteria);
-  const qualifies = score >= threshold && (matchedKeywords.length > 0 || matchedCpvs.length > 0);
+  const qualifies =
+    score >= threshold && (matchedKeywords.length > 0 || matchedCpvs.length > 0);
 
   if (profileLabel && qualifies && reasons.length === 0) {
     reasons.push(`Προφίλ «${profileLabel.name}»`);
@@ -324,6 +411,7 @@ export const scoreKimdisItemAgainstProfile = (
     matchedCpvs,
     qualifies,
     rejected: false,
+    targetedInvitation: targeted.targeted,
   };
 };
 

@@ -914,6 +914,8 @@ const ensureOpportunityDigestAttention = async (
       authority?: string | null;
       budgetWithoutVat?: number | null;
       recordType?: string | null;
+      submissionDate?: string | null;
+      finalSubmissionDate?: string | null;
     }>;
   },
 ) => {
@@ -1016,6 +1018,8 @@ type OpportunityLinkResult = {
   authority: string | null;
   budgetWithoutVat: number | null;
   recordType: string | null;
+  submissionDate: string | null;
+  finalSubmissionDate: string | null;
 };
 
 /**
@@ -1047,6 +1051,8 @@ const linkOpportunityToProfile = async (
   const recordType = tender?.recordType ?? null;
   const authority = tender?.contractingAuthority ?? null;
   const budgetWithoutVat = tender?.budgetWithoutVat ?? null;
+  const submissionDate = tender?.submissionDate?.toISOString() ?? null;
+  const finalSubmissionDate = tender?.finalSubmissionDate?.toISOString() ?? null;
 
   const existing = await prisma.organizationTender.findUnique({
     where: {
@@ -1096,6 +1102,8 @@ const linkOpportunityToProfile = async (
       authority,
       budgetWithoutVat,
       recordType,
+      submissionDate,
+      finalSubmissionDate,
     };
   }
 
@@ -1116,6 +1124,8 @@ const linkOpportunityToProfile = async (
       authority,
       budgetWithoutVat,
       recordType,
+      submissionDate,
+      finalSubmissionDate,
     };
   }
 
@@ -1180,6 +1190,8 @@ const linkOpportunityToProfile = async (
     authority,
     budgetWithoutVat,
     recordType,
+    submissionDate,
+    finalSubmissionDate,
   };
 };
 
@@ -1335,6 +1347,8 @@ export const runWatchProfileScan = async (
     authority: string | null;
     budgetWithoutVat: number | null;
     recordType: string | null;
+    submissionDate: string | null;
+    finalSubmissionDate: string | null;
     tenderId: string;
   }> = [];
   const upstreamErrors: string[] = [];
@@ -1364,6 +1378,8 @@ export const runWatchProfileScan = async (
           authority: result.authority,
           budgetWithoutVat: result.budgetWithoutVat,
           recordType: result.recordType,
+          submissionDate: result.submissionDate,
+          finalSubmissionDate: result.finalSubmissionDate,
           tenderId: result.tenderId,
         });
       },
@@ -1418,6 +1434,8 @@ export const runWatchProfileScan = async (
             authority: result.authority,
             budgetWithoutVat: result.budgetWithoutVat,
             recordType: result.recordType,
+            submissionDate: result.submissionDate,
+            finalSubmissionDate: result.finalSubmissionDate,
             tenderId: result.tenderId,
           });
         }
@@ -1461,6 +1479,8 @@ export const runWatchProfileScan = async (
           authority: row.authority,
           budgetWithoutVat: row.budgetWithoutVat,
           recordType: row.recordType,
+          submissionDate: row.submissionDate,
+          finalSubmissionDate: row.finalSubmissionDate,
         }));
       await ensureOpportunityDigestAttention(prisma, {
         organizationId: profile.organizationId,

@@ -91,13 +91,26 @@ export const unfollowTender = async (
   if (!existing) throw notFound("organization_tender_not_found");
 
   const now = new Date();
-  return prisma.organizationTender.update({
-    where: { id: existing.id },
-    data: {
-      following: false,
-      monitoringActive: false,
-      monitoringStoppedAt: now,
-    },
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.organizationTender.update({
+      where: { id: existing.id },
+      data: {
+        following: false,
+        monitoringActive: false,
+        monitoringStoppedAt: now,
+      },
+    });
+
+    await tx.tenderEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        organizationTenderId: row.id,
+        eventType: "UNFOLLOWED",
+        note: "Διακοπή παρακολούθησης",
+      },
+    });
+
+    return row;
   });
 };
 

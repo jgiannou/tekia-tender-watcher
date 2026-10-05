@@ -173,6 +173,77 @@ export const recordFormalSubmission = async (
   return result;
 };
 
+/**
+ * User-confirmed award outcome. Completes the procurement thread and stops
+ * related-act monitoring (North Star: stop when completed).
+ */
+export const confirmSubmissionResult = async (
+  prisma: PrismaClient,
+  input: {
+    userId: string;
+    organizationId: string;
+    submissionId: string;
+    result: "WON" | "LOST";
+    notes?: string | null;
+  },
+) => {
+  await requireOrgMembership(prisma, input.userId, input.organizationId);
+
+  const submission = await prisma.submission.findFirst({
+    where: {
+      id: input.submissionId,
+      organizationId: input.organizationId,
+    },
+    include: {
+      organizationTender: { include: { tender: true } },
+    },
+  });
+  if (!submission) throw notFound("submission_not_found");
+
+  const now = new Date();
+  const pipelineStage = input.result === "WON" ? "WON" : "LOST";
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const nextSubmission = await tx.submission.update({
+      where: { id: submission.id },
+      data: {
+        result: input.result,
+        ...(input.notes != null
+          ? { notes: input.notes.trim() || null }
+          : {}),
+      },
+    });
+
+    const organizationTender = await tx.organizationTender.update({
+      where: { id: submission.organizationTenderId },
+      data: {
+        pipelineStage,
+        operationalStatus: input.result,
+        following: false,
+        monitoringActive: false,
+        monitoringStoppedAt: now,
+      },
+    });
+
+    await tx.tenderEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        organizationTenderId: submission.organizationTenderId,
+        eventType: "RESULT_CONFIRMED",
+        note: JSON.stringify({
+          submissionId: submission.id,
+          result: input.result,
+          notes: input.notes?.trim() || null,
+        }),
+      },
+    });
+
+    return { submission: nextSubmission, organizationTender };
+  });
+
+  return updated;
+};
+
 export const listFormalSubmissions = async (
   prisma: PrismaClient,
   input: { userId: string; organizationId: string | null },
