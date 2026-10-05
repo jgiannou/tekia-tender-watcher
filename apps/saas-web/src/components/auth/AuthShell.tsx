@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ArcBrand } from "@/components/brand/ArcMark";
 import { LEGAL_CONTROLLER } from "@/legal/meta";
-import { MARKETING_PLANS, formatEur } from "@/marketing/pricing";
+import { MARKETING_PLANS, priceWithTaxHint } from "@/marketing/pricing";
 
 const COPYRIGHT_YEAR = new Date().getFullYear();
 
@@ -51,8 +51,8 @@ export const AuthShell = ({ title, description, children, footer }: AuthShellPro
           </ul>
 
           <p className="mt-6 text-sm text-muted-foreground">
-            Basic από €{formatEur(MARKETING_PLANS.basic.priceMonthlyEur)} / μήνα · Pro από €
-            {formatEur(MARKETING_PLANS.pro.priceMonthlyEur)} / μήνα
+            Basic από {priceWithTaxHint(MARKETING_PLANS.basic.priceMonthlyEur)} · Pro από{" "}
+            {priceWithTaxHint(MARKETING_PLANS.pro.priceMonthlyEur)}
           </p>
           <Link
             to="/pricing"

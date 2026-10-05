@@ -5,7 +5,12 @@ import { PricingCards } from "@/components/marketing/PricingCards";
 import { Button } from "@/components/ui/button";
 import { ArcMark } from "@/components/brand/ArcMark";
 import { LEGAL_CONTROLLER } from "@/legal/meta";
-import { MARKETING_PLANS, TRIAL_DAYS, formatEur } from "@/marketing/pricing";
+import {
+  MARKETING_PLANS,
+  TRIAL_DAYS,
+  formatEur,
+  priceWithTaxHint,
+} from "@/marketing/pricing";
 
 const values = [
   {
@@ -186,7 +191,7 @@ export const LandingPage = () => (
             Απλά πλάνα, χωρίς περίπλοκες χρεώσεις
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Ξεκινήστε από €{formatEur(MARKETING_PLANS.basic.priceMonthlyEur)} / μήνα και
+            Ξεκινήστε από {priceWithTaxHint(MARKETING_PLANS.basic.priceMonthlyEur)} και
             αναβαθμίστε μόνο όταν χρειάζεστε περισσότερες αναζητήσεις, παρακολουθήσεις ή μέλη
             ομάδας.
           </p>

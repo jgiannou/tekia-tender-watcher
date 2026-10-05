@@ -5,8 +5,8 @@
 
 export const TRIAL_DAYS = 7;
 
-/** Empty until accountant confirms VAT wording. Shown only when non-empty. */
-export const PRICING_TAX_LABEL = "";
+/** Shown next to list prices; Stripe Tax adds VAT at checkout (exclusive prices). */
+export const PRICING_TAX_LABEL = "+ ΦΠΑ";
 
 export const MARKETING_PLANS = {
   basic: {
