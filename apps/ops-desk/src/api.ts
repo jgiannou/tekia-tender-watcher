@@ -4,34 +4,16 @@ export type ConnectionConfig = {
   pollSeconds: number;
 };
 
-export type EnvId = "prod" | "local";
-
-export const ENV_PRESETS: Array<{
-  id: EnvId;
-  label: string;
-  apiUrl: string;
-  appUrl: string;
-}> = [
-  {
-    id: "prod",
-    label: "Prod",
-    apiUrl: "http://gfjv662rudc5mhwwyvj2zcvh.169.58.65.199.sslip.io",
-    appUrl: "https://arc-tenders.tekia.gr",
-  },
-  {
-    id: "local",
-    label: "Local",
-    apiUrl: "http://127.0.0.1:3000",
-    appUrl: "http://127.0.0.1:5174",
-  },
-];
-
 export type OpsStats = {
   generatedAt: string;
   users: number;
   organizations: number;
   memberships: number;
-  byPlan: { trial: number; basic: number; pro: number };
+  byPlan: {
+    trial: number;
+    basic: number;
+    pro: number;
+  };
   byBillingStatus: {
     trialing: number;
     active: number;
@@ -40,6 +22,7 @@ export type OpsStats = {
     incomplete: number;
   };
   payingOrgs: number;
+  payingUsers: number;
   logs: {
     bufferedLogs: number;
     bufferedRequests: number;
@@ -67,6 +50,48 @@ export type RequestEntry = {
   status: number;
   ms: number;
   responseBody?: string;
+  contentType?: string;
+};
+
+export type ProductEventEntry = {
+  id: string;
+  type: string;
+  userId: string | null;
+  userEmail: string | null;
+  userName: string | null;
+  organizationId: string | null;
+  organizationName: string | null;
+  sessionId: string | null;
+  requestId: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  metadata: unknown;
+  createdAt: string;
+};
+
+export type TrialActivityEntry = {
+  timestamp: string;
+  event: string;
+  entityId?: string;
+  entityType?: string;
+  sessionId?: string;
+  requestId?: string;
+};
+
+export type TrialActivityUser = {
+  id: string;
+  email: string | null;
+  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  organizationId: string | null;
+  organizationName: string | null;
+  deleted?: boolean;
+};
+
+export type TrialActivityPage = {
+  user: TrialActivityUser;
+  events: TrialActivityEntry[];
 };
 
 export type HealthOps = {
@@ -83,149 +108,452 @@ export type HealthOps = {
   http4xxInBuffer: number;
 };
 
-const STORAGE_KEY = "arc-tenders-ops.connections.v2";
-const ACTIVE_KEY = "arc-tenders-ops.active-env";
-
-type Store = Record<EnvId, ConnectionConfig>;
-
-const defaultConfig = (env: EnvId): ConnectionConfig => {
-  const preset = ENV_PRESETS.find((p) => p.id === env)!;
-  return { apiUrl: preset.apiUrl, token: "", pollSeconds: 15 };
+export type OpsUserListItem = {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  accountType: string;
+  contractorName: string | null;
+  mustChangePassword: boolean;
+  opsPassword: string;
+  opsPasswordAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  memberships: Array<{
+    role: string;
+    organization: {
+      id: string;
+      name: string;
+      plan: string;
+      billingStatus: string;
+    };
+  }>;
 };
 
-export const loadActiveEnv = (): EnvId => {
-  const raw = localStorage.getItem(ACTIVE_KEY);
-  return raw === "local" ? "local" : "prod";
+export type OpsOrgListItem = {
+  id: string;
+  name: string;
+  plan: string;
+  billingStatus: string;
+  seatLimit: number | null;
+  trialEndsAt: string | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripePriceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  _count: {
+    memberships: number;
+    tenders: number;
+    budgets: number;
+    projects: number;
+    contractors: number;
+  };
+  memberships: Array<{
+    role: string;
+    user: {
+      id: string;
+      email: string;
+      firstName: string;
+      lastName: string;
+      accountType: string;
+    };
+  }>;
 };
 
-export const loadConfig = (env: EnvId = loadActiveEnv()): ConnectionConfig => {
+export type ListPage<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
+export type UsersPage = ListPage<OpsUserListItem> & {
+  opsPasswordEnabled?: boolean;
+};
+
+export type DeleteUserResult = {
+  ok: true;
+  userId: string;
+  email: string;
+  orgsDeleted: number;
+};
+
+const STORAGE_KEY = "arc-tenders-ops-desk-config-v2";
+
+export type EnvId = "prod" | "local";
+
+export type EnvPreset = {
+  id: EnvId;
+  label: string;
+  apiUrl: string;
+  appUrl: string;
+};
+
+export const ENV_PRESETS: EnvPreset[] = [
+  {
+    id: "prod",
+    label: "Prod",
+    apiUrl: "http://gfjv662rudc5mhwwyvj2zcvh.169.58.65.199.sslip.io",
+    appUrl: "https://arc-tenders.tekia.gr",
+  },
+  {
+    id: "local",
+    label: "Local",
+    apiUrl: "http://127.0.0.1:3000",
+    appUrl: "http://127.0.0.1:5174",
+  },
+];
+
+export const apiUrlForEnv = (env: EnvId): string =>
+  (ENV_PRESETS.find((p) => p.id === env) ?? ENV_PRESETS[1]).apiUrl;
+
+export type ProfilesStore = {
+  version: 2;
+  active: EnvId;
+  profiles: Record<EnvId, ConnectionConfig>;
+};
+
+const clampPoll = (n: unknown) => Math.min(120, Math.max(5, Number(n) || 15));
+
+const normalizeConfig = (env: EnvId, partial?: Partial<ConnectionConfig>): ConnectionConfig => ({
+  apiUrl: apiUrlForEnv(env),
+  token: String(partial?.token || ""),
+  pollSeconds: clampPoll(partial?.pollSeconds),
+});
+
+export const defaultConfig = (env: EnvId = "local"): ConnectionConfig =>
+  normalizeConfig(env, { token: "", pollSeconds: 15 });
+
+const defaultProfiles = (): ProfilesStore => ({
+  version: 2,
+  active: "local",
+  profiles: {
+    prod: defaultConfig("prod"),
+    local: defaultConfig("local"),
+  },
+});
+
+const parseStore = (raw: unknown): ProfilesStore | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const parsed = raw as Partial<ProfilesStore>;
+  const active: EnvId = parsed.active === "prod" ? "prod" : "local";
+  return {
+    version: 2,
+    active,
+    profiles: {
+      prod: normalizeConfig("prod", parsed.profiles?.prod),
+      local: normalizeConfig("local", parsed.profiles?.local),
+    },
+  };
+};
+
+export const loadProfiles = (): ProfilesStore => {
   try {
-    const store = JSON.parse(
-      localStorage.getItem(STORAGE_KEY) || "{}",
-    ) as Partial<Store>;
-    return { ...defaultConfig(env), ...(store[env] || {}) };
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = parseStore(JSON.parse(raw) as unknown);
+      if (parsed) return parsed;
+    }
   } catch {
-    return defaultConfig(env);
+    /* fall through */
   }
+  return defaultProfiles();
 };
 
-export const saveConfig = (config: ConnectionConfig, env: EnvId) => {
-  let store: Partial<Store> = {};
-  try {
-    store = JSON.parse(
-      localStorage.getItem(STORAGE_KEY) || "{}",
-    ) as Partial<Store>;
-  } catch {
-    store = {};
-  }
-  store[env] = config;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
-  localStorage.setItem(ACTIVE_KEY, env);
+export const saveProfiles = (store: ProfilesStore) => {
+  const next: ProfilesStore = {
+    version: 2,
+    active: store.active,
+    profiles: {
+      prod: normalizeConfig("prod", store.profiles.prod),
+      local: normalizeConfig("local", store.profiles.local),
+    },
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+};
+
+export const loadConfig = (): ConnectionConfig => {
+  const store = loadProfiles();
+  return store.profiles[store.active];
+};
+
+export const loadActiveEnv = (): EnvId => loadProfiles().active;
+
+export const saveConfig = (cfg: ConnectionConfig, env?: EnvId) => {
+  const store = loadProfiles();
+  const active = env ?? store.active;
+  store.active = active;
+  store.profiles[active] = normalizeConfig(active, cfg);
+  saveProfiles(store);
 };
 
 export const switchEnv = (env: EnvId): ConnectionConfig => {
-  localStorage.setItem(ACTIVE_KEY, env);
-  const next = loadConfig(env);
-  next.apiUrl = ENV_PRESETS.find((p) => p.id === env)!.apiUrl;
-  return next;
+  const store = loadProfiles();
+  store.active = env;
+  store.profiles[env] = normalizeConfig(env, store.profiles[env]);
+  saveProfiles(store);
+  return store.profiles[env];
 };
 
-const opsFetch = async (
-  config: ConnectionConfig,
-  path: string,
-  init?: RequestInit,
-): Promise<Response> => {
-  const url = `${config.apiUrl.replace(/\/$/, "")}${path}`;
-  const headers = new Headers(init?.headers || {});
-  const token = config.token.trim();
-  headers.set("X-Admin-Token", token);
-  headers.set("Authorization", `Bearer ${token}`);
-  if (init?.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
+const authHeaders = (token: string) => ({
+  Authorization: `Bearer ${token}`,
+  "X-Admin-Token": token,
+  Accept: "application/json",
+});
+
+declare global {
+  interface Window {
+    arcTendersOps?: {
+      platform?: string;
+      isElectron: boolean;
+      fetch?: (payload: {
+        url: string;
+        method?: string;
+        headers?: Record<string, string>;
+        body?: string;
+      }) => Promise<{ ok?: boolean; status: number; bodyText?: string; body?: string; error?: string | null }>;
+      openExternal?: (url: string) => Promise<void | { ok: boolean; error?: string }>;
+    };
   }
+}
+
+type OpsResponse = {
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+};
+
+const parseBody = (bodyText: string): unknown => {
+  if (!bodyText) return {};
+  try {
+    return JSON.parse(bodyText);
+  } catch {
+    return { error: bodyText };
+  }
+};
+
+const opsRequest = async (
+  cfg: ConnectionConfig,
+  pathAndQuery: string,
+  init?: { method?: string; body?: string },
+): Promise<OpsResponse> => {
+  const method = (init?.method || "GET").toUpperCase();
+  const headers: Record<string, string> = {
+    ...authHeaders(cfg.token),
+    ...(init?.body ? { "Content-Type": "application/json" } : {}),
+  };
+  const absoluteUrl = `${cfg.apiUrl.replace(/\/$/, "")}${pathAndQuery.startsWith("/") ? "" : "/"}${pathAndQuery}`;
 
   if (window.arcTendersOps?.fetch) {
     const result = await window.arcTendersOps.fetch({
-      url,
-      method: init?.method || "GET",
-      headers: Object.fromEntries(headers.entries()),
-      body: typeof init?.body === "string" ? init.body : undefined,
+      url: absoluteUrl,
+      method,
+      headers,
+      body: init?.body,
     });
-    return new Response(result.body, {
+    const bodyText = result.bodyText ?? result.body ?? "";
+    if (result.error && result.status === 0) {
+      throw new Error(result.error);
+    }
+    const json = parseBody(bodyText) as { error?: string };
+    return {
+      ok: result.ok ?? (result.status >= 200 && result.status < 300),
       status: result.status,
-      headers: result.headers,
-    });
+      json: async () => json,
+    };
   }
 
-  return fetch(url, { ...init, headers });
+  const res = await fetch(absoluteUrl, { method, headers, body: init?.body });
+  return {
+    ok: res.ok,
+    status: res.status,
+    json: async () => parseBody(await res.text()),
+  };
 };
 
-const readJson = async <T>(res: Response): Promise<T> => {
-  const text = await res.text();
-  let json: unknown = {};
-  try {
-    json = text ? JSON.parse(text) : {};
-  } catch {
-    throw new Error(`${res.status}: ${text.slice(0, 200)}`);
-  }
+const parseJson = async <T>(res: OpsResponse): Promise<T> => {
+  const body = (await res.json()) as { error?: string; data?: T };
   if (!res.ok) {
-    const err = json as { error?: string; hint?: string };
-    throw new Error(
-      [err.error || `HTTP ${res.status}`, err.hint].filter(Boolean).join(" — "),
-    );
+    throw new Error(body.error || `HTTP ${res.status}`);
   }
-  return json as T;
+  return body.data as T;
 };
 
-export const fetchStats = async (config: ConnectionConfig) => {
-  const res = await opsFetch(config, "/admin/ops/stats");
-  const json = await readJson<{ data: OpsStats }>(res);
-  return json.data;
-};
+export const fetchStats = async (cfg: ConnectionConfig) => parseJson<OpsStats>(await opsRequest(cfg, "/admin/ops/stats"));
 
 export const fetchLogs = async (
-  config: ConnectionConfig,
-  opts: { level: string; limit?: number; q?: string },
+  cfg: ConnectionConfig,
+  opts?: { level?: string; limit?: number; q?: string },
 ) => {
   const params = new URLSearchParams({
-    level: opts.level,
-    limit: String(opts.limit ?? 100),
+    level: opts?.level || "error_warn",
+    limit: String(opts?.limit || 80),
   });
-  if (opts.q?.trim()) params.set("q", opts.q.trim());
-  const res = await opsFetch(config, `/admin/ops/logs?${params}`);
-  const json = await readJson<{ data: LogEntry[] }>(res);
-  return json.data;
+  if (opts?.q?.trim()) params.set("q", opts.q.trim());
+  return parseJson<LogEntry[]>(await opsRequest(cfg, `/admin/ops/logs?${params}`));
 };
 
 export const fetchRequests = async (
-  config: ConnectionConfig,
-  opts: { errors: boolean; limit?: number },
+  cfg: ConnectionConfig,
+  opts?: { errors?: boolean; limit?: number },
+) => {
+  const params = new URLSearchParams({ limit: String(opts?.limit || 80) });
+  if (opts?.errors) params.set("errors", "1");
+  return parseJson<RequestEntry[]>(await opsRequest(cfg, `/admin/ops/requests?${params}`));
+};
+
+export const fetchHealthOps = async (cfg: ConnectionConfig) =>
+  parseJson<HealthOps>(await opsRequest(cfg, "/admin/ops/health"));
+
+export const notifySlackStats = async (cfg: ConnectionConfig) => {
+  const res = await opsRequest(cfg, "/admin/ops/stats/notify", { method: "POST", body: "{}" });
+  const body = (await res.json()) as OpsStats & { slackSent?: boolean; data?: OpsStats & { slackSent: boolean }; text?: string };
+  if (!res.ok) throw new Error((body as { error?: string }).error || `HTTP ${res.status}`);
+  if (body.data) return body.data;
+  return body as OpsStats & { slackSent: boolean; text?: string };
+};
+
+export type ImpersonateResult = {
+  openUrl: string;
+  expiresIn?: string;
+  credentials?: { email: string; password: string };
+  note?: string;
+};
+
+export const impersonateUser = async (
+  cfg: ConnectionConfig,
+  body: { userId?: string; email?: string },
+) => parseJson<ImpersonateResult>(await opsRequest(cfg, "/admin/ops/impersonate", { method: "POST", body: JSON.stringify(body) }));
+
+export const createSandbox = async (
+  cfg: ConnectionConfig,
+  body: {
+    planKey?: "trial" | "basic" | "pro";
+    role?: "owner" | "admin" | "member";
+    orgName?: string;
+  },
+) => {
+  const roleMap = { owner: "OWNER", admin: "ADMIN", member: "MEMBER" } as const;
+  return parseJson<ImpersonateResult>(
+    await opsRequest(cfg, "/admin/ops/sandbox", {
+      method: "POST",
+      body: JSON.stringify({
+        planKey: body.planKey ?? "trial",
+        role: body.role ? roleMap[body.role] : "OWNER",
+        orgName: body.orgName,
+      }),
+    }),
+  );
+};
+
+export const patchOrganizationPlan = async (
+  cfg: ConnectionConfig,
+  id: string,
+  body: { planKey: "trial" | "basic" | "pro" },
+) =>
+  parseJson<Record<string, unknown>>(
+    await opsRequest(cfg, `/admin/ops/organizations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  );
+
+export const fetchUsers = async (
+  cfg: ConnectionConfig,
+  opts?: { q?: string; limit?: number; offset?: number },
 ) => {
   const params = new URLSearchParams({
-    limit: String(opts.limit ?? 100),
+    limit: String(opts?.limit || 50),
+    offset: String(opts?.offset || 0),
   });
-  if (opts.errors) params.set("errors", "1");
-  const res = await opsFetch(config, `/admin/ops/requests?${params}`);
-  const json = await readJson<{ data: RequestEntry[] }>(res);
-  return json.data;
+  if (opts?.q?.trim()) params.set("q", opts.q.trim());
+  return parseJson<UsersPage>(await opsRequest(cfg, `/admin/ops/users?${params}`));
 };
 
-export const fetchHealthOps = async (config: ConnectionConfig) => {
-  const res = await opsFetch(config, "/admin/ops/health");
-  const json = await readJson<{ data: HealthOps }>(res);
-  return json.data;
+export const fetchUserDetail = async (cfg: ConnectionConfig, id: string) =>
+  parseJson<Record<string, unknown>>(await opsRequest(cfg, `/admin/ops/users/${id}`));
+
+export const deleteUser = async (cfg: ConnectionConfig, id: string) =>
+  parseJson<DeleteUserResult>(
+    await opsRequest(cfg, `/admin/ops/users/${id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ confirm: "DELETE" }),
+    }),
+  );
+
+export const fetchOrganizations = async (
+  cfg: ConnectionConfig,
+  opts?: { q?: string; plan?: string; paying?: boolean; limit?: number; offset?: number },
+) => {
+  const params = new URLSearchParams({
+    limit: String(opts?.limit || 50),
+    offset: String(opts?.offset || 0),
+  });
+  if (opts?.q?.trim()) params.set("q", opts.q.trim());
+  if (opts?.plan) params.set("plan", opts.plan);
+  if (opts?.paying) params.set("paying", "1");
+  return parseJson<ListPage<OpsOrgListItem>>(await opsRequest(cfg, `/admin/ops/organizations?${params}`));
 };
 
-export const notifySlackStats = async (config: ConnectionConfig) => {
-  const res = await opsFetch(config, "/admin/ops/stats/notify", {
-    method: "POST",
-    body: "{}",
-  });
-  return readJson<{ ok: boolean; slackSent: boolean; text?: string }>(res);
+export const fetchOrganizationDetail = async (cfg: ConnectionConfig, id: string) =>
+  parseJson<Record<string, unknown>>(await opsRequest(cfg, `/admin/ops/organizations/${id}`));
+
+export const fetchProductEvents = async (
+  cfg: ConnectionConfig,
+  opts?: { limit?: number; type?: string },
+) => {
+  const params = new URLSearchParams({ limit: String(opts?.limit || 100) });
+  if (opts?.type?.trim()) params.set("type", opts.type.trim());
+  return parseJson<ProductEventEntry[]>(await opsRequest(cfg, `/admin/ops/product-events?${params}`));
+};
+
+export const fetchTrialActivity = async (
+  cfg: ConnectionConfig,
+  userId: string,
+  opts?: { limit?: number },
+): Promise<TrialActivityPage> => {
+  const params = new URLSearchParams({ limit: String(opts?.limit || 200) });
+  const res = await opsRequest(cfg, `/admin/ops/trials/${encodeURIComponent(userId)}/activity?${params}`);
+  const body = (await res.json()) as {
+    error?: string;
+    data?: TrialActivityEntry[] | TrialActivityPage;
+    user?: TrialActivityUser;
+  };
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  if (Array.isArray(body.data)) {
+    return {
+      user:
+        body.user ?? {
+          id: userId,
+          email: null,
+          name: null,
+          firstName: null,
+          lastName: null,
+          organizationId: null,
+          organizationName: null,
+        },
+      events: body.data,
+    };
+  }
+  return {
+    user: body.user ?? {
+      id: userId,
+      email: null,
+      name: null,
+      firstName: null,
+      lastName: null,
+      organizationId: null,
+      organizationName: null,
+    },
+    events: [],
+  };
 };
 
 export const grantPlan = async (
-  config: ConnectionConfig,
+  cfg: ConnectionConfig,
   input: {
     email: string;
     planKey: "trial" | "basic" | "pro";
@@ -233,7 +561,7 @@ export const grantPlan = async (
     password?: string;
   },
 ) => {
-  const res = await opsFetch(config, "/admin/grant-plan", {
+  const res = await opsRequest(cfg, "/admin/grant-plan", {
     method: "POST",
     body: JSON.stringify({
       email: input.email.trim(),
@@ -243,5 +571,7 @@ export const grantPlan = async (
       password: input.password?.trim() || undefined,
     }),
   });
-  return readJson<Record<string, unknown>>(res);
+  const body = (await res.json()) as { error?: string; ok?: boolean };
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
 };

@@ -57,6 +57,7 @@ import {
 import { getUserPreference, setUserTheme } from "./services/user-preferences.js";
 import { getEntitlementsView } from "./services/entitlements.js";
 import { registerBillingRoutes } from "./billing/routes.js";
+import { createOpsEnterHandler } from "./ops/enter.js";
 import { listOpportunities } from "./services/opportunities.js";
 import {
   createWatchProfile,
@@ -139,6 +140,8 @@ export const createSaasApp = (deps: SaasAppDeps) => {
   });
 
   app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+
+  app.get("/api/saas/ops/enter", createOpsEnterHandler(deps.prisma));
 
   const requireSession = createMiddleware<{ Variables: SaasVariables }>(
     async (c, next) => {

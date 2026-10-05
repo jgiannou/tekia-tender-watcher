@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ENV_PRESETS,
+  createSandbox,
   fetchHealthOps,
   fetchLogs,
   fetchRequests,
@@ -18,12 +19,14 @@ import {
   type OpsStats,
   type RequestEntry,
 } from "./api";
+import { DetailModal, type DrillState } from "./DetailModal";
 
 const formatTime = (iso: string) => {
   try {
     return new Date(iso).toLocaleString([], {
       day: "2-digit",
       month: "2-digit",
+      year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
@@ -36,13 +39,14 @@ const formatTime = (iso: string) => {
 const statusClass = (status: number) => {
   if (status >= 500) return "s5";
   if (status >= 400) return "s4";
+  if (status >= 300) return "s3";
   return "s2";
 };
 
 export const App = () => {
   const [activeEnv, setActiveEnv] = useState<EnvId>(() => loadActiveEnv());
-  const [draft, setDraft] = useState<ConnectionConfig>(() => loadConfig());
   const [config, setConfig] = useState<ConnectionConfig>(() => loadConfig());
+  const [draft, setDraft] = useState<ConnectionConfig>(() => loadConfig());
   const [stats, setStats] = useState<OpsStats | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [requests, setRequests] = useState<RequestEntry[]>([]);
@@ -51,29 +55,46 @@ export const App = () => {
   const [loading, setLoading] = useState(false);
   const [logLevel, setLogLevel] = useState("error_warn");
   const [errorsOnlyHttp, setErrorsOnlyHttp] = useState(true);
-  const [query, setQuery] = useState("");
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [drill, setDrill] = useState<DrillState | null>(null);
   const [savedNote, setSavedNote] = useState<string | null>(null);
-  const [email, setEmail] = useState("jgiann94@gmail.com");
-  const [planKey, setPlanKey] = useState<"trial" | "basic" | "pro">("pro");
-  const [password, setPassword] = useState("");
+  const [sandboxPlan, setSandboxPlan] = useState<"trial" | "basic" | "pro">("pro");
+  const [sandboxRole, setSandboxRole] = useState<"owner" | "admin" | "member">("owner");
+  const [sandboxBusy, setSandboxBusy] = useState(false);
+  const [grantEmail, setGrantEmail] = useState("");
+  const [grantPlanKey, setGrantPlanKey] = useState<"trial" | "basic" | "pro">("pro");
+  const [grantPassword, setGrantPassword] = useState("");
   const [grantBusy, setGrantBusy] = useState(false);
 
-  const preset = ENV_PRESETS.find((p) => p.id === activeEnv) ?? ENV_PRESETS[0];
-  const connected = Boolean(config.token.trim() && config.apiUrl.trim());
   const isElectron = Boolean(window.arcTendersOps?.isElectron);
+  const connected = Boolean(config.token.trim() && config.apiUrl.trim());
+  const activePreset = ENV_PRESETS.find((p) => p.id === activeEnv) ?? ENV_PRESETS[0];
+
+  const planMax = useMemo(() => {
+    if (!stats) return 1;
+    return Math.max(1, stats.byPlan.trial, stats.byPlan.basic, stats.byPlan.pro);
+  }, [stats]);
 
   const handleSave = () => {
     const next = {
-      apiUrl: preset.apiUrl,
+      ...draft,
+      apiUrl: activePreset.apiUrl,
       token: draft.token.trim(),
       pollSeconds: Math.min(120, Math.max(5, Number(draft.pollSeconds) || 15)),
     };
     saveConfig(next, activeEnv);
     setConfig(next);
     setDraft(next);
-    setSavedNote(`${preset.label} saved — reopen anytime.`);
-    setError(null);
+    setStats(null);
+    setLogs([]);
+    setRequests([]);
+    setHealth(null);
+    setSavedNote(
+      isElectron
+        ? `${activePreset.label} saved on this Mac — reopen anytime.`
+        : `${activePreset.label} saved in this browser.`,
+    );
   };
 
   const handleSwitchEnv = (env: EnvId) => {
@@ -87,12 +108,13 @@ export const App = () => {
     setRequests([]);
     setHealth(null);
     setError(null);
+    setDrill(null);
     setSavedNote(null);
   };
 
   const refresh = async (cfg = config) => {
     if (!cfg.token.trim() || !cfg.apiUrl.trim()) {
-      setError("Paste Coolify ADMIN_TOKEN, then Save.");
+      setError("Set API URL and ADMIN_TOKEN, then Save.");
       return;
     }
     setLoading(true);
@@ -105,20 +127,31 @@ export const App = () => {
         fetchRequests(cfg, { errors: errorsOnlyHttp, limit: 100 }),
         fetchHealthOps(cfg),
       ]);
-      setLogs(settled[0].status === "fulfilled" ? settled[0].value : []);
-      setRequests(settled[1].status === "fulfilled" ? settled[1].value : []);
-      setHealth(settled[2].status === "fulfilled" ? settled[2].value : null);
+      const [logsResult, requestsResult, healthResult] = settled;
+      setLogs(logsResult.status === "fulfilled" ? logsResult.value : []);
+      setRequests(requestsResult.status === "fulfilled" ? requestsResult.value : []);
+      setHealth(
+        healthResult.status === "fulfilled"
+          ? healthResult.value
+          : {
+              ok: true,
+              service: "arc-tenders-api",
+              db: true,
+              slackConfigured: false,
+              generatedAt: new Date().toISOString(),
+              bufferedLogs: 0,
+              bufferedRequests: 0,
+              errorsInBuffer: 0,
+              warnsInBuffer: 0,
+              http5xxInBuffer: 0,
+              http4xxInBuffer: 0,
+            },
+      );
       const failed = settled
-        .map((r, i) =>
-          r.status === "rejected"
-            ? (["logs", "requests", "health"] as const)[i]
-            : null,
-        )
+        .map((r, i) => (r.status === "rejected" ? (["logs", "requests", "health"] as const)[i] : null))
         .filter(Boolean);
-      if (failed.length) {
-        setError(
-          `Stats OK. Missing panels: ${failed.join(", ")} — Redeploy API (latest main).`,
-        );
+      if (failed.length > 0) {
+        setError(`Connected to stats. Missing ops routes: ${failed.join(", ")} — deploy latest API.`);
       }
       setLastRefresh(new Date().toISOString());
     } catch (err) {
@@ -132,41 +165,53 @@ export const App = () => {
   useEffect(() => {
     if (!connected) return;
     void refresh(config);
-    const id = window.setInterval(
-      () => void refresh(config),
-      config.pollSeconds * 1000,
-    );
+    const id = window.setInterval(() => void refresh(config), config.pollSeconds * 1000);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config, logLevel, errorsOnlyHttp]);
 
-  const handleNotify = async () => {
+  const openExternalUrl = async (url: string) => {
+    if (window.arcTendersOps?.openExternal) {
+      await window.arcTendersOps.openExternal(url);
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleCreateSandbox = async () => {
+    if (!connected) {
+      setError("Connect first (token), then create a sandbox.");
+      return;
+    }
+    setSandboxBusy(true);
+    setError(null);
     try {
-      setLoading(true);
-      const data = await notifySlackStats(config);
-      if (!data.slackSent) {
-        setError("Slack notify ran but webhook failed (check SLACK_WEBHOOK_URL).");
-      } else {
-        setSavedNote(data.text || "Slack stats sent.");
-      }
+      const data = await createSandbox(config, { planKey: sandboxPlan, role: sandboxRole });
+      await openExternalUrl(data.openUrl);
+      setSavedNote(
+        `Opened ${sandboxPlan}/${sandboxRole} sandbox${
+          data.credentials ? ` (${data.credentials.email})` : ""
+        }.`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      setSandboxBusy(false);
     }
   };
 
   const handleGrant = async () => {
+    if (!grantEmail.trim()) return;
     setGrantBusy(true);
     setError(null);
     try {
       await grantPlan(config, {
-        email,
-        planKey,
-        password: password || undefined,
+        email: grantEmail.trim(),
+        planKey: grantPlanKey,
+        password: grantPassword.trim() || undefined,
       });
-      setSavedNote(`Granted ${planKey} to ${email}`);
-      setPassword("");
+      setSavedNote(`Granted ${grantPlanKey} to ${grantEmail.trim()}`);
+      setGrantPassword("");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -175,45 +220,61 @@ export const App = () => {
     }
   };
 
-  const handleOpenApp = async () => {
-    if (window.arcTendersOps?.openExternal) {
-      await window.arcTendersOps.openExternal(preset.appUrl);
+  const handleNotify = async () => {
+    try {
+      setLoading(true);
+      const data = await notifySlackStats(config);
+      if (data && "users" in data) setStats(data);
+      if (!data.slackSent) {
+        setError("Slack notify ran but webhook was not sent (check SLACK_WEBHOOK_URL).");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openDrill = (next: DrillState) => {
+    if (!connected) {
+      setError("Connect first (API URL + token), then open details.");
       return;
     }
-    window.open(preset.appUrl, "_blank", "noopener,noreferrer");
+    setDrill(next);
   };
 
   return (
-    <div className="shell">
+    <div className="app">
       <header className="topbar">
-        <div>
-          <div className="brand">TEKIA · ARC Tenders Ops</div>
-          <p className="sub">
-            {preset.label} pulse — users, plans, errors &amp; logs
+        <div className="brand">
+          <h1>ARC Tenders Ops</h1>
+          <p>
+            {activePreset.label} pulse — users, plans, errors &amp; logs
             {isElectron ? " · Electron" : ""}
           </p>
         </div>
         <div className="top-actions">
+          <span className={`pill env ${activeEnv}`}>
+            <span className="dot" />
+            {activePreset.label}
+          </span>
           <span className={`pill ${health?.ok ? "ok" : connected ? "bad" : ""}`}>
-            {health?.ok
-              ? "API + DB OK"
-              : connected
-                ? "Unhealthy / offline"
-                : "Not connected"}
+            <span className="dot" />
+            {health?.ok ? "API + DB OK" : connected ? "Unhealthy / offline" : "Not connected"}
           </span>
           <button
             type="button"
             className="btn"
-            disabled={loading || !connected}
             onClick={() => void refresh()}
+            disabled={loading || !connected}
           >
             {loading ? "Refreshing…" : "Refresh"}
           </button>
           <button
             type="button"
             className="btn primary"
-            disabled={loading || !connected}
             onClick={() => void handleNotify()}
+            disabled={loading || !connected}
           >
             Slack stats
           </button>
@@ -223,158 +284,194 @@ export const App = () => {
       <div className="layout">
         <aside className="sidebar">
           <h2>Connection</h2>
-          <div className="tabs">
-            {ENV_PRESETS.map((item) => (
+          <div className="env-switch" role="tablist" aria-label="Environment">
+            {ENV_PRESETS.map((preset) => (
               <button
-                key={item.id}
+                key={preset.id}
                 type="button"
-                className={item.id === activeEnv ? "active" : ""}
-                onClick={() => handleSwitchEnv(item.id)}
+                role="tab"
+                aria-selected={activeEnv === preset.id}
+                className={`env-tab ${activeEnv === preset.id ? "active" : ""} ${preset.id}`}
+                onClick={() => handleSwitchEnv(preset.id)}
               >
-                {item.label}
+                {preset.label}
               </button>
             ))}
           </div>
-
-          <label>
-            API base URL
-            <input value={preset.apiUrl} readOnly aria-label="API URL" />
-          </label>
-          <label>
-            ADMIN_TOKEN ({preset.label})
+          <div className="field">
+            <label htmlFor="apiUrl">API base URL</label>
+            <input id="apiUrl" value={activePreset.apiUrl} readOnly aria-readonly="true" />
+          </div>
+          <div className="field">
+            <label htmlFor="token">ADMIN_TOKEN ({activePreset.label})</label>
             <input
+              id="token"
               type="password"
               value={draft.token}
-              onChange={(e) =>
-                setDraft((d) => ({ ...d, token: e.target.value }))
-              }
+              onChange={(e) => setDraft((d) => ({ ...d, token: e.target.value }))}
               placeholder="Coolify ADMIN_TOKEN"
               autoComplete="off"
-              aria-label="Admin token"
             />
-          </label>
-          <label>
-            Auto-refresh (seconds)
+          </div>
+          <div className="field">
+            <label htmlFor="poll">Auto-refresh (seconds)</label>
             <input
+              id="poll"
               type="number"
               min={5}
               max={120}
               value={draft.pollSeconds}
               onChange={(e) =>
-                setDraft((d) => ({
-                  ...d,
-                  pollSeconds: Number(e.target.value) || 15,
-                }))
+                setDraft((d) => ({ ...d, pollSeconds: Number(e.target.value) || 15 }))
               }
-              aria-label="Poll seconds"
             />
-          </label>
-          <button type="button" className="btn primary" onClick={handleSave}>
-            Save {preset.label} connection
+          </div>
+          <button type="button" className="btn primary" onClick={handleSave} style={{ width: "100%" }}>
+            Save {activePreset.label} connection
           </button>
-          <button type="button" className="btn" onClick={handleOpenApp}>
-            Open web app
-          </button>
-          {savedNote ? <p className="hint ok">{savedNote}</p> : null}
-          <p className="hint">
-            Token = Coolify API env <code>ADMIN_TOKEN</code> (not OPERATOR). Health
-            alone does not prove auth.
-          </p>
-          {lastRefresh ? (
-            <p className="hint">Last refresh: {formatTime(lastRefresh)}</p>
-          ) : null}
+          {savedNote ? <p className="hint ok-hint">{savedNote}</p> : null}
 
-          <h2>Grant plan</h2>
-          <label>
-            Email
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              aria-label="Email"
-            />
-          </label>
-          <label>
-            Plan
+          <h2 style={{ marginTop: "1.4rem" }}>Feature lab</h2>
+          <div className="field">
+            <label htmlFor="sandboxPlan">Plan</label>
             <select
-              value={planKey}
-              onChange={(e) =>
-                setPlanKey(e.target.value as "trial" | "basic" | "pro")
-              }
-              aria-label="Plan"
+              id="sandboxPlan"
+              value={sandboxPlan}
+              onChange={(e) => setSandboxPlan(e.target.value as "trial" | "basic" | "pro")}
+            >
+              <option value="trial">Trial</option>
+              <option value="basic">Basic</option>
+              <option value="pro">Pro</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="sandboxRole">Role</label>
+            <select
+              id="sandboxRole"
+              value={sandboxRole}
+              onChange={(e) => setSandboxRole(e.target.value as "owner" | "admin" | "member")}
+            >
+              <option value="owner">Owner</option>
+              <option value="admin">Admin</option>
+              <option value="member">Member</option>
+            </select>
+          </div>
+          <button
+            type="button"
+            className="btn primary"
+            style={{ width: "100%" }}
+            disabled={!connected || sandboxBusy}
+            onClick={() => void handleCreateSandbox()}
+          >
+            {sandboxBusy ? "Opening…" : "Create & open sandbox"}
+          </button>
+
+          <h2 style={{ marginTop: "1.4rem" }}>Grant plan</h2>
+          <div className="field">
+            <label htmlFor="grantEmail">Email</label>
+            <input
+              id="grantEmail"
+              value={grantEmail}
+              onChange={(e) => setGrantEmail(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="grantPlan">Plan</label>
+            <select
+              id="grantPlan"
+              value={grantPlanKey}
+              onChange={(e) => setGrantPlanKey(e.target.value as "trial" | "basic" | "pro")}
             >
               <option value="trial">trial</option>
               <option value="basic">basic</option>
               <option value="pro">pro</option>
             </select>
-          </label>
-          <label>
-            New password (optional)
+          </div>
+          <div className="field">
+            <label htmlFor="grantPassword">New password (optional)</label>
             <input
+              id="grantPassword"
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              aria-label="Password"
+              value={grantPassword}
+              onChange={(e) => setGrantPassword(e.target.value)}
             />
-          </label>
+          </div>
           <button
             type="button"
-            className="btn primary"
-            disabled={!connected || grantBusy || !email.trim()}
+            className="btn"
+            style={{ width: "100%" }}
+            disabled={!connected || grantBusy || !grantEmail.trim()}
             onClick={() => void handleGrant()}
           >
             {grantBusy ? "Granting…" : "Grant plan"}
           </button>
+
+          {lastRefresh ? <p className="hint">Last refresh: {formatTime(lastRefresh)}</p> : null}
         </aside>
 
         <main className="main">
-          {error ? <div className="error-banner">{error}</div> : null}
+          {error ? <div className="error-banner fade-in">{error}</div> : null}
 
           <div className="section-head">
             <h2>Overview</h2>
             <span>{stats?.generatedAt ? formatTime(stats.generatedAt) : "—"}</span>
           </div>
 
-          <div className="grid-stats">
-            <div className="stat">
+          <div className="grid-stats fade-in">
+            <button
+              type="button"
+              className="stat clickable"
+              onClick={() => openDrill({ kind: "users", title: "Users" })}
+              aria-label="Open users list"
+            >
               <div className="label">Users</div>
               <div className="value">{stats?.users ?? "—"}</div>
-              <div className="sub">
-                {stats ? `${stats.memberships} memberships` : "—"}
-              </div>
-            </div>
-            <div className="stat">
+              <div className="sub">{stats ? `${stats.memberships} memberships · open` : "—"}</div>
+            </button>
+            <button
+              type="button"
+              className="stat clickable"
+              onClick={() => openDrill({ kind: "organizations", title: "Organizations" })}
+              aria-label="Open organizations list"
+            >
               <div className="label">Organizations</div>
               <div className="value">{stats?.organizations ?? "—"}</div>
-              <div className="sub">
-                {stats
-                  ? `trial ${stats.byPlan.trial} · basic ${stats.byPlan.basic} · pro ${stats.byPlan.pro}`
-                  : "—"}
-              </div>
-            </div>
-            <div className="stat">
-              <div className="label">Paying</div>
-              <div className="value">{stats?.payingOrgs ?? "—"}</div>
               <div className="sub">
                 {stats
                   ? `active ${stats.byBillingStatus.active} · past due ${stats.byBillingStatus.past_due}`
                   : "—"}
               </div>
-            </div>
-            <div className="stat">
-              <div className="label">Errors (buffer)</div>
-              <div className="value">
-                {stats?.logs.errorsInBuffer ?? health?.errorsInBuffer ?? "—"}
+            </button>
+            <button
+              type="button"
+              className="stat clickable"
+              onClick={() => openDrill({ kind: "paying", title: "Paying organizations" })}
+              aria-label="Open paying organizations"
+            >
+              <div className="label">Paying</div>
+              <div className="value">{stats?.payingOrgs ?? "—"}</div>
+              <div className="sub">
+                {stats ? `${stats.payingUsers} seats on paid plans · open` : "—"}
               </div>
+            </button>
+            <button
+              type="button"
+              className="stat clickable"
+              onClick={() => openDrill({ kind: "errors", title: "Errors & failed requests" })}
+              aria-label="Open errors buffer"
+            >
+              <div className="label">Errors (buffer)</div>
+              <div className="value">{stats?.logs.errorsInBuffer ?? health?.errorsInBuffer ?? "—"}</div>
               <div className="sub">
                 {stats
                   ? `warn ${stats.logs.warnsInBuffer} · 5xx ${stats.logs.http5xxInBuffer}`
                   : "—"}
               </div>
-            </div>
+            </button>
           </div>
 
           <div className="panels">
-            <section className="panel" aria-label="Event logs">
+            <section className="panel fade-in" aria-label="Event logs">
               <div className="panel-toolbar">
                 <h3>Event log</h3>
                 <div className="top-actions">
@@ -396,89 +493,115 @@ export const App = () => {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void refresh();
                     }}
+                    style={{
+                      width: 140,
+                      border: "1px solid var(--line-strong)",
+                      background: "var(--bg)",
+                      color: "var(--text)",
+                      borderRadius: "0.45rem",
+                      padding: "0.35rem 0.55rem",
+                    }}
                   />
                 </div>
               </div>
-              <div className="table-wrap">
+              <div className="panel-body">
                 {logs.length === 0 ? (
-                  <p className="hint">
-                    No buffered logs yet (in-memory — fills after API traffic /
-                    redeploy).
-                  </p>
+                  <div className="empty">No buffered events yet.</div>
                 ) : (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Time</th>
-                        <th>Level</th>
-                        <th>Message</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {logs.map((row) => (
-                        <tr key={row.id}>
-                          <td>{formatTime(row.ts)}</td>
-                          <td className={`lvl ${row.level}`}>{row.level}</td>
-                          <td>
-                            <div>{row.message}</div>
-                            {row.meta ? (
-                              <pre className="meta">
-                                {JSON.stringify(row.meta)}
-                              </pre>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  logs.map((row) => (
+                    <div className="row" key={row.id}>
+                      <div className="ts">{formatTime(row.ts)}</div>
+                      <div className={`level ${row.level}`}>{row.level}</div>
+                      <div className="msg">
+                        {row.message}
+                        {row.meta ? <code>{JSON.stringify(row.meta)}</code> : null}
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             </section>
 
-            <section className="panel" aria-label="HTTP errors">
+            <section className="panel fade-in" aria-label="HTTP requests and plans">
               <div className="panel-toolbar">
-                <h3>HTTP errors</h3>
-                <label className="check">
+                <h3>HTTP {errorsOnlyHttp ? "errors" : "requests"}</h3>
+                <label style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
                   <input
                     type="checkbox"
                     checked={errorsOnlyHttp}
                     onChange={(e) => setErrorsOnlyHttp(e.target.checked)}
+                    style={{ marginRight: 6 }}
                   />
                   4xx/5xx only
                 </label>
               </div>
-              <div className="table-wrap">
+              <div className="panel-body" style={{ maxHeight: 220 }}>
                 {requests.length === 0 ? (
-                  <p className="hint">No buffered requests yet.</p>
+                  <div className="empty">No matching requests in buffer.</div>
                 ) : (
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Time</th>
-                        <th>Status</th>
-                        <th>Method</th>
-                        <th>Path</th>
-                        <th>ms</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {requests.map((row) => (
-                        <tr key={row.id}>
-                          <td>{formatTime(row.ts)}</td>
-                          <td className={statusClass(row.status)}>{row.status}</td>
-                          <td>{row.method}</td>
-                          <td>{row.path}</td>
-                          <td>{row.ms}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  requests.map((row) => (
+                    <button
+                      type="button"
+                      className="row req clickable-row"
+                      key={row.id}
+                      onClick={() =>
+                        openDrill({
+                          kind: "errors",
+                          title: "Errors & failed requests",
+                          requestId: row.id,
+                        })
+                      }
+                    >
+                      <div className="ts">{formatTime(row.ts)}</div>
+                      <div className="msg" style={{ fontFamily: "var(--mono)", fontSize: "0.72rem" }}>
+                        {row.method}
+                      </div>
+                      <div className={`status ${statusClass(row.status)}`}>{row.status}</div>
+                      <div className="msg">{row.path}</div>
+                      <div className="ts">{row.ms}ms</div>
+                    </button>
+                  ))
                 )}
+              </div>
+
+              <div className="panel-toolbar" style={{ borderTop: "1px solid var(--line)" }}>
+                <h3>Plans</h3>
+              </div>
+              <div className="plan-bars">
+                {(
+                  [
+                    ["trial", stats?.byPlan.trial ?? 0],
+                    ["basic", stats?.byPlan.basic ?? 0],
+                    ["pro", stats?.byPlan.pro ?? 0],
+                  ] as const
+                ).map(([name, n]) => (
+                  <button
+                    type="button"
+                    className="plan-row clickable"
+                    key={name}
+                    onClick={() =>
+                      openDrill({
+                        kind: "plan",
+                        title: `Organizations · ${name}`,
+                        plan: name,
+                      })
+                    }
+                    aria-label={`Open ${name} organizations`}
+                  >
+                    <div className="name">{name}</div>
+                    <div className="bar">
+                      <span style={{ width: `${Math.round((n / planMax) * 100)}%` }} />
+                    </div>
+                    <div className="n">{n}</div>
+                  </button>
+                ))}
               </div>
             </section>
           </div>
         </main>
       </div>
+
+      <DetailModal open={drill} config={config} onClose={() => setDrill(null)} />
     </div>
   );
 };
