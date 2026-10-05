@@ -47,18 +47,16 @@ export const orgEmailMode = async (
 };
 
 /**
- * Plan email policy:
- * - IMMEDIATE (Pro): per NEW_OPPORTUNITY + related acts.
- *   Initial Pro scans only emit OPPORTUNITY_DIGEST → that digest is emailed.
- * - DIGEST (Basic/Trial): OPPORTUNITY_DIGEST + related acts (not each match).
- * Digest *creation* is gated in watch-profiles so Pro does not double-email.
+ * Opportunity emails are always DDA-style digests (one mail, many items).
+ * NEW_OPPORTUNITY stays in-app only. Related acts stay immediate.
+ * emailMode reserved for future cadence differences (both plans get digests now).
  */
 export const shouldEmailAttentionType = (
   type: AttentionEventType,
-  emailMode: "DIGEST" | "IMMEDIATE",
+  _emailMode: "DIGEST" | "IMMEDIATE",
 ): boolean => {
   if (RELATED_TYPES.has(type)) return true;
-  if (type === "NEW_OPPORTUNITY") return emailMode === "IMMEDIATE";
+  if (type === "NEW_OPPORTUNITY") return false;
   if (type === "OPPORTUNITY_DIGEST") return true;
   if (type === "SUBMISSION_RECORDED" || type === "OUTREACH_RECORDED") {
     return true;
@@ -131,7 +129,7 @@ export const deliverAttentionEmail = async (
 
   const settings = await prisma.organizationSettings.findUnique({
     where: { organizationId: event.organizationId },
-    select: { notifications: true },
+    select: { notifications: true, company: true },
   });
   const prefs = normalizeNotifications(settings?.notifications);
   if (!prefs.emailEnabled) return "skipped";
@@ -187,6 +185,30 @@ export const deliverAttentionEmail = async (
   }
 
   const meta = asMeta(event.metadata);
+  const companyRaw =
+    settings?.company && typeof settings.company === "object"
+      ? (settings.company as Record<string, unknown>)
+      : {};
+  const companyName =
+    (typeof companyRaw.legalName === "string" && companyRaw.legalName) ||
+    (typeof companyRaw.distinctiveTitle === "string" &&
+      companyRaw.distinctiveTitle) ||
+    null;
+  const topMatchesRaw = meta.topMatches;
+  const topMatches = Array.isArray(topMatchesRaw)
+    ? topMatchesRaw
+        .filter((row): row is Record<string, unknown> => !!row && typeof row === "object")
+        .map((row) => ({
+          referenceNumber:
+            typeof row.referenceNumber === "string" ? row.referenceNumber : null,
+          title: typeof row.title === "string" ? row.title : null,
+          score: typeof row.score === "number" ? row.score : null,
+          authority: typeof row.authority === "string" ? row.authority : null,
+          budgetWithoutVat:
+            typeof row.budgetWithoutVat === "number" ? row.budgetWithoutVat : null,
+          recordType: typeof row.recordType === "string" ? row.recordType : null,
+        }))
+    : [];
   const copy = attentionEmailCopy({
     title: event.title,
     appUrl: resolveSaasAppUrl(),
@@ -198,8 +220,10 @@ export const deliverAttentionEmail = async (
     authority: metaString(meta, "authority"),
     score: metaNumber(meta, "score"),
     profileName: metaString(meta, "profileName"),
+    companyName,
     matchCount: metaNumber(meta, "matchCount"),
     newCount: metaNumber(meta, "newCount"),
+    topMatches,
     kind: copyKindFor(event.type),
   });
 

@@ -33,8 +33,8 @@ describe("attention email delivery", () => {
     await prisma.$disconnect();
   });
 
-  it("plan policy: Pro immediate vs Basic digest", () => {
-    expect(shouldEmailAttentionType("NEW_OPPORTUNITY", "IMMEDIATE")).toBe(true);
+  it("plan policy: digests + related, not per-match opportunity mail", () => {
+    expect(shouldEmailAttentionType("NEW_OPPORTUNITY", "IMMEDIATE")).toBe(false);
     expect(shouldEmailAttentionType("NEW_OPPORTUNITY", "DIGEST")).toBe(false);
     expect(shouldEmailAttentionType("OPPORTUNITY_DIGEST", "DIGEST")).toBe(true);
     expect(shouldEmailAttentionType("OPPORTUNITY_DIGEST", "IMMEDIATE")).toBe(
@@ -45,7 +45,7 @@ describe("attention email delivery", () => {
     ).toBe(true);
   });
 
-  it("sends Brevo mail for NEW_OPPORTUNITY on Pro org", async () => {
+  it("sends DDA-style digest mail on Pro org", async () => {
     const sendMail = vi.fn(async () => ({ messageId: "test" }));
     __setMailTransportForTests({ sendMail } as never);
 
@@ -98,15 +98,31 @@ describe("attention email delivery", () => {
       data: {
         organizationId: organization.id,
         organizationTenderId: orgTender.id,
-        type: "NEW_OPPORTUNITY",
-        title: "Ιστοσελίδα δήμου",
-        dedupeKey: `NEW_OPPORTUNITY:${tender.id}`,
+        type: "OPPORTUNITY_DIGEST",
+        title: "2 ευκαιρίες από την αναζήτηση «Web»",
+        dedupeKey: `OPPORTUNITY_DIGEST:${organization.id}:test`,
         metadata: {
-          score: 92,
-          referenceNumber: tender.referenceNumber,
-          tenderTitle: tender.title,
-          authority: tender.contractingAuthority,
           profileName: "Web",
+          matchCount: 2,
+          newCount: 2,
+          topMatches: [
+            {
+              referenceNumber: tender.referenceNumber,
+              title: tender.title,
+              score: 92,
+              authority: tender.contractingAuthority,
+              budgetWithoutVat: 15000,
+              recordType: "REQ",
+            },
+            {
+              referenceNumber: "26REQ-NOTIFY-1B",
+              title: "Υπηρεσίες λογισμικού",
+              score: 74,
+              authority: "Δήμος Β",
+              budgetWithoutVat: 9000,
+              recordType: "REQ",
+            },
+          ],
         },
       },
     });
@@ -114,37 +130,40 @@ describe("attention email delivery", () => {
     const result = await deliverAttentionEmail(prisma, event.id);
     expect(result).toBe("sent");
     expect(sendMail).toHaveBeenCalledTimes(1);
+    const mailArg = sendMail.mock.calls[0]?.[0] as { subject?: string; html?: string };
+    expect(mailArg.subject).toMatch(/Πρωτογενή αιτήματα|opportunities/i);
+    expect(mailArg.html).toContain("★★★★★");
+    expect(mailArg.html).toContain("Ιστοσελίδα δήμου");
     const delivery = await prisma.notificationDelivery.findFirst({
       where: { organizationAttentionEventId: event.id },
     });
     expect(delivery?.status).toBe("SENT");
-    expect(delivery?.subject).toContain("ARC Tenders");
   });
 
-  it("skips NEW_OPPORTUNITY email on Basic DIGEST plan", async () => {
+  it("skips NEW_OPPORTUNITY email (in-app only)", async () => {
     const sendMail = vi.fn(async () => ({ messageId: "test" }));
     __setMailTransportForTests({ sendMail } as never);
 
     const user = await prisma.user.create({
       data: {
-        name: "Notify Basic",
-        email: `notify-basic-${Date.now()}@example.com`,
+        name: "Notify Skip",
+        email: `notify-skip-${Date.now()}@example.com`,
         emailVerified: true,
       },
     });
     const organization = await createOrganization(prisma, {
       userId: user.id,
-      name: "Notify Basic Org",
+      name: "Notify Skip Org",
     });
     await prisma.subscription.update({
       where: { organizationId: organization.id },
-      data: { planKey: "basic", status: "ACTIVE", trialEndsAt: null },
+      data: { planKey: "pro", status: "ACTIVE", trialEndsAt: null },
     });
 
     const tender = await upsertCanonicalTender(prisma, {
       referenceNumber: "26REQ-NOTIFY-2",
       recordType: "REQ",
-      title: "Basic skip",
+      title: "Per-match skip",
       submissionDate: new Date(),
     });
     const orgTender = await prisma.organizationTender.create({
@@ -160,7 +179,7 @@ describe("attention email delivery", () => {
         organizationId: organization.id,
         organizationTenderId: orgTender.id,
         type: "NEW_OPPORTUNITY",
-        title: "Basic skip",
+        title: "Per-match skip",
         dedupeKey: `NEW_OPPORTUNITY:${tender.id}`,
         metadata: { score: 80 },
       },

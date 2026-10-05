@@ -68,7 +68,7 @@ import {
   attentionTitleFor,
   pruneAttentionEventsForOrg,
 } from "./attention.js";
-import { orgEmailMode, queueAttentionEmail } from "./notify.js";
+import { queueAttentionEmail } from "./notify.js";
 import {
   kimdisItemFromTender,
   searchKimdis,
@@ -911,6 +911,9 @@ const ensureOpportunityDigestAttention = async (
       referenceNumber: string;
       title: string | null;
       score: number;
+      authority?: string | null;
+      budgetWithoutVat?: number | null;
+      recordType?: string | null;
     }>;
   },
 ) => {
@@ -928,7 +931,8 @@ const ensureOpportunityDigestAttention = async (
     profileName: input.profileName,
     matchCount: input.matchCount,
     newCount: input.newCount,
-    topMatches: input.topMatches.slice(0, 5),
+    // Keep enough rows for a DDA-style digest email (UI still shows a short list).
+    topMatches: input.topMatches.slice(0, 25),
   };
   const existing = await prisma.organizationAttentionEvent.findUnique({
     where: {
@@ -1009,6 +1013,9 @@ type OpportunityLinkResult = {
   score: number;
   referenceNumber: string | null;
   tenderTitle: string | null;
+  authority: string | null;
+  budgetWithoutVat: number | null;
+  recordType: string | null;
 };
 
 /**
@@ -1039,6 +1046,7 @@ const linkOpportunityToProfile = async (
   const tenderTitle = tender?.title ?? null;
   const recordType = tender?.recordType ?? null;
   const authority = tender?.contractingAuthority ?? null;
+  const budgetWithoutVat = tender?.budgetWithoutVat ?? null;
 
   const existing = await prisma.organizationTender.findUnique({
     where: {
@@ -1085,6 +1093,9 @@ const linkOpportunityToProfile = async (
       score: input.match.score,
       referenceNumber,
       tenderTitle,
+      authority,
+      budgetWithoutVat,
+      recordType,
     };
   }
 
@@ -1102,6 +1113,9 @@ const linkOpportunityToProfile = async (
       score: existing.score ?? input.match.score,
       referenceNumber,
       tenderTitle,
+      authority,
+      budgetWithoutVat,
+      recordType,
     };
   }
 
@@ -1163,6 +1177,9 @@ const linkOpportunityToProfile = async (
     score: matchMeta.highestScore,
     referenceNumber,
     tenderTitle,
+    authority,
+    budgetWithoutVat,
+    recordType,
   };
 };
 
@@ -1315,6 +1332,10 @@ export const runWatchProfileScan = async (
     referenceNumber: string | null;
     tenderTitle: string | null;
     score: number;
+    authority: string | null;
+    budgetWithoutVat: number | null;
+    recordType: string | null;
+    tenderId: string;
   }> = [];
   const upstreamErrors: string[] = [];
   const previousMatchCount = profile.matchCount ?? 0;
@@ -1340,6 +1361,10 @@ export const runWatchProfileScan = async (
           referenceNumber: result.referenceNumber,
           tenderTitle: result.tenderTitle,
           score: result.score,
+          authority: result.authority,
+          budgetWithoutVat: result.budgetWithoutVat,
+          recordType: result.recordType,
+          tenderId: result.tenderId,
         });
       },
     );
@@ -1390,6 +1415,10 @@ export const runWatchProfileScan = async (
             referenceNumber: result.referenceNumber,
             tenderTitle: result.tenderTitle,
             score: result.score,
+            authority: result.authority,
+            budgetWithoutVat: result.budgetWithoutVat,
+            recordType: result.recordType,
+            tenderId: result.tenderId,
           });
         }
       }
@@ -1415,35 +1444,34 @@ export const runWatchProfileScan = async (
       });
     }
 
-    // Digest attention:
-    // - always on initial scan (both plans — Pro has no per-match emails yet)
-    // - on later scans only for DIGEST plans when there are new matches
-    //   (Pro IMMEDIATE already emailed each NEW_OPPORTUNITY)
-    if (matchSummaries.length > 0) {
-      const emailMode = await orgEmailMode(prisma, profile.organizationId);
-      const wantDigest =
-        isInitialScan ||
-        (newMatchIds.size > 0 && emailMode === "DIGEST");
-      if (wantDigest) {
-        const topMatches = [...matchSummaries]
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 5)
-          .map((row) => ({
-            referenceNumber: row.referenceNumber ?? "—",
-            title: row.tenderTitle,
-            score: row.score,
-          }));
-        await ensureOpportunityDigestAttention(prisma, {
-          organizationId: profile.organizationId,
-          organizationTenderId: matchSummaries[0]!.organizationTenderId,
-          profileId: profile.id,
-          profileName: profile.name,
-          matchCount: matchedTenderIds.size,
-          newCount: newMatchIds.size,
-          scannedAt: now,
-          topMatches,
-        });
-      }
+    // DDA-style digest email: one message with many matches.
+    // Initial scan: digest of all matches. Later scans: digest of new matches only.
+    const digestSource =
+      isInitialScan
+        ? matchSummaries
+        : matchSummaries.filter((row) => newMatchIds.has(row.tenderId));
+    if (digestSource.length > 0) {
+      const topMatches = [...digestSource]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 25)
+        .map((row) => ({
+          referenceNumber: row.referenceNumber ?? "—",
+          title: row.tenderTitle,
+          score: row.score,
+          authority: row.authority,
+          budgetWithoutVat: row.budgetWithoutVat,
+          recordType: row.recordType,
+        }));
+      await ensureOpportunityDigestAttention(prisma, {
+        organizationId: profile.organizationId,
+        organizationTenderId: digestSource[0]!.organizationTenderId,
+        profileId: profile.id,
+        profileName: profile.name,
+        matchCount: matchedTenderIds.size,
+        newCount: isInitialScan ? digestSource.length : newMatchIds.size,
+        scannedAt: now,
+        topMatches,
+      });
     }
 
     // Timed-out/reclaimed runners may have already left RUNNING — do not
