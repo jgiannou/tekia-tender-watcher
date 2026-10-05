@@ -1118,40 +1118,8 @@ export const saasApi = {
       throw err;
     }
   },
-  getOverview: async (organizationId: string) => {
-    const headers = new Headers({ "X-Organization-Id": organizationId });
-    const response = await fetch("/api/saas/overview", {
-      headers,
-      credentials: "include",
-    });
-    if (response.status === 404 || response.status === 501) {
-      return null;
-    }
-    const text = await response.text();
-    const data = parseResponseJson(text);
-    if (!response.ok) {
-      throw new SaasRequestError(
-        errorMessageFromPayload(data, response.status),
-        errorCodeFromPayload(data),
-      );
-    }
-    return (data as { overview: SaasOverview }).overview;
-  },
-  loadOverview: async (organizationId: string, greetingName?: string | null) => {
-    const fromApi = await saasApi.getOverview(organizationId);
-    if (fromApi) {
-      return {
-        ...fromApi,
-        workflowInsights: fromApi.workflowInsights ?? {
-          waitingForProc: 0,
-          newRelatedProc: 0,
-          submissionWithAward: 0,
-        },
-        nextActions: fromApi.nextActions ?? [],
-      };
-    }
-    return composeOverviewFromEndpoints(organizationId, greetingName);
-  },
+  loadOverview: (organizationId: string, greetingName?: string | null) =>
+    composeOverviewFromEndpoints(organizationId, greetingName),
   monitoringState: (organizationId: string) =>
     request<{ organizationTenders: MonitoringPipelineRow[] }>(
       "/api/saas/monitoring/state",
