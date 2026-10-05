@@ -330,19 +330,23 @@ http listening on :3000
    - **Port:** `80`  
 3. **Domain:** `arc-tenders.tekia.gr`  
    - Enable HTTPS (Coolify Let's Encrypt) **ή** Cloudflare Full (strict) μπροστά  
-4. **Ίδιο network** με `saas-api`  
+4. **Ίδιο Docker network** με `saas-api` (κρίσιμο):
+   - Coolify βάζει κάθε app σε δικό του network by default → το web **δεν** λύνει το hostname του API.
+   - Στο **web** και στο **API**: Configuration → **Network** → **Connect to Predefined Networks** → τσεκάρετε και τα δύο το κοινό `coolify` (ή το network του άλλου resource).
+   - Save + Redeploy και τα δύο αν χρειαστεί.
 5. **Environment:**
 
 ```bash
-API_UPSTREAM=<coolify-saas-api-hostname>:3000
+API_UPSTREAM=<coolify-saas-api-uuid>:3000
 ```
 
-Παράδειγμα: αν το API service λέγεται `arc-tenders-api` → `API_UPSTREAM=arc-tenders-api:3000`  
+Παράδειγμα: API uuid `gfjv662rudc5mhwwyvj2zcvh` → `API_UPSTREAM=gfjv662rudc5mhwwyvj2zcvh:3000`  
 (Χωρίς `https://`, χωρίς path — μόνο `host:port`.)
 
 6. Deploy  
 
-Το nginx template αντικαθιστά το `__API_UPSTREAM__` στο boot (`apps/saas-web/docker/entrypoint.sh`).
+Το nginx template αντικαθιστά το `__API_UPSTREAM__` στο boot (`apps/saas-web/docker/entrypoint.sh`).  
+Αν δεις `host not found in upstream` στα web logs → τα δύο apps **δεν** είναι στο ίδιο network (βήμα 4).
 
 ---
 
