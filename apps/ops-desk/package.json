@@ -1,0 +1,55 @@
+{
+  "name": "@tekia/ops-desk",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local ops dashboard for ARC Tenders — grants, health, plan bootstrap",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:electron": "bash scripts/dev-electron.sh",
+    "build": "tsc --noEmit && vite build",
+    "pack:mac": "npm run build && electron-builder --mac --dir",
+    "dist:mac": "npm run build && electron-builder --mac --arm64"
+  },
+  "build": {
+    "appId": "gr.tekia.arc.tenders.opsdesk",
+    "productName": "ARC Tenders Ops",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "dir"
+      ],
+      "icon": "build/icon.icns",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null
+    },
+    "dmg": {
+      "title": "ARC Tenders Ops",
+      "icon": "build/icon.icns"
+    }
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0"
+  }
+}

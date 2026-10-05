@@ -36,7 +36,8 @@
     "desktop:dev": "pnpm --filter @tekia/desktop dev",
     "desktop:build": "pnpm --filter @tekia/desktop build",
     "desktop:package": "pnpm --filter @tekia/desktop package",
-    "desktop:package:dir": "pnpm --filter @tekia/desktop package:dir"
+    "desktop:package:dir": "pnpm --filter @tekia/desktop package:dir",
+    "ops:dist:mac": "npm --prefix apps/ops-desk run dist:mac"
   },
   "dependencies": {
     "@better-auth/prisma-adapter": "^1.7.7",
