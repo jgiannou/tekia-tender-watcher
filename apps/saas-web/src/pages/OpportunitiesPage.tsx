@@ -11,7 +11,74 @@ import { ScoreBadge } from "@/components/ScoreBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { saasApi, type Opportunity, type WatchProfile } from "@/lib/api";
+
+type OpportunitySort = "newest" | "oldest" | "score" | "deadline";
+
+const SORT_OPTIONS: Array<{ value: OpportunitySort; label: string }> = [
+  { value: "newest", label: "Νεότερα πρώτα" },
+  { value: "oldest", label: "Παλαιότερα πρώτα" },
+  { value: "score", label: "Υψηλότερη συνάφεια" },
+  { value: "deadline", label: "Κοντινότερη προθεσμία" },
+];
+
+const parseSort = (raw: string | null): OpportunitySort => {
+  if (raw === "oldest" || raw === "score" || raw === "deadline" || raw === "newest") {
+    return raw;
+  }
+  return "newest";
+};
+
+const dateMs = (value: string | null | undefined): number => {
+  if (!value) return Number.NaN;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : Number.NaN;
+};
+
+const sortOpportunities = (
+  rows: Opportunity[],
+  sort: OpportunitySort,
+): Opportunity[] => {
+  const copy = [...rows];
+  const cmpNullableDesc = (x: number, y: number) => {
+    if (Number.isNaN(x) && Number.isNaN(y)) return 0;
+    if (Number.isNaN(x)) return 1;
+    if (Number.isNaN(y)) return -1;
+    return y - x;
+  };
+  const cmpNullableAsc = (x: number, y: number) => {
+    if (Number.isNaN(x) && Number.isNaN(y)) return 0;
+    if (Number.isNaN(x)) return 1;
+    if (Number.isNaN(y)) return -1;
+    return x - y;
+  };
+
+  copy.sort((a, b) => {
+    const scoreA = a.score ?? -1;
+    const scoreB = b.score ?? -1;
+    const subA = dateMs(a.tender.submissionDate);
+    const subB = dateMs(b.tender.submissionDate);
+    const deadA = dateMs(a.tender.finalSubmissionDate);
+    const deadB = dateMs(b.tender.finalSubmissionDate);
+
+    if (sort === "oldest") return cmpNullableAsc(subA, subB);
+    if (sort === "score") {
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return cmpNullableDesc(subA, subB);
+    }
+    if (sort === "deadline") {
+      const byDeadline = cmpNullableAsc(deadA, deadB);
+      if (byDeadline !== 0) return byDeadline;
+      return cmpNullableDesc(subA, subB);
+    }
+    const byDate = cmpNullableDesc(subA, subB);
+    if (byDate !== 0) return byDate;
+    return scoreB - scoreA;
+  });
+  return copy;
+};
 
 const tenderPath = (opportunity: Opportunity) => {
   const type =
@@ -68,6 +135,7 @@ export const OpportunitiesPage = () => {
   const { activeOrganization } = useSessionContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const profileFilter = searchParams.get("profile")?.trim() || null;
+  const sort = parseSort(searchParams.get("sort"));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
@@ -75,16 +143,25 @@ export const OpportunitiesPage = () => {
   const [selected, setSelected] = useState<Opportunity | null>(null);
 
   const filtered = useMemo(() => {
-    if (!profileFilter) return opportunities;
-    return opportunities.filter((row) => matchesProfile(row, profileFilter));
-  }, [opportunities, profileFilter]);
+    const base = profileFilter
+      ? opportunities.filter((row) => matchesProfile(row, profileFilter))
+      : opportunities;
+    return sortOpportunities(base, sort);
+  }, [opportunities, profileFilter, sort]);
 
   const filterProfileName =
     profiles.find((profile) => profile.id === profileFilter)?.name ?? null;
 
   const paged = usePaginatedList(filtered, {
-    resetKey: `${profileFilter ?? "all"}:${filtered.length}`,
+    resetKey: `${profileFilter ?? "all"}:${sort}:${filtered.length}`,
   });
+
+  const handleSortChange = (next: OpportunitySort) => {
+    const params = new URLSearchParams(searchParams);
+    if (next === "newest") params.delete("sort");
+    else params.set("sort", next);
+    setSearchParams(params, { replace: true });
+  };
 
   const load = async (opts?: { silent?: boolean }) => {
     if (!activeOrganization) {
@@ -95,7 +172,7 @@ export const OpportunitiesPage = () => {
     setError(null);
     try {
       const [oppData, profileData] = await Promise.all([
-        saasApi.listOpportunities(activeOrganization.id),
+        saasApi.listOpportunities(activeOrganization.id, { sort }),
         saasApi.listWatchProfiles(activeOrganization.id),
       ]);
       setOpportunities(
@@ -221,9 +298,29 @@ export const OpportunitiesPage = () => {
             Ό,τι βρήκαν αυτόματα οι αποθηκευμένες αναζητήσεις σας.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Badge variant="secondary">REQ</Badge>
-          <Badge variant="outline">PROC</Badge>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="opportunities-sort" className="text-xs text-muted-foreground">
+              Ταξινόμηση
+            </Label>
+            <Select
+              id="opportunities-sort"
+              value={sort}
+              onChange={(e) => handleSortChange(e.target.value as OpportunitySort)}
+              aria-label="Ταξινόμηση ευκαιριών"
+              className="w-[13.5rem]"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="flex gap-2">
+            <Badge variant="secondary">REQ</Badge>
+            <Badge variant="outline">PROC</Badge>
+          </div>
         </div>
       </div>
 

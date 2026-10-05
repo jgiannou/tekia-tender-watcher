@@ -1445,16 +1445,22 @@ export const saasApi = {
     ),
   listOpportunities: (
     organizationId: string,
-    opts?: { limit?: number; tenderId?: string },
+    opts?: {
+      limit?: number;
+      tenderId?: string;
+      sort?: "newest" | "oldest" | "score" | "deadline";
+    },
   ) => {
     const params = new URLSearchParams();
     if (opts?.limit != null) params.set("limit", String(opts.limit));
     if (opts?.tenderId) params.set("tenderId", opts.tenderId);
+    if (opts?.sort) params.set("sort", opts.sort);
     const qs = params.toString();
     return request<{
       opportunities: Opportunity[];
       total?: number;
       unfollowed?: number;
+      sort?: "newest" | "oldest" | "score" | "deadline";
     }>(`/api/saas/opportunities${qs ? `?${qs}` : ""}`, {
       organizationId,
     });

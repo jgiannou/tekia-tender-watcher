@@ -953,6 +953,14 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     const limitRaw = c.req.query("limit");
     const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
     const tenderId = c.req.query("tenderId")?.trim() || undefined;
+    const sortRaw = c.req.query("sort")?.trim();
+    const sort =
+      sortRaw === "oldest" ||
+      sortRaw === "score" ||
+      sortRaw === "deadline" ||
+      sortRaw === "newest"
+        ? sortRaw
+        : "newest";
     const result = await listOpportunities(deps.prisma, {
       userId: c.get("userId"),
       organizationId: resolveOrgId(c),
@@ -961,11 +969,13 @@ export const createSaasApp = (deps: SaasAppDeps) => {
           ? Math.min(limit, 200)
           : undefined,
       tenderId,
+      sort,
     });
     return c.json({
       opportunities: result.opportunities,
       total: result.total,
       unfollowed: result.unfollowed,
+      sort,
     });
   });
 

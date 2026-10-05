@@ -40,6 +40,105 @@ const passesOpportunityFilter = (row: {
   return (meta?.matchedProfiles.length ?? 0) > 0;
 };
 
+export type OpportunitySort =
+  | "newest"
+  | "oldest"
+  | "score"
+  | "deadline";
+
+const opportunityOrderBy = (
+  sort: OpportunitySort,
+): Prisma.OrganizationTenderOrderByWithRelationInput[] => {
+  switch (sort) {
+    case "oldest":
+      return [
+        { tender: { submissionDate: "asc" } },
+        { updatedAt: "asc" },
+      ];
+    case "score":
+      return [{ score: "desc" }, { tender: { submissionDate: "desc" } }];
+    case "deadline":
+      return [
+        { tender: { finalSubmissionDate: "asc" } },
+        { tender: { submissionDate: "desc" } },
+      ];
+    case "newest":
+    default:
+      return [
+        { tender: { submissionDate: "desc" } },
+        { score: "desc" },
+        { updatedAt: "desc" },
+      ];
+  }
+};
+
+const dateMs = (value: Date | string | null | undefined): number => {
+  if (!value) return Number.NaN;
+  const ms = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : Number.NaN;
+};
+
+/** Stable in-memory sort (also used after client-side profile filtering). */
+export const sortOpportunityRows = <
+  T extends {
+    score: number | null;
+    updatedAt?: Date | string;
+    tender: {
+      submissionDate: Date | string | null;
+      finalSubmissionDate?: Date | string | null;
+    };
+  },
+>(
+  rows: T[],
+  sort: OpportunitySort,
+): T[] => {
+  const copy = [...rows];
+  copy.sort((a, b) => {
+    const scoreA = a.score ?? -1;
+    const scoreB = b.score ?? -1;
+    const subA = dateMs(a.tender.submissionDate);
+    const subB = dateMs(b.tender.submissionDate);
+    const deadA = dateMs(a.tender.finalSubmissionDate);
+    const deadB = dateMs(b.tender.finalSubmissionDate);
+    const updA = dateMs(a.updatedAt);
+    const updB = dateMs(b.updatedAt);
+
+    const cmpNullableDesc = (x: number, y: number) => {
+      if (Number.isNaN(x) && Number.isNaN(y)) return 0;
+      if (Number.isNaN(x)) return 1;
+      if (Number.isNaN(y)) return -1;
+      return y - x;
+    };
+    const cmpNullableAsc = (x: number, y: number) => {
+      if (Number.isNaN(x) && Number.isNaN(y)) return 0;
+      if (Number.isNaN(x)) return 1;
+      if (Number.isNaN(y)) return -1;
+      return x - y;
+    };
+
+    if (sort === "oldest") {
+      const byDate = cmpNullableAsc(subA, subB);
+      if (byDate !== 0) return byDate;
+      return cmpNullableAsc(updA, updB);
+    }
+    if (sort === "score") {
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return cmpNullableDesc(subA, subB);
+    }
+    if (sort === "deadline") {
+      const byDeadline = cmpNullableAsc(deadA, deadB);
+      if (byDeadline !== 0) return byDeadline;
+      return cmpNullableDesc(subA, subB);
+    }
+    // newest
+    const byDate = cmpNullableDesc(subA, subB);
+    if (byDate !== 0) return byDate;
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    return cmpNullableDesc(updA, updB);
+  });
+  return copy;
+};
+
 export const listOpportunities = async (
   prisma: PrismaClient,
   input: {
@@ -49,6 +148,8 @@ export const listOpportunities = async (
     limit?: number;
     /** Fetch a single organization tender opportunity by tender id. */
     tenderId?: string;
+    /** Default: newest (KIMDIS submission / publication date). */
+    sort?: OpportunitySort;
   },
 ) => {
   const { organizationId } = await requireOrgMembership(
@@ -57,13 +158,17 @@ export const listOpportunities = async (
     input.organizationId,
   );
 
+  const sort: OpportunitySort = input.sort ?? "newest";
   const rows = await prisma.organizationTender.findMany({
     where: opportunityWhere(organizationId, input.tenderId),
     include: { tender: true, watchProfile: true },
-    orderBy: [{ score: "desc" }, { updatedAt: "desc" }],
+    orderBy: opportunityOrderBy(sort),
   });
 
-  const filtered = rows.filter(passesOpportunityFilter);
+  const filtered = sortOpportunityRows(
+    rows.filter(passesOpportunityFilter),
+    sort,
+  );
   const unfollowed = filtered.filter((row) => !row.following).length;
   const opportunities =
     input.limit != null ? filtered.slice(0, Math.max(0, input.limit)) : filtered;
