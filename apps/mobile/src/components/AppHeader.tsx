@@ -5,9 +5,10 @@ import {
   Text,
   View,
   Alert,
+  useWindowDimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { Bell, Check, Plus } from "lucide-react-native";
+import { Bell, Check, ChevronsUpDown, Plus } from "lucide-react-native";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { saasApi } from "@/lib/api";
 import { Button, Field } from "@/components/ui";
@@ -21,11 +22,12 @@ const orgInitials = (name: string) => {
 };
 
 /**
- * Slack / Linear style: compact org avatar on the left.
- * Full org name lives in the switcher sheet — never truncated in the nav bar.
+ * Org switcher chip for the header left slot.
+ * Shows initials + name in a pill — never clipped by a fixed header height.
  */
 export const OrgAvatarButton = () => {
   const { colors } = useTheme();
+  const { width } = useWindowDimensions();
   const {
     organizations,
     activeOrganization,
@@ -36,6 +38,7 @@ export const OrgAvatarButton = () => {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const maxChipWidth = Math.min(Math.max(width * 0.38, 120), 168);
 
   const handleCreate = async () => {
     if (!name.trim()) return;
@@ -64,27 +67,52 @@ export const OrgAvatarButton = () => {
         accessibilityLabel={`Οργανισμός: ${label}`}
         onPress={() => setOpen(true)}
         style={{
-          marginLeft: 10,
-          width: 36,
+          marginLeft: 4,
+          maxWidth: maxChipWidth,
           height: 36,
-          borderRadius: 11,
-          backgroundColor: `${colors.primary}22`,
-          borderWidth: 1,
-          borderColor: `${colors.primary}55`,
+          paddingLeft: 4,
+          paddingRight: 8,
+          borderRadius: 18,
+          backgroundColor: colors.bgMuted,
+          flexDirection: "row",
           alignItems: "center",
-          justifyContent: "center",
+          gap: 6,
         }}
       >
-        <Text
+        <View
           style={{
-            color: colors.primary,
-            fontWeight: "800",
-            fontSize: 13,
-            letterSpacing: 0.2,
+            width: 28,
+            height: 28,
+            borderRadius: 14,
+            backgroundColor: `${colors.primary}22`,
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
-          {orgInitials(label)}
+          <Text
+            style={{
+              color: colors.primary,
+              fontWeight: "800",
+              fontSize: 11,
+            }}
+          >
+            {orgInitials(label)}
+          </Text>
+        </View>
+        <Text
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          style={{
+            color: colors.text,
+            fontWeight: "700",
+            fontSize: 13,
+            flexShrink: 1,
+            maxWidth: maxChipWidth - 56,
+          }}
+        >
+          {label}
         </Text>
+        <ChevronsUpDown size={13} color={colors.textMuted} />
       </Pressable>
 
       <Modal visible={open} animationType="slide" transparent>
@@ -204,7 +232,7 @@ export const OrgAvatarButton = () => {
   );
 };
 
-/** Clean centered page title — no org name crowding. */
+/** Centered page title — separate from the org chip so nothing fights for space. */
 export const AppHeaderTitle = ({ title }: { title: string }) => {
   const { colors } = useTheme();
   return (
@@ -215,6 +243,7 @@ export const AppHeaderTitle = ({ title }: { title: string }) => {
         fontWeight: "700",
         fontSize: 17,
         letterSpacing: -0.2,
+        textAlign: "center",
       }}
     >
       {title}
@@ -257,9 +286,9 @@ export const NotificationBell = () => {
       accessibilityLabel="Ειδοποιήσεις"
       onPress={() => router.push("/(app)/notifications")}
       style={{
-        width: 40,
-        height: 40,
-        borderRadius: 12,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         backgroundColor: colors.bgMuted,
         alignItems: "center",
         justifyContent: "center",
@@ -270,8 +299,8 @@ export const NotificationBell = () => {
         <View
           style={{
             position: "absolute",
-            right: 4,
-            top: 4,
+            right: 2,
+            top: 2,
             minWidth: 16,
             height: 16,
             borderRadius: 8,

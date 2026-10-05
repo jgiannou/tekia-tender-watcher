@@ -25,17 +25,23 @@ export default function TabsLayout() {
           backgroundColor: colors.bg,
           borderBottomWidth: 1,
           borderBottomColor: colors.border,
-          height: 56,
         },
         headerShadowVisible: false,
         headerTintColor: colors.text,
         headerTitleAlign: "center",
+        headerLeftContainerStyle: {
+          paddingLeft: 8,
+          paddingVertical: 6,
+        },
+        headerRightContainerStyle: {
+          paddingRight: 12,
+          paddingVertical: 6,
+        },
+        headerTitleContainerStyle: {
+          paddingHorizontal: 4,
+        },
         headerLeft: () => <OrgAvatarButton />,
-        headerRight: () => (
-          <View style={{ paddingRight: 12 }}>
-            <NotificationBell />
-          </View>
-        ),
+        headerRight: () => <NotificationBell />,
         tabBarStyle: {
           backgroundColor: colors.bgElevated,
           borderTopColor: colors.border,
