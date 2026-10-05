@@ -5,8 +5,8 @@
  *
  * Basic entitlements are locked (full procurement lifecycle, DIGEST email =
  * related-act updates once/day, advanced filters off). Pro differentiates on
- * volume/seats/speed/support (IMMEDIATE related-act email) — not by crippling
- * Basic workflow features.
+ * volume/seats/speed/support (IMMEDIATE = grouped email after each monitor wave,
+ * DIGEST = one daily related-act email) — not by crippling Basic workflow features.
  */
 
 export const PLAN_KEYS = {

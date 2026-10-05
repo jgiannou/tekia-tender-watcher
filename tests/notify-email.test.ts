@@ -34,7 +34,7 @@ describe("attention email delivery", () => {
     await prisma.$disconnect();
   });
 
-  it("plan policy: digests always; related only on IMMEDIATE (Pro)", () => {
+  it("plan policy: opportunity digests email; related acts never send one-by-one", () => {
     expect(shouldEmailAttentionType("NEW_OPPORTUNITY", "IMMEDIATE")).toBe(false);
     expect(shouldEmailAttentionType("NEW_OPPORTUNITY", "DIGEST")).toBe(false);
     expect(shouldEmailAttentionType("OPPORTUNITY_DIGEST", "DIGEST")).toBe(true);
@@ -46,7 +46,7 @@ describe("attention email delivery", () => {
     ).toBe(false);
     expect(
       shouldEmailAttentionType("RELATED_PROC_DISCOVERED", "IMMEDIATE"),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("sends DDA-style digest mail on Pro org", async () => {
@@ -279,7 +279,7 @@ describe("attention email delivery", () => {
     expect(flush.sent).toBe(1);
     expect(sendMail).toHaveBeenCalledTimes(1);
     const mailArg = sendMail.mock.calls[0]?.[0] as { subject?: string; html?: string };
-    expect(mailArg.subject).toMatch(/εξέλιξ(η|εις) παρακολούθησης/i);
+    expect(mailArg.subject).toContain("παρακολούθησης");
     expect(mailArg.html).toContain("Άνοιγμα στο ARC Tenders");
     expect(mailArg.html).toContain("Πρόσκληση ιστοσελίδας");
     expect(mailArg.html).not.toContain("arctenders.gr");
@@ -290,7 +290,7 @@ describe("attention email delivery", () => {
     expect(delivery?.templateKey).toBe("attention.related_act_digest");
   });
 
-  it("Pro IMMEDIATE sends related-act mail right away", async () => {
+  it("Pro batches related-act mail into one digest (no per-event spam)", async () => {
     const sendMail = vi.fn(async () => ({ messageId: "now" }));
     __setMailTransportForTests({ sendMail } as never);
 
@@ -331,10 +331,17 @@ describe("attention email delivery", () => {
       contractingAuthority: "Δήμος Pro",
       submissionDate: new Date(),
     });
-    const related = await upsertCanonicalTender(prisma, {
-      referenceNumber: "26PROC-REL-PRO",
+    const relatedA = await upsertCanonicalTender(prisma, {
+      referenceNumber: "26PROC-REL-PRO-A",
       recordType: "PROC",
-      title: "Πρόσκληση Pro",
+      title: "Πρόσκληση Pro A",
+      contractingAuthority: "Δήμος Pro",
+      submissionDate: new Date(),
+    });
+    const relatedB = await upsertCanonicalTender(prisma, {
+      referenceNumber: "26PROC-REL-PRO-B",
+      recordType: "PROC",
+      title: "Πρόσκληση Pro B",
       contractingAuthority: "Δήμος Pro",
       submissionDate: new Date(),
     });
@@ -347,17 +354,35 @@ describe("attention email delivery", () => {
         score: 88,
       },
     });
-    const event = await prisma.organizationAttentionEvent.create({
+    const eventA = await prisma.organizationAttentionEvent.create({
       data: {
         organizationId: organization.id,
         organizationTenderId: orgTender.id,
-        relatedTenderId: related.id,
+        relatedTenderId: relatedA.id,
         type: "RELATED_PROC_DISCOVERED",
-        title: related.title ?? "related",
-        dedupeKey: `RELATED_PROC_DISCOVERED:${source.id}:${related.id}`,
+        title: relatedA.title ?? "related",
+        dedupeKey: `RELATED_PROC_DISCOVERED:${source.id}:${relatedA.id}`,
         metadata: {
-          referenceNumber: related.referenceNumber,
-          relatedTenderTitle: related.title,
+          referenceNumber: relatedA.referenceNumber,
+          relatedTenderTitle: relatedA.title,
+          sourceReferenceNumber: source.referenceNumber,
+          sourceTenderTitle: source.title,
+          sourceRecordType: "REQ",
+          confidence: "LIKELY",
+        },
+      },
+    });
+    const eventB = await prisma.organizationAttentionEvent.create({
+      data: {
+        organizationId: organization.id,
+        organizationTenderId: orgTender.id,
+        relatedTenderId: relatedB.id,
+        type: "RELATED_PROC_DISCOVERED",
+        title: relatedB.title ?? "related",
+        dedupeKey: `RELATED_PROC_DISCOVERED:${source.id}:${relatedB.id}`,
+        metadata: {
+          referenceNumber: relatedB.referenceNumber,
+          relatedTenderTitle: relatedB.title,
           sourceReferenceNumber: source.referenceNumber,
           sourceTenderTitle: source.title,
           sourceRecordType: "REQ",
@@ -366,10 +391,24 @@ describe("attention email delivery", () => {
       },
     });
 
-    expect(await deliverAttentionEmail(prisma, event.id)).toBe("sent");
+    expect(await deliverAttentionEmail(prisma, eventA.id)).toBe("skipped");
+    expect(await deliverAttentionEmail(prisma, eventB.id)).toBe("skipped");
+    expect(sendMail).not.toHaveBeenCalled();
+
+    const digestOnly = await flushRelatedActEmailDigests(prisma, {
+      modes: ["DIGEST"],
+    });
+    expect(digestOnly.sent).toBe(0);
+
+    const flush = await flushRelatedActEmailDigests(prisma, {
+      modes: ["IMMEDIATE"],
+    });
+    expect(flush.sent).toBe(1);
     expect(sendMail).toHaveBeenCalledTimes(1);
-    const mailArg = sendMail.mock.calls[0]?.[0] as { html?: string };
+    const mailArg = sendMail.mock.calls[0]?.[0] as { subject?: string; html?: string };
+    expect(mailArg.subject).toContain("παρακολούθησης");
+    expect(mailArg.html).toContain("Πρόσκληση Pro A");
+    expect(mailArg.html).toContain("Πρόσκληση Pro B");
     expect(mailArg.html).toContain("Άνοιγμα στο ARC Tenders");
-    expect(mailArg.html).toContain("Αίτημα που παρακολουθείται");
   });
 });

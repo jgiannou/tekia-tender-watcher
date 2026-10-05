@@ -113,8 +113,15 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
       cron.schedule(periodicExpression, () => {
         void (async () => {
           await runPeriodicWatchProfileScans(getPrisma(), kimdis);
-          // Discover related acts on followed threads (Pro gets immediate email).
+          // Discover related acts, then one grouped email per Pro org (not N emails).
           await monitorFollowedThreads(getPrisma());
+          const proFlush = await flushRelatedActEmailDigests(getPrisma(), {
+            modes: ["IMMEDIATE"],
+          });
+          console.log(
+            "[email] related-act pro flush",
+            JSON.stringify(proFlush),
+          );
         })().catch((error) => {
           console.error(
             "periodic watch/monitor error:",
@@ -131,7 +138,7 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
       cron.schedule(
         relatedDigestExpression,
         () => {
-          void flushRelatedActEmailDigests(getPrisma())
+          void flushRelatedActEmailDigests(getPrisma(), { modes: ["DIGEST"] })
             .then((summary) => {
               console.log(
                 "[email] related-act digest flush",

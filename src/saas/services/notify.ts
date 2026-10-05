@@ -47,16 +47,16 @@ export const orgEmailMode = async (
 };
 
 /**
- * Opportunity digests always email.
- * Related-act / deadline updates: IMMEDIATE (Pro) only — DIGEST (Basic/Trial)
- * is flushed once/day by flushRelatedActEmailDigests.
+ * Opportunity digests always email (one email per scan batch).
+ * Related-act / deadline updates are NEVER sent one-by-one — they are grouped by
+ * flushRelatedActEmailDigests (Basic daily, Pro after each monitor wave).
  * NEW_OPPORTUNITY stays in-app only.
  */
 export const shouldEmailAttentionType = (
   type: AttentionEventType,
-  emailMode: "DIGEST" | "IMMEDIATE",
+  _emailMode: "DIGEST" | "IMMEDIATE",
 ): boolean => {
-  if (RELATED_TYPES.has(type)) return emailMode === "IMMEDIATE";
+  if (RELATED_TYPES.has(type)) return false;
   if (type === "NEW_OPPORTUNITY") return false;
   if (type === "OPPORTUNITY_DIGEST") return true;
   if (type === "SUBMISSION_RECORDED" || type === "OUTREACH_RECORDED") {
@@ -378,13 +378,21 @@ export const deliverAttentionEmail = async (
   }
 };
 
+export type FlushRelatedActModes = Array<"DIGEST" | "IMMEDIATE">;
+
 /**
- * Basic / Trial: one daily email with all pending related-act updates.
- * Pro never hits this path (those send immediately via deliverAttentionEmail).
+ * Group pending related-act / deadline updates into ONE email per organization.
+ * - DIGEST (Basic/Trial): call once/day (cron).
+ * - IMMEDIATE (Pro): call after each monitor wave so Pro still gets sooner notice,
+ *   but never N separate emails for N events in the same batch.
  */
 export const flushRelatedActEmailDigests = async (
   prisma: PrismaClient,
+  options?: { modes?: FlushRelatedActModes },
 ): Promise<{ orgs: number; events: number; sent: number; skipped: number }> => {
+  const modes = new Set<string>(
+    options?.modes?.length ? options.modes : ["DIGEST", "IMMEDIATE"],
+  );
   const since = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
   const pending = await prisma.organizationAttentionEvent.findMany({
     where: {
@@ -413,7 +421,7 @@ export const flushRelatedActEmailDigests = async (
 
   for (const [organizationId, events] of byOrg) {
     const emailMode = await orgEmailMode(prisma, organizationId);
-    if (emailMode !== "DIGEST") {
+    if (!modes.has(emailMode)) {
       skipped += events.length;
       continue;
     }

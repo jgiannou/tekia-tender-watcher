@@ -12,10 +12,7 @@ import {
   type ConsentState,
 } from "@/legal";
 
-/**
- * Renders ONLY when analytics/marketing feature flags are on.
- * Today those flags are false → component returns null (no fake banner).
- */
+/** Consent dialog for optional analytics (and marketing when enabled). */
 export const CookieConsentBanner = () => {
   const [state, setState] = useState<ConsentState | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
@@ -68,8 +65,9 @@ export const CookieConsentBanner = () => {
         <div className="space-y-1 text-sm">
           <p className="font-medium text-foreground">Cookies &amp; προαιρετικές μετρήσεις</p>
           <p className="text-muted-foreground">
-            Χρησιμοποιούμε απαραίτητα cookies για σύνδεση. Προαιρετικά analytics
-            {CONSENT_FEATURES.marketingEnabled ? " / διαφήμιση" : ""} μόνο με τη
+            Χρησιμοποιούμε απαραίτητα cookies για σύνδεση. Προαιρετικά Google
+            Analytics
+            {CONSENT_FEATURES.marketingEnabled ? " / Google Ads" : ""} μόνο με τη
             συναίνεσή σας.{" "}
             <Link
               to="/legal/cookies"

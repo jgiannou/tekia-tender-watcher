@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { authClient } from "@/lib/auth-client";
+import { AuthShell } from "@/components/auth/AuthShell";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
+import { authClient } from "@/lib/auth-client";
 
 export const LoginPage = () => {
   const navigate = useNavigate();
@@ -46,77 +46,57 @@ export const LoginPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <Card className="w-full max-w-md border-border/80 shadow-lg shadow-primary/5">
-        <CardHeader>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-            ARC Tenders
+    <AuthShell
+      title="Σύνδεση"
+      description="Συνδεθείτε για να δείτε τις ευκαιρίες σας, τους διαγωνισμούς που παρακολουθείτε και τα έγγραφα της επιχείρησής σας."
+      footer={
+        <p className="text-center text-sm text-muted-foreground">
+          Δεν έχετε λογαριασμό;{" "}
+          <Link
+            className="font-medium text-primary underline-offset-4 hover:underline"
+            to="/signup"
+          >
+            Δωρεάν δοκιμή 7 ημερών
+          </Link>
+        </p>
+      }
+    >
+      <form className="space-y-4" onSubmit={(e) => void handleSubmit(e)}>
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            aria-label="Email"
+          />
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="password">Κωδικός πρόσβασης</Label>
+            <Link
+              className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+              to="/forgot-password"
+            >
+              Ξεχάσατε τον κωδικό σας;
+            </Link>
           </div>
-          <CardTitle className="text-2xl">Σύνδεση</CardTitle>
-          <CardDescription>
-            Συνδεθείτε για να δείτε ευκαιρίες και παρακολουθήσεις διαγωνισμών.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="space-y-4" onSubmit={(e) => void handleSubmit(e)}>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="password">Κωδικός</Label>
-                <Link
-                  className="text-xs font-medium text-primary underline-offset-4 hover:underline"
-                  to="/forgot-password"
-                >
-                  Ξεχάσατε τον κωδικό;
-                </Link>
-              </div>
-              <PasswordInput
-                id="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            <Button className="w-full" disabled={submitting} type="submit">
-              {submitting ? "Σύνδεση…" : "Σύνδεση"}
-            </Button>
-          </form>
-          <p className="mt-4 text-center text-sm text-muted-foreground">
-            Δεν έχετε λογαριασμό;{" "}
-            <Link className="font-medium text-primary underline-offset-4 hover:underline" to="/signup">
-              Εγγραφή
-            </Link>
-          </p>
-          <p className="mt-3 text-center text-xs text-muted-foreground">
-            <Link className="underline-offset-4 hover:underline" to="/legal/terms">
-              Όροι Χρήσης
-            </Link>
-            {" · "}
-            <Link className="underline-offset-4 hover:underline" to="/legal/privacy">
-              Πολιτική Απορρήτου
-            </Link>
-            {" · "}
-            <Link className="underline-offset-4 hover:underline" to="/legal/cookies">
-              Cookies
-            </Link>
-            {" · "}
-            <Link className="underline-offset-4 hover:underline" to="/legal/data-sources">
-              Πηγές
-            </Link>
-          </p>
-        </CardContent>
-      </Card>
-    </div>
+          <PasswordInput
+            id="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            aria-label="Κωδικός πρόσβασης"
+          />
+        </div>
+        <Button className="w-full" disabled={submitting} type="submit">
+          {submitting ? "Σύνδεση…" : "Σύνδεση"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 };

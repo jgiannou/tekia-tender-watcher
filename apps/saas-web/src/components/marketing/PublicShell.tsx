@@ -1,0 +1,188 @@
+import type { ReactNode } from "react";
+import { Link, NavLink } from "react-router-dom";
+import { Menu, X } from "lucide-react";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { LEGAL_CONTROLLER } from "@/legal/meta";
+import { cn } from "@/lib/utils";
+
+const COPYRIGHT_YEAR = new Date().getFullYear();
+
+type PublicShellProps = {
+  children: ReactNode;
+  /** When on landing, Χαρακτηριστικά scrolls to #features */
+  featuresHref?: string;
+  contactHref?: string;
+};
+
+export const PublicShell = ({
+  children,
+  featuresHref = "/#features",
+  contactHref = "/#contact",
+}: PublicShellProps) => {
+  const [open, setOpen] = useState(false);
+
+  const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+    cn(
+      "text-sm text-muted-foreground transition-colors hover:text-foreground",
+      isActive && "text-foreground",
+    );
+
+  return (
+    <div className="relative min-h-screen overflow-x-clip bg-background text-foreground">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_10%_-10%,var(--arc-glow-cyan),transparent_50%),radial-gradient(ellipse_at_90%_0%,var(--arc-glow-magenta),transparent_45%)]"
+      />
+
+      <header className="relative z-20 border-b border-border/60 bg-background/80 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
+          <Link
+            to="/"
+            className="inline-flex items-baseline gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="ARC Tenders"
+          >
+            <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-primary">
+              ARC
+            </span>
+            <span className="text-sm font-semibold tracking-tight">Tenders</span>
+          </Link>
+
+          <nav className="hidden items-center gap-6 md:flex" aria-label="Δημόσια πλοήγηση">
+            <a href={featuresHref} className="text-sm text-muted-foreground hover:text-foreground">
+              Χαρακτηριστικά
+            </a>
+            <NavLink to="/pricing" className={navLinkClass}>
+              Τιμές
+            </NavLink>
+            <a href={contactHref} className="text-sm text-muted-foreground hover:text-foreground">
+              Επικοινωνία
+            </a>
+            <NavLink to="/login" className={navLinkClass}>
+              Σύνδεση
+            </NavLink>
+            <Button asChild size="sm">
+              <Link to="/signup">Δωρεάν δοκιμή</Link>
+            </Button>
+          </nav>
+
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border md:hidden"
+            aria-label={open ? "Κλείσιμο μενού" : "Άνοιγμα μενού"}
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+          </button>
+        </div>
+
+        {open ? (
+          <div className="border-t border-border/60 px-4 py-3 md:hidden">
+            <nav className="flex flex-col gap-3" aria-label="Κινητό μενού">
+              <a
+                href={featuresHref}
+                className="text-sm text-muted-foreground"
+                onClick={() => setOpen(false)}
+              >
+                Χαρακτηριστικά
+              </a>
+              <Link to="/pricing" className="text-sm text-muted-foreground" onClick={() => setOpen(false)}>
+                Τιμές
+              </Link>
+              <a
+                href={contactHref}
+                className="text-sm text-muted-foreground"
+                onClick={() => setOpen(false)}
+              >
+                Επικοινωνία
+              </a>
+              <Link to="/login" className="text-sm text-muted-foreground" onClick={() => setOpen(false)}>
+                Σύνδεση
+              </Link>
+              <Button asChild className="w-full">
+                <Link to="/signup" onClick={() => setOpen(false)}>
+                  Δωρεάν δοκιμή
+                </Link>
+              </Button>
+            </nav>
+          </div>
+        ) : null}
+      </header>
+
+      <div className="relative z-10">{children}</div>
+
+      <footer className="relative z-10 border-t border-border/60">
+        <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-8 text-xs text-muted-foreground sm:px-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <p className="max-w-xl">
+              Το ARC Tenders είναι ανεξάρτητη ιδιωτική υπηρεσία και δεν αποτελεί επίσημη
+              πλατφόρμα ή συνεργάτη του ΚΗΜΔΗΣ / ΕΣΗΔΗΣ.
+            </p>
+            <nav className="flex flex-wrap gap-3" aria-label="Νομικοί σύνδεσμοι">
+              <Link className="hover:text-foreground" to="/legal/terms">
+                Όροι Χρήσης
+              </Link>
+              <Link className="hover:text-foreground" to="/legal/privacy">
+                Πολιτική Απορρήτου
+              </Link>
+              <Link className="hover:text-foreground" to="/legal/cookies">
+                Cookies
+              </Link>
+              <Link className="hover:text-foreground" to="/legal/data-sources">
+                Πηγές Δεδομένων
+              </Link>
+              <Link className="hover:text-foreground" to="/legal/provider">
+                Στοιχεία Παρόχου
+              </Link>
+            </nav>
+          </div>
+
+          <div className="flex flex-col gap-2 border-t border-border/50 pt-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="space-y-1">
+              <p>
+                © {COPYRIGHT_YEAR}{" "}
+                <a
+                  href={LEGAL_CONTROLLER.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-foreground/90 underline-offset-4 hover:underline"
+                  aria-label={`${LEGAL_CONTROLLER.tradingName} — ${LEGAL_CONTROLLER.website}`}
+                >
+                  {LEGAL_CONTROLLER.tradingName}
+                </a>
+                . Όλα τα δικαιώματα διατηρούνται.
+              </p>
+              <p>
+                {LEGAL_CONTROLLER.productName} · προϊόν της{" "}
+                <a
+                  href={LEGAL_CONTROLLER.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline-offset-4 hover:underline hover:text-foreground"
+                >
+                  tekia.gr
+                </a>
+              </p>
+            </div>
+            <div className="space-y-1 sm:text-right">
+              <p>
+                <a
+                  href={`mailto:${LEGAL_CONTROLLER.email}`}
+                  className="underline-offset-4 hover:underline hover:text-foreground"
+                >
+                  {LEGAL_CONTROLLER.email}
+                </a>
+              </p>
+              <p>
+                <Link className="hover:text-foreground" to="/legal/provider">
+                  Στοιχεία παρόχου
+                </Link>
+              </p>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+};

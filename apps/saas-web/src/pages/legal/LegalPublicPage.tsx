@@ -1,6 +1,9 @@
 import { Link, useParams } from "react-router-dom";
 import { LegalDocumentView } from "@/components/LegalDocumentView";
 import { getLegalDocument, isLegalDocId, LEGAL_HUB_ITEMS } from "@/legal";
+import { LEGAL_CONTROLLER } from "@/legal/meta";
+
+const COPYRIGHT_YEAR = new Date().getFullYear();
 
 export const LegalPublicPage = () => {
   const { docId } = useParams();
@@ -57,6 +60,33 @@ export const LegalPublicPage = () => {
       <main className="mx-auto max-w-3xl px-4 py-10">
         <LegalDocumentView document={document} />
       </main>
+      <footer className="border-t border-border">
+        <div className="mx-auto flex max-w-3xl flex-col gap-1 px-4 py-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            © {COPYRIGHT_YEAR}{" "}
+            <a
+              href={LEGAL_CONTROLLER.website}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline-offset-4 hover:underline hover:text-foreground"
+            >
+              {LEGAL_CONTROLLER.tradingName}
+            </a>
+          </p>
+          <p>
+            <a
+              href={`mailto:${LEGAL_CONTROLLER.email}`}
+              className="underline-offset-4 hover:underline hover:text-foreground"
+            >
+              {LEGAL_CONTROLLER.email}
+            </a>
+            {" · "}
+            <Link className="hover:text-foreground" to="/#contact">
+              Επικοινωνία
+            </Link>
+          </p>
+        </div>
+      </footer>
     </div>
   );
 };

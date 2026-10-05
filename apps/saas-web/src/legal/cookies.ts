@@ -6,9 +6,7 @@ import {
 } from "./meta";
 
 /**
- * Cookie policy. Today: essential/auth only → no consent banner required.
- * Optional analytics/marketing categories are documented as "not active"
- * and gated behind FEATURE flags in consent.ts for a future enablement.
+ * Cookie policy. Essential cookies always on; optional analytics gated by banner.
  */
 export const cookieNotice: LegalDocument = {
   id: "cookies",
@@ -16,7 +14,7 @@ export const cookieNotice: LegalDocument = {
   version: LEGAL_VERSIONS.cookies,
   effectiveDate: LEGAL_EFFECTIVE_DATE,
   summary:
-    "Αυτή τη στιγμή χρησιμοποιούμε μόνο απολύτως απαραίτητα cookies συνεδρίας. Δεν ενεργοποιούμε analytics ή διαφημιστικά cookies χωρίς συναίνεση.",
+    "Χρησιμοποιούμε απαραίτητα cookies συνεδρίας. Προαιρετικά analytics ενεργοποιούνται μόνο μετά από συναίνεση μέσω του banner cookies.",
   sections: [
     {
       id: "necessary",
@@ -37,16 +35,17 @@ export const cookieNotice: LegalDocument = {
       id: "analytics",
       title: "2. Analytics / μετρήσεις χρήσης (προαιρετικά)",
       paragraphs: [
-        "Προς το παρόν δεν χρησιμοποιούμε εργαλεία analytics τρίτων (π.χ. Google Analytics, Meta Pixel) στην εφαρμογή.",
-        "Αν στο μέλλον ενεργοποιηθούν προαιρετικά analytics, θα εμφανιστεί ξεχωριστό αίτημα συναίνεσης πριν από οποιαδήποτε φόρτωση του σχετικού script, με δυνατότητα απόρριψης και αλλαγής προτιμήσεων.",
+        "Χρησιμοποιούμε Google Tag Manager (GTM) και Google Analytics 4 (GA4) για μετρήσεις χρήσης της δημόσιας ιστοσελίδας / εφαρμογής.",
+        "Το GTM/GA4 φορτώνεται μόνο μετά από συναίνεση (Αποδοχή ή ενεργοποίηση Analytics στις Ρυθμίσεις). Χωρίς συναίνεση δεν φορτώνεται το σχετικό script.",
+        "Μπορείτε να απορρίψετε ή να αλλάξετε την επιλογή σας ανά πάσα στιγμή από το banner / τις ρυθμίσεις cookies.",
       ],
     },
     {
       id: "marketing",
       title: "3. Marketing / διαφημιστικά cookies",
       paragraphs: [
-        "Προς το παρόν δεν χρησιμοποιούμε διαφημιστικά cookies ούτε εργαλεία behavioral advertising τρίτων.",
-        "Αν στο μέλλον προστεθούν για σκοπούς προβολής / remarketing, δεν θα ενεργοποιηθούν πριν από ρητή συναίνεση, και θα μπορείτε να τα απορρίψετε ή να τα ανακαλέσετε από τις προτιμήσεις cookies.",
+        "Η κατηγορία marketing καλύπτει Google Ads / remarketing tags που μπορεί να ρυθμιστούν μέσα στο Google Tag Manager.",
+        "Ενεργοποιούνται μόνο με ρητή συναίνεση marketing· χωρίς αυτήν τα σχετικά ad signals παραμένουν denied (Google Consent Mode).",
       ],
     },
     {
@@ -54,7 +53,7 @@ export const cookieNotice: LegalDocument = {
       title: "4. Διαχείριση",
       paragraphs: [
         "Μπορείτε να διαγράψετε cookies από τις ρυθμίσεις του φυλλομετρητή σας· χωρίς το cookie συνεδρίας δεν θα μπορείτε να παραμείνετε συνδεδεμένοι.",
-        "Όταν ενεργοποιηθούν προαιρετικές κατηγορίες, οι προτιμήσεις συναίνεσης θα αποθηκεύονται τοπικά και θα ελέγχουν αν φορτώνονται τα αντίστοιχα scripts.",
+        "Οι προτιμήσεις συναίνεσης αποθηκεύονται τοπικά στον φυλλομετρητή σας (κλειδί arc.cookieConsent.v1) και ελέγχουν αν φορτώνονται προαιρετικά scripts.",
         `Έκδοση: ${LEGAL_VERSIONS.cookies}. Ισχύς από ${LEGAL_EFFECTIVE_DATE}. Επικοινωνία: ${LEGAL_CONTROLLER.email}.`,
       ],
     },

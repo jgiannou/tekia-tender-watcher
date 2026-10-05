@@ -107,6 +107,16 @@ const LegalPublicPage = lazy(() =>
     default: m.LegalPublicPage,
   })),
 );
+const LandingPage = lazy(() =>
+  import("@/pages/marketing/LandingPage").then((m) => ({
+    default: m.LandingPage,
+  })),
+);
+const PricingPage = lazy(() =>
+  import("@/pages/marketing/PricingPage").then((m) => ({
+    default: m.PricingPage,
+  })),
+);
 const SubscriptionPage = lazy(() =>
   import("@/pages/SubscriptionPage").then((m) => ({
     default: m.SubscriptionPage,
@@ -125,7 +135,8 @@ export const App = () => (
     <CookieConsentBanner />
     <Suspense fallback={<RouteFallback />}>
       <Routes>
-        <Route path="/" element={<Navigate to="/app" replace />} />
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/pricing" element={<PricingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />

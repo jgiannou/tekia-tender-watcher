@@ -28,6 +28,7 @@ export { LEGAL_SUBPROCESSORS, type Subprocessor } from "./subprocessors";
 
 export {
   CONSENT_FEATURES,
+  TRACKING_IDS,
   optionalConsentRequired,
   hasConsent,
   readConsentState,

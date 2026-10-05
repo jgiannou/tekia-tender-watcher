@@ -196,3 +196,34 @@
     filter: invert(1) brightness(1.15);
   }
 }
+
+@keyframes auth-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.auth-panel-enter {
+  animation: auth-fade-up 0.55s ease-out both;
+}
+
+.auth-form-enter {
+  animation: auth-fade-up 0.55s ease-out 0.08s both;
+}
+
+.auth-highlight-enter {
+  animation: auth-fade-up 0.45s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-panel-enter,
+  .auth-form-enter,
+  .auth-highlight-enter {
+    animation: none;
+  }
+}
