@@ -128,7 +128,14 @@
     background-image:
       radial-gradient(900px 420px at 8% -10%, var(--arc-glow-cyan), transparent 55%),
       radial-gradient(800px 380px at 100% 0%, var(--arc-glow-magenta), transparent 50%);
-    background-attachment: fixed;
+    /* fixed backgrounds + Radix scroll-lock jump the mobile drawer upward */
+    background-attachment: scroll;
+  }
+
+  /* Stabilize Radix dialog/sheet scroll lock after page scroll */
+  body[data-scroll-locked] {
+    background-attachment: scroll !important;
+    overscroll-behavior: none;
   }
 
   /* Interactive affordance: links/actions always show pointer */

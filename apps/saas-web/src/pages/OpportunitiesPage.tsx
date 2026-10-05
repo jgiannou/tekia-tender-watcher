@@ -86,12 +86,12 @@ export const OpportunitiesPage = () => {
     resetKey: `${profileFilter ?? "all"}:${filtered.length}`,
   });
 
-  const load = async () => {
+  const load = async (opts?: { silent?: boolean }) => {
     if (!activeOrganization) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
       const [oppData, profileData] = await Promise.all([
@@ -153,7 +153,7 @@ export const OpportunitiesPage = () => {
     }
   };
 
-  if (loading) return <PageSkeleton />;
+  if (loading && opportunities.length === 0) return <PageSkeleton />;
   if (!activeOrganization) {
     return (
       <EmptyState

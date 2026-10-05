@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -39,6 +40,8 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
   const [me, setMe] = useState<SaasMeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const meRef = useRef<SaasMeResponse | null>(null);
+  meRef.current = me;
 
   const refresh = useCallback(async () => {
     if (!session?.user) {
@@ -46,14 +49,15 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    // Soft refresh: keep rendering the shell when we already have /me data.
+    if (!meRef.current) setLoading(true);
     setError(null);
     try {
       const next = await saasApi.me();
       setMe(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης συνεδρίας");
-      setMe(null);
+      if (!meRef.current) setMe(null);
     } finally {
       setLoading(false);
     }
@@ -97,7 +101,8 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
 
   const value = useMemo<SessionContextValue>(
     () => ({
-      loading: authPending || loading,
+      // Never block the authenticated shell once /me has loaded once.
+      loading: authPending || (loading && !me),
       error,
       userId: me?.userId ?? session?.user?.id ?? null,
       user:

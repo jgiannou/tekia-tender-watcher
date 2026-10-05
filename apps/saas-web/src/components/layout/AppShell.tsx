@@ -90,6 +90,22 @@ const navSections: NavSection[] = [
   },
 ];
 
+const prefetchRoute = (to: string) => {
+  const loaders: Record<string, () => Promise<unknown>> = {
+    "/app": () => import("@/pages/OverviewPage"),
+    "/app/search": () => import("@/pages/SearchPage"),
+    "/app/opportunities": () => import("@/pages/OpportunitiesPage"),
+    "/app/monitoring": () => import("@/pages/MonitoringPage"),
+    "/app/submissions": () => import("@/pages/SubmissionsPage"),
+    "/app/documents": () => import("@/pages/DocumentsPage"),
+    "/app/saved-searches": () => import("@/pages/SavedSearchesPage"),
+    "/app/subscription": () => import("@/pages/SubscriptionPage"),
+    "/app/settings": () => import("@/pages/settings/SettingsLayout"),
+    "/app/notifications": () => import("@/pages/NotificationsPage"),
+  };
+  void loaders[to]?.().catch(() => null);
+};
+
 const titleForPath = (pathname: string): string => {
   if (pathname.startsWith("/app/settings")) return "Ρυθμίσεις";
   if (pathname.startsWith("/app/setup")) return "Ρύθμιση επιχείρησης";
@@ -142,7 +158,8 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
       </div>
 
       <div className="px-3 pb-3">
-        <DropdownMenu>
+        {/* modal=false avoids nested scroll-lock fighting the mobile Sheet */}
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
@@ -156,7 +173,11 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
               <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-sidebar-muted" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-60">
+          <DropdownMenuContent
+            align="start"
+            className="z-[60] w-60"
+            collisionPadding={12}
+          >
             <DropdownMenuLabel>Οργανισμοί</DropdownMenuLabel>
             {organizations.map((org) => (
               <DropdownMenuItem
@@ -198,19 +219,21 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
             </div>
             <div className="flex flex-col gap-0.5">
               {section.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  onClick={handleNav}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                      isActive &&
-                        "bg-sidebar-accent font-medium text-sidebar-foreground",
-                    )
-                  }
-                >
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    onClick={handleNav}
+                    onMouseEnter={() => prefetchRoute(item.to)}
+                    onFocus={() => prefetchRoute(item.to)}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                        isActive &&
+                          "bg-sidebar-accent font-medium text-sidebar-foreground",
+                      )
+                    }
+                  >
                   <item.icon className="h-4 w-4 shrink-0" />
                   <span className="truncate">{item.label}</span>
                 </NavLink>
@@ -224,6 +247,8 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
         <NavLink
           to="/app/settings"
           onClick={handleNav}
+          onMouseEnter={() => prefetchRoute("/app/settings")}
+          onFocus={() => prefetchRoute("/app/settings")}
           className={({ isActive }) =>
             cn(
               "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
@@ -235,7 +260,7 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
           Ρυθμίσεις
         </NavLink>
 
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
@@ -255,8 +280,12 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
               </div>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            <DropdownMenuLabel>Λογαριασμός</DropdownMenuLabel>
+            <DropdownMenuContent
+              align="start"
+              className="z-[60] w-56"
+              collisionPadding={12}
+            >
+              <DropdownMenuLabel>Λογαριασμός</DropdownMenuLabel>
             <DropdownMenuItem
               onClick={() => {
                 handleNav();
@@ -287,6 +316,33 @@ export const AppShell = () => {
     setMobileNavOpen(false);
   }, [location.pathname]);
 
+  // Preserve scroll position while the mobile nav sheet is open. Radix scroll
+  // lock alone can jump the page (and the drawer) upward after deep scrolls.
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const scrollY = window.scrollY;
+    const { body } = document;
+    const previous = {
+      position: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
+      overflow: body.style.overflow,
+      paddingRight: body.style.paddingRight,
+    };
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+    return () => {
+      body.style.position = previous.position;
+      body.style.top = previous.top;
+      body.style.width = previous.width;
+      body.style.overflow = previous.overflow;
+      body.style.paddingRight = previous.paddingRight;
+      window.scrollTo(0, scrollY);
+    };
+  }, [mobileNavOpen]);
+
   const handleCreateOrganization = () => setCreateOrgOpen(true);
 
   return (
@@ -301,6 +357,10 @@ export const AppShell = () => {
         <SheetContent
           className="left-0 right-auto w-[min(100vw,18rem)] max-w-[18rem] border-l-0 border-r border-sidebar-border bg-sidebar p-0 text-sidebar-foreground [&>button]:text-sidebar-foreground"
           aria-describedby={undefined}
+          onOpenAutoFocus={(event) => {
+            // Keep focus inside the drawer without scrolling the page under it.
+            event.preventDefault();
+          }}
         >
           <SheetHeader className="sr-only">
             <SheetTitle>Μενού πλοήγησης</SheetTitle>

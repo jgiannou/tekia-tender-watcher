@@ -14,7 +14,10 @@ export const SheetOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px]", className)}
+    className={cn(
+      "fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px]",
+      className,
+    )}
     {...props}
   />
 ));
@@ -28,14 +31,16 @@ export const SheetContent = React.forwardRef<
     <SheetOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      // Pin to the visual viewport with dvh so scroll-lock / mobile chrome
+      // cannot shove the drawer upward after the page was scrolled.
       className={cn(
-        "fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-xl flex-col border-l border-border bg-card shadow-lg outline-none",
+        "fixed top-0 z-50 flex h-[100dvh] max-h-[100dvh] w-full max-w-xl flex-col overflow-hidden border-border bg-card shadow-lg outline-none overscroll-contain right-0 border-l",
         className,
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <DialogPrimitive.Close className="absolute right-4 top-4 z-10 rounded-sm opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <X className="h-4 w-4" />
         <span className="sr-only">Κλείσιμο</span>
       </DialogPrimitive.Close>

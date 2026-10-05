@@ -13,6 +13,8 @@ import { attentionEventViewModel } from "@/lib/attention-content";
 import { attentionEventHref } from "@/lib/attention-routing";
 import { saasApi, type AttentionEvent } from "@/lib/api";
 
+const POLL_MS = 120_000;
+
 export const NotificationBell = () => {
   const navigate = useNavigate();
   const { activeOrganization } = useSessionContext();
@@ -24,8 +26,14 @@ export const NotificationBell = () => {
       setEvents([]);
       return;
     }
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return;
+    }
     try {
-      const data = await saasApi.attention(activeOrganization.id);
+      const data = await saasApi.attention(activeOrganization.id, {
+        limit: 12,
+        light: true,
+      });
       setEvents(data.events);
     } catch {
       setEvents([]);
@@ -34,12 +42,24 @@ export const NotificationBell = () => {
 
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => void load(), 60_000);
-    return () => window.clearInterval(timer);
+    const timer = window.setInterval(() => void load(), POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [activeOrganization?.id]);
 
   const unread = events.filter((event) => !event.readAt);
   const recent = events.slice(0, 8);
+
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (next) void load();
+  };
 
   const handleOpenEvent = async (event: AttentionEvent) => {
     if (!activeOrganization) return;
@@ -64,7 +84,7 @@ export const NotificationBell = () => {
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"

@@ -75,18 +75,31 @@ export const pruneAttentionEventsForOrg = async (
 
 export const listAttentionEvents = async (
   prisma: PrismaClient,
-  input: { userId: string; organizationId: string; unreadOnly?: boolean },
+  input: {
+    userId: string;
+    organizationId: string;
+    unreadOnly?: boolean;
+    limit?: number;
+    /** Skip prune on hot paths (bell polling); still prune occasionally. */
+    skipPrune?: boolean;
+  },
 ) => {
   await requireOrgMembership(prisma, input.userId, input.organizationId);
-  // Opportunistic prune so older orgs shrink even without new writes.
-  await pruneAttentionEventsForOrg(prisma, input.organizationId);
+  // Opportunistic prune — not on every bell poll.
+  if (!input.skipPrune && Math.random() < 0.15) {
+    await pruneAttentionEventsForOrg(prisma, input.organizationId);
+  }
+  const take = Math.min(
+    Math.max(input.limit ?? MAX_ATTENTION_EVENTS_PER_ORG, 1),
+    MAX_ATTENTION_EVENTS_PER_ORG,
+  );
   return prisma.organizationAttentionEvent.findMany({
     where: {
       organizationId: input.organizationId,
       ...(input.unreadOnly ? { readAt: null } : {}),
     },
     orderBy: { createdAt: "desc" },
-    take: MAX_ATTENTION_EVENTS_PER_ORG,
+    take,
     include: {
       relatedTender: true,
       organizationTender: { include: { tender: true } },

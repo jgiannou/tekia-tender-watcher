@@ -154,18 +154,18 @@ export const TenderDetailPage = () => {
       // Enrichment must not wipe a successful record load (transient workflow 500s).
       try {
         const [oppData, workflowData] = await Promise.all([
-          saasApi.listOpportunities(activeOrganization.id).catch(() => ({
-            opportunities: [] as Opportunity[],
-          })),
+          // Single-tender fetch — never pull the full opportunities inbox here.
+          saasApi
+            .listOpportunities(activeOrganization.id, {
+              tenderId: data.tender.id,
+              limit: 1,
+            })
+            .catch(() => ({
+              opportunities: [] as Opportunity[],
+            })),
           saasApi.getTenderWorkflow(activeOrganization.id, data.tender.id),
         ]);
-        setOpportunity(
-          oppData.opportunities.find(
-            (row) =>
-              row.tender.referenceNumber === data.item.adam ||
-              row.tender.id === data.tender.id,
-          ) ?? null,
-        );
+        setOpportunity(oppData.opportunities[0] ?? null);
         setWorkflow(workflowData.workflow);
 
         if (workflowData.workflow.organizationTender) {

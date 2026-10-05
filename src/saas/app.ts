@@ -928,11 +928,23 @@ export const createSaasApp = (deps: SaasAppDeps) => {
   });
 
   app.get("/api/saas/opportunities", requireSession, async (c) => {
-    const opportunities = await listOpportunities(deps.prisma, {
+    const limitRaw = c.req.query("limit");
+    const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+    const tenderId = c.req.query("tenderId")?.trim() || undefined;
+    const result = await listOpportunities(deps.prisma, {
       userId: c.get("userId"),
       organizationId: resolveOrgId(c),
+      limit:
+        limit != null && Number.isFinite(limit) && limit > 0
+          ? Math.min(limit, 200)
+          : undefined,
+      tenderId,
     });
-    return c.json({ opportunities });
+    return c.json({
+      opportunities: result.opportunities,
+      total: result.total,
+      unfollowed: result.unfollowed,
+    });
   });
 
   app.get("/api/saas/watch-profiles/:id", requireSession, async (c) => {
@@ -1445,10 +1457,16 @@ export const createSaasApp = (deps: SaasAppDeps) => {
   app.get("/api/saas/attention", requireSession, async (c) => {
     const organizationId = resolveOrgId(c);
     const unreadOnly = c.req.query("unread") === "1";
+    const limitRaw = c.req.query("limit");
+    const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+    const light = c.req.query("light") === "1";
     const events = await listAttentionEvents(deps.prisma, {
       userId: c.get("userId"),
       organizationId: organizationId!,
       unreadOnly,
+      limit:
+        limit != null && Number.isFinite(limit) && limit > 0 ? limit : undefined,
+      skipPrune: light,
     });
     return c.json({ events });
   });

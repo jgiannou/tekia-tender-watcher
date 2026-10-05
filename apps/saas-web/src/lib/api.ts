@@ -665,9 +665,12 @@ const composeOverviewFromEndpoints = async (
     entitlementsRes,
     documentsRes,
   ] = await Promise.all([
-    saasApi.attention(organizationId).catch(() => ({ events: [] as AttentionEvent[] })),
+    saasApi
+      .attention(organizationId, { limit: 12, light: true })
+      .catch(() => ({ events: [] as AttentionEvent[] })),
     saasApi.monitoringState(organizationId),
-    saasApi.listOpportunities(organizationId),
+    // Overview only needs a page of rows + aggregate counts — not the full inbox.
+    saasApi.listOpportunities(organizationId, { limit: 30 }),
     saasApi.listWatchProfiles(organizationId),
     saasApi.getEntitlements(organizationId).catch(() => null),
     saasApi.vaultDocuments(organizationId).catch(() => ({ documents: [] as VaultDocument[] })),
@@ -753,10 +756,11 @@ const composeOverviewFromEndpoints = async (
       };
     });
 
-  // Distinct unfollowed opportunities — not unread attention/digest counts.
-  const unfollowedOpportunities = opportunitiesRes.opportunities.filter(
-    (opportunity) => !opportunity.following,
-  ).length;
+  // Prefer server aggregate when the list is truncated for speed.
+  const unfollowedOpportunities =
+    opportunitiesRes.unfollowed ??
+    opportunitiesRes.opportunities.filter((opportunity) => !opportunity.following)
+      .length;
 
   const documentsAttention: SaasOverviewDocumentAttention[] = documentsRes.documents
     .filter(
@@ -1164,10 +1168,20 @@ export const saasApi = {
         body: JSON.stringify({ role }),
       },
     ),
-  attention: (organizationId: string) =>
-    request<{ events: AttentionEvent[] }>("/api/saas/attention", {
-      organizationId,
-    }),
+  attention: (
+    organizationId: string,
+    opts?: { limit?: number; unreadOnly?: boolean; light?: boolean },
+  ) => {
+    const params = new URLSearchParams();
+    if (opts?.limit != null) params.set("limit", String(opts.limit));
+    if (opts?.unreadOnly) params.set("unread", "1");
+    if (opts?.light) params.set("light", "1");
+    const qs = params.toString();
+    return request<{ events: AttentionEvent[] }>(
+      `/api/saas/attention${qs ? `?${qs}` : ""}`,
+      { organizationId },
+    );
+  },
   billingCatalog: () =>
     request<BillingCatalogResponse>("/api/saas/billing/catalog"),
   billingStatus: (organizationId: string) =>
@@ -1409,10 +1423,22 @@ export const saasApi = {
         body: JSON.stringify(input),
       },
     ),
-  listOpportunities: (organizationId: string) =>
-    request<{ opportunities: Opportunity[] }>("/api/saas/opportunities", {
+  listOpportunities: (
+    organizationId: string,
+    opts?: { limit?: number; tenderId?: string },
+  ) => {
+    const params = new URLSearchParams();
+    if (opts?.limit != null) params.set("limit", String(opts.limit));
+    if (opts?.tenderId) params.set("tenderId", opts.tenderId);
+    const qs = params.toString();
+    return request<{
+      opportunities: Opportunity[];
+      total?: number;
+      unfollowed?: number;
+    }>(`/api/saas/opportunities${qs ? `?${qs}` : ""}`, {
       organizationId,
-    }),
+    });
+  },
   kimdisMeta: (organizationId: string) =>
     request<{
       contractTypes: Record<string, string>;

@@ -92,12 +92,13 @@ export const OverviewPage = () => {
   const [pdfPreview, setPdfPreview] = useState<Opportunity | null>(null);
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
 
-  const load = async () => {
+  const load = async (opts?: { silent?: boolean }) => {
     if (!activeOrganization) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    // Keep previous overview painted during soft reloads / scan polling.
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
       const firstName = (user?.name || "").split(" ")[0] || null;
@@ -120,8 +121,8 @@ export const OverviewPage = () => {
       return;
     }
     const timer = window.setInterval(() => {
-      void load();
-    }, 4000);
+      void load({ silent: true });
+    }, 5000);
     return () => window.clearInterval(timer);
   }, [activeOrganization?.id, overview?.scanningProfiles]);
 
@@ -142,7 +143,7 @@ export const OverviewPage = () => {
     resetKey: `${activeOrganization?.id ?? ""}:${opportunityItems.map((row) => row.id).join("|")}`,
   });
 
-  if (sessionLoading || loading) return <PageSkeleton />;
+  if (sessionLoading || (loading && !overview)) return <PageSkeleton />;
 
   if (!activeOrganization) {
     return (
@@ -322,7 +323,7 @@ export const OverviewPage = () => {
                               onClick={() =>
                                 void saasApi
                                   .markAttentionRead(activeOrganization.id, event.id)
-                                  .then(load)
+                                  .then(() => load({ silent: true }))
                               }
                             >
                               Αναγνώστηκε
