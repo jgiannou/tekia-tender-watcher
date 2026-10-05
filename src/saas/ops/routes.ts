@@ -408,63 +408,44 @@ export const registerOpsAdminRoutes = (
   app.delete("/admin/ops/users/:id", async (c) => {
     try {
       const { getPrisma } = await import("../../db/prisma.js");
+      const { deleteUserAccount } = await import("../services/account-deletion.js");
       const prisma = getPrisma();
       const id = c.req.param("id");
-      z.object({ confirm: z.literal("DELETE") }).parse(
+      const body = z.object({ confirm: z.literal("DELETE") }).parse(
         await c.req.json().catch(() => ({})),
       );
 
-      const user = await prisma.user.findUnique({
-        where: { id },
-        include: {
-          members: { include: { organization: true } },
-        },
-      });
-      if (!user) return c.json({ error: "User not found" }, 404);
-
-      const orgsToDelete: string[] = [];
-      for (const membership of user.members) {
-        if (membership.role !== "OWNER") continue;
-        const others = await prisma.organizationMember.count({
-          where: {
-            organizationId: membership.organizationId,
-            userId: { not: user.id },
-          },
-        });
-        if (others > 0) {
-          return c.json(
-            {
-              error:
-                "Cannot delete user while they own an organization with other members. Transfer ownership or remove members first.",
-            },
-            400,
-          );
-        }
-        orgsToDelete.push(membership.organizationId);
-      }
-
-      await prisma.$transaction(async (tx) => {
-        if (orgsToDelete.length > 0) {
-          await tx.organization.deleteMany({ where: { id: { in: orgsToDelete } } });
-        }
-        await tx.user.delete({ where: { id: user.id } });
+      const result = await deleteUserAccount(prisma, {
+        userId: id,
+        confirm: body.confirm,
+        requirePasswordIfCredential: false,
       });
 
       opsLogger.warn("ops_user_deleted", {
-        userId: user.id,
-        email: user.email,
-        orgsDeleted: orgsToDelete.length,
+        userId: result.userId,
+        email: result.email,
+        orgsDeleted: result.orgsDeleted,
       });
 
       return c.json({
         data: {
           ok: true,
-          userId: user.id,
-          email: user.email,
-          orgsDeleted: orgsToDelete.length,
+          userId: result.userId,
+          email: result.email,
+          orgsDeleted: result.orgsDeleted,
         },
       });
     } catch (error) {
+      const { SaasError } = await import("../errors.js");
+      if (error instanceof SaasError) {
+        const message =
+          error.code === "cannot_delete_while_owning_org_with_members"
+            ? "Cannot delete user while they own an organization with other members. Transfer ownership or remove members first."
+            : error.code === "user_not_found"
+              ? "User not found"
+              : error.message;
+        return c.json({ error: message }, error.status as 400 | 404);
+      }
       return c.json(
         { error: error instanceof Error ? error.message : String(error) },
         500,

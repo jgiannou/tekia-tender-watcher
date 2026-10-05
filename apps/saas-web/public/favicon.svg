@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="ARC Tenders">
+  <rect width="32" height="32" rx="7" fill="#0a0a0a"/>
+  <path
+    fill="#00f3ff"
+    d="M16 6.4 7.8 24.2h3.2l1.7-3.9h6.6l1.7 3.9h3.2L16 6.4zm0 4.6 2.35 5.35h-4.7L16 11z"
+  />
+  <path
+    d="M8.2 26.4c2.4-1.55 5-2.3 7.8-2.3s5.4.75 7.8 2.3"
+    fill="none"
+    stroke="#00f3ff"
+    stroke-width="1.7"
+    stroke-linecap="round"
+  />
+</svg>

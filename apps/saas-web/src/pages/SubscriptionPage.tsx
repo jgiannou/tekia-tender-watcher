@@ -412,6 +412,27 @@ export const SubscriptionPage = () => {
           >
             Ρυθμίσεις εταιρείας
           </Link>
+          <p className="mt-3 text-xs">
+            Με την αγορά ισχύουν οι{" "}
+            <Link
+              className="text-primary underline-offset-4 hover:underline"
+              to="/legal/terms"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Όροι Χρήσης
+            </Link>{" "}
+            και η{" "}
+            <Link
+              className="text-primary underline-offset-4 hover:underline"
+              to="/legal/privacy"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Πολιτική Απορρήτου
+            </Link>
+            .
+          </p>
         </CardContent>
       </Card>
     </div>

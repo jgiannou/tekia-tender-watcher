@@ -26,8 +26,8 @@ const sections = [
     items: [{ to: "/app/subscription", label: "Συνδρομή / πλάνα" }],
   },
   {
-    title: "Νομικά",
-    items: [{ to: "/app/settings/legal", label: "Όροι & απόρρητο" }],
+    title: "Νομικά & Πηγές",
+    items: [{ to: "/app/settings/legal", label: "Νομικά & Πηγές" }],
   },
 ] as const;
 

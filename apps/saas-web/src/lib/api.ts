@@ -1051,6 +1051,19 @@ export const saasApi = {
       method: "PATCH",
       body: JSON.stringify({ name }),
     }),
+  deleteAccount: (input: { confirm: "DELETE"; password: string }) =>
+    request<{
+      data: {
+        ok: true;
+        userId: string;
+        email: string;
+        orgsDeleted: number;
+        organizationIds: string[];
+      };
+    }>("/api/saas/me", {
+      method: "DELETE",
+      body: JSON.stringify(input),
+    }),
   setTheme: (theme: ThemePreference) =>
     request<{ theme: ThemePreference }>("/api/saas/me/preferences", {
       method: "PUT",

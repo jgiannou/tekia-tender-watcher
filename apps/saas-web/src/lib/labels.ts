@@ -65,7 +65,7 @@ export const humanSaasError = (message: string): string => {
     return "Δεν μπορείτε να αφαιρέσετε αυτό το μέλος.";
   }
   if (message.includes("advanced_watch_filters_requires_pro")) {
-    return "Τα προχωρημένα φίλτρα (αρχή, προϋπολογισμός, άμεσο email) είναι διαθέσιμα στο Pro.";
+    return "Τα προχωρημένα φίλτρα (αρχή, προϋπολογισμός, ειδοποιήσεις ανά εξέλιξη) είναι διαθέσιμα στο Pro.";
   }
   if (message.includes("vault_storage_limit_reached")) {
     return "Έχετε φτάσει το όριο αποθήκευσης του πλάνου. Αναβαθμίστε ή διαγράψτε αρχεία.";

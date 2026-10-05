@@ -100,15 +100,19 @@ export const LoginPage = () => {
           </p>
           <p className="mt-3 text-center text-xs text-muted-foreground">
             <Link className="underline-offset-4 hover:underline" to="/legal/terms">
-              Όροι
+              Όροι Χρήσης
             </Link>
             {" · "}
             <Link className="underline-offset-4 hover:underline" to="/legal/privacy">
-              Απόρρητο
+              Πολιτική Απορρήτου
             </Link>
             {" · "}
             <Link className="underline-offset-4 hover:underline" to="/legal/cookies">
               Cookies
+            </Link>
+            {" · "}
+            <Link className="underline-offset-4 hover:underline" to="/legal/data-sources">
+              Πηγές
             </Link>
           </p>
         </CardContent>

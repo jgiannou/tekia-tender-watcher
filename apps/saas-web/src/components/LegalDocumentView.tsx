@@ -26,22 +26,38 @@ export const LegalDocumentView = ({
           {section.title}
         </h2>
         {section.paragraphs.map((paragraph) => (
-          <p key={paragraph.slice(0, 48)} className="text-sm leading-relaxed text-muted-foreground">
+          <p key={paragraph.slice(0, 64)} className="text-sm leading-relaxed text-muted-foreground">
             {paragraph}
           </p>
         ))}
         {section.bullets && section.bullets.length > 0 ? (
           <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted-foreground">
             {section.bullets.map((item) => (
-              <li key={item.slice(0, 48)}>{item}</li>
+              <li key={item.slice(0, 64)}>{item}</li>
             ))}
           </ul>
         ) : null}
         {section.closing?.map((paragraph) => (
-          <p key={paragraph.slice(0, 48)} className="text-sm leading-relaxed text-muted-foreground">
+          <p key={paragraph.slice(0, 64)} className="text-sm leading-relaxed text-muted-foreground">
             {paragraph}
           </p>
         ))}
+        {section.links && section.links.length > 0 ? (
+          <ul className="space-y-1.5 pt-1 text-sm">
+            {section.links.map((link) => (
+              <li key={link.href}>
+                <a
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </section>
     ))}
   </article>

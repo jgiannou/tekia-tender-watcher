@@ -3,34 +3,15 @@ import { Link, useParams } from "react-router-dom";
 import { LegalDocumentView } from "@/components/LegalDocumentView";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  DATA_SOURCE_ATTRIBUTION,
   LEGAL_CONTROLLER,
+  LEGAL_HUB_ITEMS,
   LEGAL_VERSIONS,
   getLegalDocument,
-  type LegalDocId,
+  isLegalDocId,
 } from "@/legal";
 import { saasApi, type LegalAcceptance } from "@/lib/api";
 import { cn } from "@/lib/utils";
-
-const docs: Array<{ id: LegalDocId; label: string; blurb: string }> = [
-  {
-    id: "terms",
-    label: "Όροι Χρήσης",
-    blurb: "Σύμβαση χρήσης, ευθύνη, trial, αποδεκτή χρήση.",
-  },
-  {
-    id: "privacy",
-    label: "Πολιτική Απορρήτου",
-    blurb: "Τι δεδομένα τηρούμε, σκοποί, δικαιώματα GDPR.",
-  },
-  {
-    id: "cookies",
-    label: "Cookies",
-    blurb: "Απαραίτητα cookies συνεδρίας — χωρίς διαφημιστικό tracking.",
-  },
-];
-
-const isLegalDocId = (value: string | undefined): value is LegalDocId =>
-  value === "terms" || value === "privacy" || value === "cookies";
 
 export const LegalSettingsPage = () => {
   const { docId } = useParams();
@@ -54,7 +35,7 @@ export const LegalSettingsPage = () => {
               to="/app/settings/legal"
               className="text-primary underline-offset-4 hover:underline"
             >
-              ← Νομικά κείμενα
+              ← Νομικά & Πηγές
             </Link>
           </CardDescription>
         </CardHeader>
@@ -69,25 +50,35 @@ export const LegalSettingsPage = () => {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Νομικά κείμενα</CardTitle>
+          <CardTitle>Νομικά &amp; Πηγές</CardTitle>
           <CardDescription>
-            Ισχύοντα κείμενα για την πλατφόρμα {LEGAL_CONTROLLER.productName}. Υπεύθυνος:{" "}
-            {LEGAL_CONTROLLER.legalName} (ΑΦΜ {LEGAL_CONTROLLER.afm}, ΓΕΜΗ{" "}
-            {LEGAL_CONTROLLER.gemiNumber}). Επικοινωνία: {LEGAL_CONTROLLER.email}.
+            Όροι, απόρρητο, cookies, πηγές δεδομένων, DPA και στοιχεία παρόχου για{" "}
+            {LEGAL_CONTROLLER.productName}. Χωρίς footer στην εφαρμογή — όλα είναι εδώ,
+            μονίμως προσβάσιμα.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
+          <div className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Ανεξάρτητη υπηρεσία</p>
+            <p className="mt-1 leading-relaxed">
+              Το ARC Tenders είναι ιδιωτική υπηρεσία λογισμικού και δεν αποτελεί επίσημη
+              υπηρεσία ή συνεργάτη του ΚΗΜΔΗΣ / ΕΣΗΔΗΣ / Ελληνικού Δημοσίου.
+            </p>
+            <p className="mt-2 text-xs">{DATA_SOURCE_ATTRIBUTION.kimdisFull}</p>
+          </div>
+
           <p className="text-sm text-muted-foreground">
-            Εκδόσεις: Όροι {LEGAL_VERSIONS.terms} · Απόρρητο {LEGAL_VERSIONS.privacy} · Cookies{" "}
-            {LEGAL_VERSIONS.cookies}.
+            Εκδόσεις: Όροι {LEGAL_VERSIONS.terms} · Απόρρητο {LEGAL_VERSIONS.privacy} ·
+            Cookies {LEGAL_VERSIONS.cookies} · DPA {LEGAL_VERSIONS.dpa}.
           </p>
           <p className="text-sm text-muted-foreground">
             {acceptance
               ? `Έχετε αποδεχτεί Όρους ${acceptance.termsVersion} και Απόρρητο ${acceptance.privacyVersion} στις ${new Date(acceptance.acceptedAt).toLocaleString("el-GR")}.`
               : "Δεν υπάρχει καταγεγραμμένη αποδοχή για αυτόν τον λογαριασμό (ισχύει για λογαριασμούς πριν την ενεργοποίηση της καταγραφής)."}
           </p>
+
           <ul className="space-y-2">
-            {docs.map((doc) => (
+            {LEGAL_HUB_ITEMS.map((doc) => (
               <li key={doc.id}>
                 <Link
                   to={`/app/settings/legal/${doc.id}`}
@@ -101,6 +92,25 @@ export const LegalSettingsPage = () => {
               </li>
             ))}
           </ul>
+
+          <p className="text-xs text-muted-foreground">
+            Διαγραφή λογαριασμού:{" "}
+            <Link
+              to="/app/settings/profile"
+              className="text-primary underline-offset-4 hover:underline"
+            >
+              Ρυθμίσεις → Προφίλ
+            </Link>
+            . Δημόσια κείμενα χωρίς σύνδεση:{" "}
+            <Link
+              to="/legal/terms"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              /legal/…
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </div>

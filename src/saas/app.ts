@@ -32,6 +32,7 @@ import {
   getLegalAcceptance,
   recordLegalAcceptance,
 } from "./services/legal-acceptance.js";
+import { deleteUserAccount } from "./services/account-deletion.js";
 import { CURRENT_LEGAL_VERSIONS } from "./legal/versions.js";
 import {
   acceptOrganizationInvitation,
@@ -308,6 +309,25 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       select: { id: true, name: true, email: true, image: true },
     });
     return c.json({ user });
+  });
+
+  app.delete("/api/saas/me", requireSession, async (c) => {
+    const parsed = z
+      .object({
+        confirm: z.literal("DELETE"),
+        password: z.string().min(1).optional(),
+      })
+      .safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) {
+      throw new SaasError(400, "confirm_required", "confirm_required");
+    }
+    const result = await deleteUserAccount(deps.prisma, {
+      userId: c.get("userId"),
+      confirm: parsed.data.confirm,
+      password: parsed.data.password,
+      requirePasswordIfCredential: true,
+    });
+    return c.json({ data: result });
   });
 
   app.get("/api/saas/me/preferences", requireSession, async (c) => {

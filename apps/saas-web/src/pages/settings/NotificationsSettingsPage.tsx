@@ -83,10 +83,11 @@ export const NotificationsSettingsPage = () => {
       <CardHeader>
         <CardTitle>Ειδοποιήσεις</CardTitle>
         <CardDescription>
-          Email όταν υπάρχουν νέες ευκαιρίες ή εξελίξεις. Basic / Δοκιμή: εξελίξεις
-          παρακολούθησης συγκεντρώνονται σε <strong>1 email την ημέρα</strong>. Pro:
-          <strong>άμεσο email</strong> για κάθε εξέλιξη. Οι νέες ευκαιρίες από
-          αποθηκευμένες αναζητήσεις αποστέλλονται πάντα ως digest.
+          Λειτουργικά email ειδοποιήσεων οργανισμού (όχι marketing / newsletter). Basic /
+          Δοκιμή: εξελίξεις παρακολούθησης συγκεντρώνονται σε{" "}
+          <strong>1 email την ημέρα</strong>. Pro:{" "}
+          <strong>ξεχωριστό email ανά εξέλιξη</strong> όταν η πράξη γίνει διαθέσιμη στην
+          υπηρεσία. Οι νέες ευκαιρίες από αποθηκευμένες αναζητήσεις αποστέλλονται ως digest.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">

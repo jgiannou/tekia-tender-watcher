@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { SessionProvider } from "@/auth/SessionProvider";
 import { RequireAuth } from "@/auth/RequireAuth";
+import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageLoading } from "@/components/states";
 
@@ -121,6 +122,7 @@ const RouteFallback = () => <PageLoading label="Φόρτωση…" />;
 
 export const App = () => (
   <SessionProvider>
+    <CookieConsentBanner />
     <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/" element={<Navigate to="/app" replace />} />

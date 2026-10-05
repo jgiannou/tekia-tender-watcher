@@ -673,6 +673,7 @@ export const TenderDetailPage = () => {
             {item.finalSubmissionDate ? (
               <span>Καταληκτική: {formatDate(item.finalSubmissionDate)}</span>
             ) : null}
+            <span>Πηγή: ΚΗΜΔΗΣ</span>
             <a
               href={item.publicKimdisUrl}
               target="_blank"
@@ -700,7 +701,7 @@ export const TenderDetailPage = () => {
               disabled={busy}
               onClick={() => void handleOpenOutreach()}
             >
-              Προετοιμασία Εκδήλωσης Ενδιαφέροντος
+              Προετοιμασία / Καταγραφή Ενδιαφέροντος
             </Button>
           ) : null}
           {!following &&
@@ -1170,11 +1171,11 @@ export const TenderDetailPage = () => {
       <Dialog open={outreachOpen} onOpenChange={setOutreachOpen}>
         <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Προετοιμασία Εκδήλωσης Ενδιαφέροντος</DialogTitle>
+            <DialogTitle>Καταγραφή Εκδήλωσης Ενδιαφέροντος</DialogTitle>
             <DialogDescription>
-              Συμπληρώστε επαφή φορέα, ετοιμάστε το email από πρότυπο, επισυνάψτε εταιρικό
-              προφίλ — και καταγράψτε όταν το στείλετε εσείς. Η εφαρμογή δεν στέλνει τίποτα
-              αυτόματα.
+              Καταγράψτε μια επικοινωνία που πραγματοποιήσατε εκτός ARC Tenders. Μπορείτε
+              να ετοιμάσετε πρόχειρο email και εταιρικό προφίλ εδώ — το ARC Tenders δεν
+              αποστέλλει αυτόματα το μήνυμα στον φορέα.
             </DialogDescription>
           </DialogHeader>
           {draftLoading ? (
@@ -1397,9 +1398,9 @@ export const TenderDetailPage = () => {
           <DialogHeader>
             <DialogTitle>Καταγραφή Υποβολής</DialogTitle>
             <DialogDescription>
-              Καταγράφει ότι υποβάλατε προσφορά εσείς (π.χ. στο ΕΣΗΔΗΣ/ΚΗΜΔΗΣ). Η εφαρμογή
-              δεν στέλνει ούτε υποβάλλει τίποτα αυτόματα· η παρακολούθηση αποτελέσματος
-              παραμένει ενεργή.
+              Καταγράψτε μια υποβολή που πραγματοποιήθηκε μέσω του επίσημου καναλιού της
+              διαδικασίας (π.χ. ΕΣΗΔΗΣ/ΚΗΜΔΗΣ). Το ARC Tenders δεν πραγματοποιεί την επίσημη
+              υποβολή· η παρακολούθηση αποτελέσματος παραμένει ενεργή.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
