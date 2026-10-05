@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "opsPassword" TEXT;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "opsPasswordAt" TIMESTAMP(3);

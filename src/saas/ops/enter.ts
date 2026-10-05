@@ -1,7 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Context } from "hono";
 import { loadSaasConfig } from "../config.js";
-import { buildSessionCookie, consumeOpsEnterCode } from "./session.js";
+import {
+  buildSessionCookie,
+  consumeOpsEnterCode,
+  resolveSaasAppUrl,
+} from "./session.js";
 
 export const createOpsEnterHandler =
   (prisma: PrismaClient) => async (c: Context) => {
@@ -16,14 +20,29 @@ export const createOpsEnterHandler =
     }
 
     const config = loadSaasConfig();
-    const secure = c.req.url.startsWith("https://");
+    const appUrl = resolveSaasAppUrl();
+    // Cookie name/Secure must match better-auth baseURL, not the inbound proxy URL.
+    const authBase = String(config.BETTER_AUTH_URL || appUrl).replace(/\/$/, "");
     const cookie = await buildSessionCookie(
       consumed.sessionToken,
       config.BETTER_AUTH_SECRET,
-      secure,
+      authBase.startsWith("https://") ? authBase : appUrl,
     );
 
-    const appUrl = config.SAAS_APP_URL.replace(/\/$/, "");
-    c.header("Set-Cookie", cookie.options);
+    // Drop any stale opposite-prefix session cookie (http↔https mismatch).
+    const dropName = cookie.name.startsWith("__Secure-")
+      ? "better-auth.session_token"
+      : "__Secure-better-auth.session_token";
+
+    c.header("Set-Cookie", cookie.header);
+    const dropParts = [
+      `${dropName}=`,
+      "Path=/",
+      "Max-Age=0",
+      "HttpOnly",
+      "SameSite=Lax",
+    ];
+    if (dropName.startsWith("__Secure-")) dropParts.push("Secure");
+    c.header("Set-Cookie", dropParts.join("; "), { append: true });
     return c.redirect(`${appUrl}/app`, 302);
   };

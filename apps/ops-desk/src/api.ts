@@ -429,8 +429,26 @@ export type ImpersonateResult = {
 
 export const impersonateUser = async (
   cfg: ConnectionConfig,
-  body: { userId?: string; email?: string },
+  body: { userId?: string; email?: string; rotatePassword?: boolean },
 ) => parseJson<ImpersonateResult>(await opsRequest(cfg, "/admin/ops/impersonate", { method: "POST", body: JSON.stringify(body) }));
+
+export type IssuePasswordResult = {
+  credentials: { email: string; password: string };
+  opsPasswordEnabled: boolean;
+  note?: string;
+};
+
+export const issueUserPassword = async (
+  cfg: ConnectionConfig,
+  userId: string,
+  body?: { password?: string },
+) =>
+  parseJson<IssuePasswordResult>(
+    await opsRequest(cfg, `/admin/ops/users/${userId}/password`, {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    }),
+  );
 
 export const createSandbox = async (
   cfg: ConnectionConfig,

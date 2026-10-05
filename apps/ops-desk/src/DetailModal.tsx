@@ -18,6 +18,7 @@ import {
   fetchUserDetail,
   fetchUsers,
   impersonateUser,
+  issueUserPassword,
   patchOrganizationPlan,
 } from "./api";
 
@@ -92,6 +93,10 @@ export const DetailModal = ({ open, config, onClose }: Props) => {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionNote, setActionNote] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null);
+  const [opsPassword, setOpsPassword] = useState("");
+  const [opsPasswordAt, setOpsPasswordAt] = useState<string | null>(null);
+  const [opsPasswordEnabled, setOpsPasswordEnabled] = useState(true);
+  const [customPassword, setCustomPassword] = useState("");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
@@ -130,18 +135,76 @@ export const DetailModal = ({ open, config, onClose }: Props) => {
     setCredentials(null);
     setError(null);
     try {
-      const data = await impersonateUser(config, { userId });
-      if (data.credentials) setCredentials(data.credentials);
+      const data = await impersonateUser(config, { userId, rotatePassword: false });
+      if (data.credentials) {
+        setCredentials(data.credentials);
+        setOpsPassword(data.credentials.password);
+      }
       await openExternalUrl(data.openUrl);
       setActionNote(
         data.credentials
-          ? `Opened as ${data.credentials.email}. Temp password shown below.`
-          : "Opened browser session for this user.",
+          ? `Opened as ${data.credentials.email}. Password unchanged.`
+          : "Opened browser session for this user. Password unchanged.",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setActionBusy(false);
+    }
+  };
+
+  const handleIssuePassword = async (userId: string, password?: string) => {
+    setActionBusy(true);
+    setActionNote(null);
+    setError(null);
+    try {
+      const data = await issueUserPassword(
+        config,
+        userId,
+        password?.trim() ? { password: password.trim() } : undefined,
+      );
+      setCredentials(data.credentials);
+      setOpsPassword(data.credentials.password);
+      setOpsPasswordAt(new Date().toISOString());
+      setOpsPasswordEnabled(data.opsPasswordEnabled);
+      setCustomPassword("");
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === userId
+            ? {
+                ...u,
+                opsPassword: data.opsPasswordEnabled ? data.credentials.password : "",
+                opsPasswordAt: data.opsPasswordEnabled ? new Date().toISOString() : null,
+              }
+            : u,
+        ),
+      );
+      setDetail((prev) =>
+        prev
+          ? {
+              ...prev,
+              opsPassword: data.opsPasswordEnabled ? data.credentials.password : "",
+              opsPasswordAt: data.opsPasswordEnabled ? new Date().toISOString() : null,
+            }
+          : prev,
+      );
+      setActionNote(
+        data.note ||
+          `Password set for ${data.credentials.email}. Shown below.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleCopyPassword = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setActionNote("Password copied.");
+    } catch {
+      setError("Could not copy password.");
     }
   };
 
@@ -243,6 +306,9 @@ export const DetailModal = ({ open, config, onClose }: Props) => {
     setError(null);
     setActionNote(null);
     setCredentials(null);
+    setOpsPassword("");
+    setOpsPasswordAt(null);
+    setCustomPassword("");
     setDeleteConfirmOpen(false);
     setDeleteConfirmText("");
     setProductEvents([]);
@@ -266,6 +332,7 @@ export const DetailModal = ({ open, config, onClose }: Props) => {
           const page = await fetchUsers(config, { q, limit: 100 });
           if (cancelled) return;
           setUsers(page.items);
+          setOpsPasswordEnabled(page.opsPasswordEnabled !== false);
           setOrgs([]);
           setLogs([]);
           setRequests([]);
@@ -353,7 +420,23 @@ export const DetailModal = ({ open, config, onClose }: Props) => {
           open.kind === "users"
             ? await fetchUserDetail(config, selectedId)
             : await fetchOrganizationDetail(config, selectedId);
-        if (!cancelled) setDetail(data);
+        if (cancelled) return;
+        setDetail(data);
+        if (open.kind === "users") {
+          const pw = typeof data.opsPassword === "string" ? data.opsPassword : "";
+          const at =
+            typeof data.opsPasswordAt === "string" ? data.opsPasswordAt : null;
+          setOpsPassword(pw);
+          setOpsPasswordAt(at);
+          if (typeof data.opsPasswordEnabled === "boolean") {
+            setOpsPasswordEnabled(data.opsPasswordEnabled);
+          }
+          if (pw && typeof data.email === "string") {
+            setCredentials({ email: data.email, password: pw });
+          } else {
+            setCredentials(null);
+          }
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -555,28 +638,104 @@ export const DetailModal = ({ open, config, onClose }: Props) => {
             ) : detail ? (
               <div className="detail-block">
                 {open.kind === "users" ? (
-                  <div className="top-actions" style={{ marginBottom: "0.75rem" }}>
-                    <button
-                      type="button"
-                      className="btn primary"
-                      disabled={actionBusy}
-                      onClick={() => void handleOpenAsUser(selectedId)}
-                      aria-label="Open web app as this user"
-                    >
-                      {actionBusy ? "Opening…" : "Open as this user"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn danger"
-                      disabled={actionBusy}
-                      onClick={() => {
-                        setDeleteConfirmOpen((v) => !v);
-                        setDeleteConfirmText("");
-                      }}
-                    >
-                      Delete user
-                    </button>
-                  </div>
+                  <>
+                    <div className="top-actions" style={{ marginBottom: "0.75rem" }}>
+                      <button
+                        type="button"
+                        className="btn primary"
+                        disabled={actionBusy}
+                        onClick={() => void handleOpenAsUser(selectedId)}
+                        aria-label="Open web app as this user"
+                      >
+                        {actionBusy ? "Opening…" : "Open as this user"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn danger"
+                        disabled={actionBusy}
+                        onClick={() => {
+                          setDeleteConfirmOpen((v) => !v);
+                          setDeleteConfirmText("");
+                        }}
+                      >
+                        Delete user
+                      </button>
+                    </div>
+                    <div className="detail-block" style={{ marginBottom: "0.75rem" }}>
+                      <h4>Ops password</h4>
+                      {!opsPasswordEnabled ? (
+                        <p className="hint">
+                          Storage disabled (OPS_PASSWORD_VISIBLE=0). You can still issue a new
+                          password; it will not be retained for later viewing.
+                        </p>
+                      ) : null}
+                      <div className="detail-kvs" style={{ marginBottom: "0.5rem" }}>
+                        <div>
+                          <span>Stored password</span>
+                          <strong style={{ fontFamily: "var(--mono)" }}>
+                            {opsPassword || "— (not issued via Ops yet)"}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Last set</span>
+                          <strong>{formatDate(opsPasswordAt)}</strong>
+                        </div>
+                      </div>
+                      <div
+                        className="top-actions"
+                        style={{ flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.5rem" }}
+                      >
+                        {opsPassword ? (
+                          <button
+                            type="button"
+                            className="btn"
+                            disabled={actionBusy}
+                            onClick={() => void handleCopyPassword(opsPassword)}
+                            aria-label="Copy stored password"
+                          >
+                            Copy password
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={actionBusy}
+                          onClick={() => void handleIssuePassword(selectedId)}
+                          aria-label="Issue new random password"
+                        >
+                          {actionBusy ? "Saving…" : "Issue new password"}
+                        </button>
+                      </div>
+                      <div
+                        className="top-actions"
+                        style={{ flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}
+                      >
+                        <input
+                          type="text"
+                          value={customPassword}
+                          onChange={(e) => setCustomPassword(e.target.value)}
+                          placeholder="Custom password (min 8)"
+                          aria-label="Custom password"
+                          style={{ flex: "1 1 12rem", minWidth: "10rem" }}
+                        />
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={actionBusy || customPassword.trim().length < 8}
+                          onClick={() =>
+                            void handleIssuePassword(selectedId, customPassword)
+                          }
+                          aria-label="Set custom password"
+                        >
+                          Set password
+                        </button>
+                      </div>
+                      <p className="hint" style={{ marginTop: "0.5rem" }}>
+                        Issuing a password replaces the login password for this account. Signup
+                        passwords are not recoverable — only Ops-issued ones are stored here.
+                      </p>
+                    </div>
+                  </>
                 ) : null}
                 {open.kind === "users" && userMemberships.length > 0
                   ? userMemberships.map((m) =>
@@ -609,7 +768,7 @@ export const DetailModal = ({ open, config, onClose }: Props) => {
                   ? renderPlanForceControls(selectedId)
                   : null}
                 {actionNote ? <p className="hint ok-hint">{actionNote}</p> : null}
-                {credentials ? (
+                {credentials && open.kind !== "users" ? (
                   <div className="detail-kvs" style={{ marginBottom: "0.75rem" }}>
                     <div>
                       <span>Email</span>

@@ -19,24 +19,31 @@ export const generateTempPassword = (): string => {
   return `${base}A1!`;
 };
 
+/**
+ * Cookie name/flags must match better-auth's createCookieGetter(baseURL).
+ * Do NOT derive from the inbound proxy request URL (often http://saas-api:3000).
+ */
 export const buildSessionCookie = async (
   sessionToken: string,
   secret: string,
-  secure: boolean,
-): Promise<{ name: string; value: string; options: string }> => {
+  appUrl: string,
+): Promise<{ name: string; value: string; header: string }> => {
+  const secure = appUrl.startsWith("https://");
   const signature = await makeSignature(sessionToken, secret);
   const signed = `${sessionToken}.${signature}`;
   const name = secure
     ? "__Secure-better-auth.session_token"
     : "better-auth.session_token";
+  const maxAgeSec = Math.floor(SESSION_TTL_MS / 1000);
   const parts = [
     `${name}=${encodeURIComponent(signed)}`,
     "Path=/",
     "HttpOnly",
     "SameSite=Lax",
+    `Max-Age=${maxAgeSec}`,
   ];
   if (secure) parts.push("Secure");
-  return { name, value: signed, options: parts.join("; ") };
+  return { name, value: signed, header: parts.join("; ") };
 };
 
 /** Mint session + one-time enter code; returns web URL on SAAS_APP_URL. */

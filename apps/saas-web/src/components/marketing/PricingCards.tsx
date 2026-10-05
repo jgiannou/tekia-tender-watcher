@@ -18,11 +18,12 @@ export const PricingCards = ({ mode, className }: PricingCardsProps) => {
   const keys: MarketingPlanKey[] = ["basic", "pro"];
 
   return (
-    <div className={cn("grid gap-4 md:grid-cols-2", className)}>
+    <div className={cn("grid gap-4 md:grid-cols-2 md:items-stretch", className)}>
       {keys.map((key) => {
         const plan = MARKETING_PLANS[key];
         const featured = key === "pro";
         const bullets = mode === "teaser" ? plan.teaserBullets : plan.fullBullets;
+        const includesLabel = plan.includesLabel;
 
         return (
           <article
@@ -45,6 +46,15 @@ export const PricingCards = ({ mode, className }: PricingCardsProps) => {
               {mode === "teaser" ? plan.shortPositioningEl : plan.positioningEl}
             </p>
             <ul className="mt-5 flex-1 space-y-2.5">
+              {includesLabel ? (
+                <li className="flex gap-2 border-b border-border/60 pb-3 text-sm font-medium text-foreground">
+                  <Check
+                    className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                    aria-hidden
+                  />
+                  <span>{includesLabel}</span>
+                </li>
+              ) : null}
               {bullets.map((item) => (
                 <li key={item} className="flex gap-2 text-sm text-muted-foreground">
                   <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />

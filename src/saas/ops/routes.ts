@@ -6,6 +6,10 @@ import { PLAN_KEYS, TRIAL_DURATION_MS } from "../plans/catalog.js";
 import { getLogStats, getRecentLogs, getRecentRequests, opsLogger } from "./logger.js";
 import { collectOpsStats, PAID_PLAN_KEYS } from "./stats.js";
 import {
+  opsPasswordEnabled,
+  opsPasswordWrite,
+} from "./ops-password.js";
+import {
   generateTempPassword,
   issueOpsEnterLink,
   resolveSaasAppUrl,
@@ -348,6 +352,8 @@ export const registerOpsAdminRoutes = (
             name: true,
             email: true,
             emailVerified: true,
+            opsPassword: true,
+            opsPasswordAt: true,
             createdAt: true,
             updatedAt: true,
             members: {
@@ -376,6 +382,7 @@ export const registerOpsAdminRoutes = (
         }),
       ]);
 
+      const showOpsPassword = opsPasswordEnabled();
       return c.json({
         data: {
           items: rows.map((u) => {
@@ -389,8 +396,11 @@ export const registerOpsAdminRoutes = (
               accountType: "member",
               contractorName: null,
               mustChangePassword: false,
-              opsPassword: "",
-              opsPasswordAt: null,
+              opsPassword: showOpsPassword ? u.opsPassword ?? "" : "",
+              opsPasswordAt:
+                showOpsPassword && u.opsPasswordAt
+                  ? u.opsPasswordAt.toISOString()
+                  : null,
               createdAt: u.createdAt.toISOString(),
               updatedAt: u.updatedAt.toISOString(),
               memberships: u.members.map((m) => ({
@@ -406,7 +416,7 @@ export const registerOpsAdminRoutes = (
           total,
           limit,
           offset,
-          opsPasswordEnabled: false,
+          opsPasswordEnabled: showOpsPassword,
         },
       });
     } catch (error) {
@@ -430,6 +440,8 @@ export const registerOpsAdminRoutes = (
           email: true,
           emailVerified: true,
           image: true,
+          opsPassword: true,
+          opsPasswordAt: true,
           createdAt: true,
           updatedAt: true,
           members: {
@@ -462,6 +474,7 @@ export const registerOpsAdminRoutes = (
       });
       if (!user) return c.json({ error: "Not found" }, 404);
 
+      const showOpsPassword = opsPasswordEnabled();
       const { firstName, lastName } = splitName(user.name);
       return c.json({
         data: {
@@ -473,8 +486,12 @@ export const registerOpsAdminRoutes = (
           accountType: "member",
           contractorName: null,
           mustChangePassword: false,
-          opsPassword: "",
-          opsPasswordAt: null,
+          opsPassword: showOpsPassword ? user.opsPassword ?? "" : "",
+          opsPasswordAt:
+            showOpsPassword && user.opsPasswordAt
+              ? user.opsPasswordAt.toISOString()
+              : null,
+          opsPasswordEnabled: showOpsPassword,
           avatarStyle: "",
           avatarSeed: user.email,
           emailVerified: user.emailVerified,
@@ -821,6 +838,8 @@ export const registerOpsAdminRoutes = (
         .object({
           userId: z.string().min(1).optional(),
           email: z.string().email().optional(),
+          /** When true, also rotate credential password (destroys prior password). */
+          rotatePassword: z.boolean().optional().default(false),
         })
         .refine((v) => Boolean(v.userId || v.email), {
           message: "userId or email required",
@@ -830,13 +849,13 @@ export const registerOpsAdminRoutes = (
       const user = body.userId
         ? await prisma.user.findUnique({
             where: { id: body.userId },
-            select: { id: true, email: true },
+            select: { id: true, email: true, opsPassword: true },
           })
         : await prisma.user.findFirst({
             where: {
               email: { equals: body.email!.trim(), mode: "insensitive" },
             },
-            select: { id: true, email: true },
+            select: { id: true, email: true, opsPassword: true },
           });
 
       if (!user) return c.json({ error: "User not found" }, 404);
@@ -845,20 +864,89 @@ export const registerOpsAdminRoutes = (
       const link = await issueOpsEnterLink(prisma, user.id, appUrl);
       if (!link) return c.json({ error: "User not found" }, 404);
 
-      const password = generateTempPassword();
-      const credentials = await rotateUserCredentialPassword(
-        prisma,
-        user.id,
-        password,
-      );
+      let credentials: { email: string; password: string } | undefined;
+      if (body.rotatePassword) {
+        const password = generateTempPassword();
+        const rotated = await rotateUserCredentialPassword(
+          prisma,
+          user.id,
+          password,
+        );
+        if (rotated) {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: opsPasswordWrite(rotated.password),
+          });
+          credentials = rotated;
+        }
+      } else if (opsPasswordEnabled() && user.opsPassword && user.email) {
+        credentials = { email: user.email, password: user.opsPassword };
+      }
 
       opsLogger.warn("ops_impersonate", { userId: user.id, email: user.email });
       return c.json({
         data: {
           openUrl: link.openUrl,
           expiresIn: "8h",
-          credentials: credentials ?? undefined,
-          note: "Opened with better-auth session cookie. Temp password was rotated for this user.",
+          credentials,
+          note: body.rotatePassword
+            ? "Opened with session cookie. Credential password was rotated."
+            : "Opened with better-auth session cookie. Password unchanged.",
+        },
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return c.json({ error: error.issues.map((i) => i.message).join("; ") }, 400);
+      }
+      return c.json(
+        { error: error instanceof Error ? error.message : String(error) },
+        500,
+      );
+    }
+  });
+
+  app.post("/admin/ops/users/:id/password", async (c) => {
+    try {
+      const { getPrisma } = await import("../../db/prisma.js");
+      const prisma = getPrisma();
+      const id = c.req.param("id");
+      const body = z
+        .object({
+          password: z.string().min(8).max(128).optional(),
+        })
+        .parse(await c.req.json().catch(() => ({})));
+
+      const user = await prisma.user.findUnique({
+        where: { id },
+        select: { id: true, email: true },
+      });
+      if (!user) return c.json({ error: "User not found" }, 404);
+
+      const password = body.password?.trim() || generateTempPassword();
+      const credentials = await rotateUserCredentialPassword(
+        prisma,
+        user.id,
+        password,
+      );
+      if (!credentials) return c.json({ error: "Failed to set password" }, 500);
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: opsPasswordWrite(credentials.password),
+      });
+
+      opsLogger.warn("ops_password_issued", {
+        userId: user.id,
+        email: user.email,
+      });
+
+      return c.json({
+        data: {
+          credentials,
+          opsPasswordEnabled: opsPasswordEnabled(),
+          note: opsPasswordEnabled()
+            ? "Password set and stored for Ops Desk visibility."
+            : "Password set. Ops storage disabled (OPS_PASSWORD_VISIBLE=0).",
         },
       });
     } catch (error) {
@@ -918,6 +1006,7 @@ export const registerOpsAdminRoutes = (
             email,
             name: `Ops ${body.role}`,
             emailVerified: true,
+            ...opsPasswordWrite(password),
           },
         });
         await tx.account.create({
