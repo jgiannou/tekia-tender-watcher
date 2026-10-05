@@ -150,7 +150,7 @@ const normalizeActivities = (raw: unknown): OrganizationActivity[] => {
   return result;
 };
 
-const normalizeNotifications = (raw: unknown): NotificationPreferences => {
+export const normalizeNotifications = (raw: unknown): NotificationPreferences => {
   const base = defaultNotifications();
   if (!raw || typeof raw !== "object") return base;
   const obj = raw as Record<string, unknown>;

@@ -8,7 +8,9 @@ import type {
 import {
   attentionDedupeKey,
   attentionTitleFor,
+  pruneAttentionEventsForOrg,
 } from "../services/attention.js";
+import { queueAttentionEmail } from "../services/notify.js";
 import { upsertCanonicalTender } from "../services/tenders.js";
 
 export type DiscoveredRelatedAct = {
@@ -59,7 +61,8 @@ const attentionTypeForTarget = (
  * Scalability rule: dedupe work by canonical Tender.
  * N OrganizationTenders on the same REQ → 1 upstream check → 1 RelatedActLink → N attention events.
  *
- * No Slack. No Brevo. NotificationDelivery is not written here.
+ * No Slack. Brevo email is queued via NotificationDelivery when a new
+ * attention event is created (see queueAttentionEmail).
  */
 export const monitorFollowedThreads = async (
   prisma: PrismaClient,
@@ -202,31 +205,51 @@ export const monitorFollowedThreads = async (
         candidate.targetTender.title?.trim() ||
         candidate.targetTender.referenceNumber ||
         attentionTitleFor(type, link.confidence);
-      const createResult = await prisma.organizationAttentionEvent.createMany({
-        data: affected.map((orgTender) => ({
-          organizationId: orgTender.organizationId,
-          organizationTenderId: orgTender.id,
-          relatedTenderId: candidate.targetTender.id,
-          relatedActLinkId: link.id,
-          type,
-          title: relatedTitle,
-          dedupeKey,
-          metadata: {
-            sourceTenderId,
-            relatedTenderId: candidate.targetTender.id,
-            relationType: candidate.relationType,
-            confidence: link.confidence,
-            detectionMethod: candidate.detectionMethod,
-            referenceNumber: candidate.targetTender.referenceNumber,
-            recordType: candidate.targetTender.recordType,
-            relatedTenderTitle: candidate.targetTender.title ?? null,
-            authority: candidate.targetTender.contractingAuthority ?? null,
-            sourceTenderTitle: sourceTender?.title ?? null,
-          },
-        })),
-        skipDuplicates: true,
-      });
-      attentionEventsCreated += createResult.count;
+      const touchedOrgs = new Set<string>();
+      for (const orgTender of affected) {
+        try {
+          const event = await prisma.organizationAttentionEvent.create({
+            data: {
+              organizationId: orgTender.organizationId,
+              organizationTenderId: orgTender.id,
+              relatedTenderId: candidate.targetTender.id,
+              relatedActLinkId: link.id,
+              type,
+              title: relatedTitle,
+              dedupeKey,
+              metadata: {
+                sourceTenderId,
+                relatedTenderId: candidate.targetTender.id,
+                relationType: candidate.relationType,
+                confidence: link.confidence,
+                detectionMethod: candidate.detectionMethod,
+                referenceNumber: candidate.targetTender.referenceNumber,
+                recordType: candidate.targetTender.recordType,
+                relatedTenderTitle: candidate.targetTender.title ?? null,
+                authority: candidate.targetTender.contractingAuthority ?? null,
+                sourceTenderTitle: sourceTender?.title ?? null,
+              },
+            },
+          });
+          attentionEventsCreated += 1;
+          touchedOrgs.add(orgTender.organizationId);
+          queueAttentionEmail(prisma, event.id);
+        } catch (error) {
+          // Unique (organizationId, dedupeKey) — already notified for this act.
+          if (
+            error &&
+            typeof error === "object" &&
+            "code" in error &&
+            (error as { code?: string }).code === "P2002"
+          ) {
+            continue;
+          }
+          throw error;
+        }
+      }
+      for (const organizationId of touchedOrgs) {
+        await pruneAttentionEventsForOrg(prisma, organizationId);
+      }
 
       await prisma.organizationTender.updateMany({
         where: {

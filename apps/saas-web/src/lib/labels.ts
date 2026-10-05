@@ -37,6 +37,52 @@ export const humanSaasError = (message: string): string => {
   if (message.includes("watch_profile_active_limit")) {
     return "Έχετε φτάσει το όριο ενεργών αποθηκευμένων αναζητήσεων.";
   }
+  if (message.includes("followed_tender_limit")) {
+    return "Έχετε φτάσει το όριο παρακολουθούμενων διαγωνισμών για το πλάνο σας.";
+  }
+  if (message.includes("seat_limit_contact_sales")) {
+    return "Χρειάζεστε περισσότερους από 20 χρήστες; Επικοινωνήστε μαζί μας.";
+  }
+  if (message.includes("seat_limit_reached")) {
+    return "Έχετε φτάσει το όριο θέσεων χρηστών. Προσθέστε έξτρα θέσεις στο Pro ή αναβαθμίστε.";
+  }
+  if (message.includes("advanced_watch_filters_requires_pro")) {
+    return "Τα προχωρημένα φίλτρα (αρχή, προϋπολογισμός, άμεσο email) είναι διαθέσιμα στο Pro.";
+  }
+  if (message.includes("vault_storage_limit_reached")) {
+    return "Έχετε φτάσει το όριο αποθήκευσης του πλάνου. Αναβαθμίστε ή διαγράψτε αρχεία.";
+  }
+  if (message.includes("billing_not_configured")) {
+    return "Η χρέωση δεν είναι ρυθμισμένη ακόμη. Ολοκληρώστε τα Stripe Price IDs.";
+  }
+  if (message.includes("stripe_tax_not_enabled")) {
+    return "Ενεργοποιήστε το Stripe Tax στο Dashboard και δοκιμάστε ξανά.";
+  }
+  if (message.includes("too_many_members_for_plan")) {
+    return "Υπάρχουν περισσότερα μέλη από όσα επιτρέπει το επιλεγμένο πλάνο. Αφαιρέστε χρήστες πρώτα.";
+  }
+  if (message.includes("no_billing_customer")) {
+    return "Δεν υπάρχει ακόμη πελάτης χρέωσης — επιλέξτε πρώτα ένα πλάνο.";
+  }
+  if (message.includes("email_not_verified")) {
+    return "Επιβεβαιώστε το email σας για σαρώσεις αποθηκευμένων αναζητήσεων. Η χειροκίνητη αναζήτηση ΚΗΜΔΗΣ παραμένει διαθέσιμη.";
+  }
+  if (message.includes("trial_expired")) {
+    return "Η δοκιμαστική περίοδος έληξε. Αναβαθμίστε το πλάνο για περιοδικές σαρώσεις.";
+  }
+  if (message.includes("periodic_scan_quota_exceeded")) {
+    return "Έχετε εξαντλήσει τις περιοδικές σαρώσεις για σήμερα.";
+  }
+  if (message.includes("manual_scan_quota_exceeded")) {
+    return "Έχετε εξαντλήσει τις χειροκίνητες σαρώσεις προφίλ για σήμερα.";
+  }
+  if (
+    message.includes("subscription_inactive") ||
+    message.includes("manual_scan_blocked") ||
+    message.includes("periodic_scan_blocked")
+  ) {
+    return "Οι σαρώσεις αποθηκευμένων αναζητήσεων δεν είναι διαθέσιμες για τον τρέχοντα λογαριασμό.";
+  }
   if (message.includes("watch_profile_requires_keywords_or_cpvs")) {
     return "Απαιτείται τουλάχιστον μία λέξη-κλειδί ή CPV.";
   }

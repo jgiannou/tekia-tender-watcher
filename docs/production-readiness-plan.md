@@ -3,7 +3,7 @@
 Ημερομηνία: 2026-10-04  
 Σειρά: **feature freeze v1 → prod env → security/reliability → legal/UX → staging QA → pilot → public launch**
 
-Σχετικό: [release-checklist-status.md](./release-checklist-status.md)
+Σχετικά: [release-checklist-status.md](./release-checklist-status.md) · **[ops-setup.md](./ops-setup.md)** (Stripe products, env, gates, scan frequencies)
 
 ---
 
@@ -15,11 +15,10 @@
 
 | Στο v1 pilot | Εκτός v1 (αργότερα) |
 |---|---|
-| Signup με πρόσκληση / controlled accounts | Stripe subscriptions / self-serve billing |
-| Org isolation, Saved Searches, Opportunities, Monitoring, Vault, in-app notifications | Public marketing site polish beyond essentials |
+| Signup + email verify · org isolation · Saved Searches · Opportunities · Monitoring · Vault · attention | Public marketing site polish beyond essentials |
 | Manual-record outreach/submission (χωρίς auto-send) | Αυτόματη αποστολή προσφορών / ΕΣΗΔΗΣ submit |
-| Email **αν** συνδεθεί Brevo πριν το staging — αλλιώς ρητά «μόνο in-app» στο pilot | Πλούσια email digests / marketing |
-| Entitlement soft-cap ενεργών Saved Searches | Πλήρες plan/pricing UI |
+| Brevo verify + password reset · gated periodic scans | Πλούσια marketing email digests |
+| Plans UI `/app/subscription` + Stripe checkout (Test mode) | Live Stripe + public self-serve launch |
 
 **Stop shipping νέες λειτουργίες** εκτός: P0, P1 που μπλοκάρουν τη βασική διαδρομή, staging/prod plumbing, legal pages, security fixes.
 
@@ -38,8 +37,8 @@
 | API (`SAAS_ENABLED`) | Process manager / container | Local `tsx watch` |
 | PostgreSQL | Managed prod DB, χωριστά από QA | Local/shared |
 | Document storage | Object storage (όχι μόνο local disk) | Local filesystem provider |
-| Email | Brevo/SMTP ή ρητή απόφαση off | **Off** στο SaaS path |
-| Αυτόματες σαρώσεις | Scheduler/worker που επιζεί restart | In-process enqueue · orphan reclaim υπάρχει · persistent queue **όχι** |
+| Email | Brevo/SMTP ή ρητή απόφαση off | **Wired** via `EMAIL_ENABLED` + Brevo SMTP (verify + reset) · digests ακόμα όχι |
+| Αυτόματες σαρώσεις | Scheduler/worker που επιζεί restart | Cron `15 */4 * * *` + quota (trial 1/day, paid 6/day) · orphan reclaim · persistent queue **όχι** |
 | Secrets | Ξεχωριστά `.env` prod · ποτέ commit | Dev secrets local |
 | Εσωτερικό TEKIA tool | Ανεξάρτητο (desktop/operator/Slack) | Παραμένει χωριστό |
 
@@ -94,7 +93,8 @@
 
 ## Τρέχουσα φάση
 
-Είμαστε στο τέλος των τρεχουσών διορθώσεων / feature work.  
-**Επόμενο:** κλείδωμα v1 (αυτό το doc) → production readiness work (env, security, legal) → staging → pilot.
+Ολοκληρώθηκαν: Email/Brevo verify+reset, workflow copy «καταγραφή ≠ αποστολή», prod-gates, verification + gated scans, Basic/Pro catalog + `/app/subscription` + Stripe wiring (ίδιο account, νέα Tenders prices).
 
-Δεν ανοίγουμε δημόσιο launch από το local `main` χωρίς staging acceptance.
+**Επόμενο:** δημιούργησε Stripe products (δες [ops-setup.md](./ops-setup.md) §3) · staging env · multi-org QA · backup restore.
+
+Δες [prod-gates.md](./prod-gates.md) + [ops-setup.md](./ops-setup.md). Δεν ανοίγουμε δημόσιο launch χωρίς staging acceptance.

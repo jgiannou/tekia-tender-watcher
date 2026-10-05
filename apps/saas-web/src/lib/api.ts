@@ -18,6 +18,44 @@ export type SaasUser = {
   name: string;
   email: string;
   image: string | null;
+  emailVerified?: boolean;
+};
+
+export type ScanAccessStatus =
+  | "unverified"
+  | "trial"
+  | "trial_expired"
+  | "active"
+  | "inactive";
+
+export type ScanAccess = {
+  emailVerified: boolean;
+  status: ScanAccessStatus;
+  planKey: string;
+  plan?: string;
+  trialEndsAt: string | null;
+  limits: {
+    maxActiveWatchProfiles: number;
+    maxActiveFollowedTenders?: number;
+    storageBytes?: number;
+    periodicScansPerDay: number;
+    manualProfileScansPerDay: number;
+    includedSeats?: number;
+    maxSeatsSelfService?: number;
+    advancedWatchProfileFilters?: boolean;
+    emailMode?: "DIGEST" | "IMMEDIATE";
+  };
+  usage: { day: string; periodic: number; manual: number };
+  seats?: {
+    includedSeats: number;
+    extraSeats: number;
+    seatLimit: number;
+    selfServiceCap: number;
+  };
+  canManualKimdisSearch: boolean;
+  canRunManualProfileScan: boolean;
+  canRunPeriodicScan: boolean;
+  blockCode: string | null;
 };
 
 export type CompanyProfile = {
@@ -189,6 +227,7 @@ export type SaasMeResponse = {
   user: SaasUser | null;
   theme: ThemePreference;
   gemiConfigured: boolean;
+  emailEnabled?: boolean;
   activeOrganizationId: string | null;
   organizations: SaasOrganization[];
 };
@@ -220,9 +259,113 @@ export type AttentionEvent = {
   } | null;
 };
 
+export type BillingInterval = "monthly" | "annual";
+
+export type BillingCatalogPlan = {
+  key: string;
+  code: string;
+  label: string;
+  labelEl: string;
+  positioning: string;
+  positioningEl?: string;
+  monthlyEur: number | null;
+  annualEur: number | null;
+  includedSeats: number;
+  maxSeatsSelfService: number;
+  extraSeatMonthlyEur: number | null;
+  extraSeatAnnualEur: number | null;
+  maxActiveWatchProfiles: number;
+  maxActiveFollowedTenders: number;
+  periodicScansPerDay: number;
+  storageBytes: number;
+  emailMode: "DIGEST" | "IMMEDIATE";
+  advancedWatchProfileFilters: boolean;
+  featuresEl?: string[];
+};
+
+export type BillingCatalogResponse = {
+  configured: boolean;
+  notes?: {
+    vatExcluded?: boolean;
+    annualTwoMonthsFree?: boolean;
+    contactForMoreSeatsMessage?: string;
+    proSelfServiceSeatCap?: number;
+  };
+  plans: BillingCatalogPlan[];
+  trial?: { days: number; periodicScansPerDay: number; noteEl: string };
+};
+
+export type BillingStatusResponse = {
+  configured: boolean;
+  canManageBilling: boolean;
+  planKey: string;
+  status: string;
+  extraSeats: number;
+  trialEndsAt: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  hasStripeSubscription?: boolean;
+};
+
 export type SaasEntitlementsResponse = {
-  entitlements: { maxActiveWatchProfiles: number };
-  usage: { activeWatchProfiles: number; totalWatchProfiles: number };
+  entitlements: {
+    maxActiveWatchProfiles: number;
+    maxActiveFollowedTenders: number;
+    storageBytes: number;
+    periodicScansPerDay: number;
+    manualProfileScansPerDay: number;
+    includedSeats: number;
+    maxSeatsSelfService: number;
+    advancedWatchProfileFilters: boolean;
+    emailMode: "DIGEST" | "IMMEDIATE";
+  };
+  usage: {
+    activeWatchProfiles: number;
+    totalWatchProfiles: number;
+    activeFollowedTenders: number;
+    members: number;
+  };
+  scanAccess: ScanAccess;
+  plan?: {
+    key: string;
+    code: string;
+    label: string;
+    labelEl: string;
+    positioning: string;
+    priceMonthlyEur: number | null;
+    priceYearlyEur: number | null;
+    extraSeatPriceMonthlyEur: number | null;
+    features?: {
+      advancedWatchProfileFilters?: boolean;
+      prioritySupport?: boolean;
+      emailMode?: "DIGEST" | "IMMEDIATE";
+      opportunityMatching?: boolean;
+      matchScore?: boolean;
+      matchReasons?: boolean;
+      kimdisSearch?: boolean;
+      procurementMonitoring?: boolean;
+      relatedActMonitoring?: boolean;
+      outreachWorkflow?: boolean;
+      submissionWorkflow?: boolean;
+      companyVault?: boolean;
+      tenderWorkspace?: boolean;
+      documentVersioning?: boolean;
+      inAppNotifications?: boolean;
+    };
+  };
+  catalog?: Array<{
+    key: string;
+    code: string;
+    label: string;
+    priceMonthlyEur: number | null;
+    includedSeats: number;
+    maxSeatsSelfService: number;
+    maxActiveWatchProfiles: number;
+    periodicScansPerDay: number;
+  }>;
+  contactForMoreSeatsMessage?: string;
 };
 
 export type SaasOverviewMetrics = {
@@ -883,6 +1026,33 @@ export const saasApi = {
     request<{ events: AttentionEvent[] }>("/api/saas/attention", {
       organizationId,
     }),
+  billingCatalog: () =>
+    request<BillingCatalogResponse>("/api/saas/billing/catalog"),
+  billingStatus: (organizationId: string) =>
+    request<BillingStatusResponse>("/api/saas/billing/status", {
+      organizationId,
+    }),
+  billingCheckout: (
+    organizationId: string,
+    body: { plan: "basic" | "pro"; interval: BillingInterval; extraSeats?: number },
+  ) =>
+    request<{ url: string | null; mode: string; extraSeats?: number }>(
+      "/api/saas/billing/checkout",
+      {
+        method: "POST",
+        organizationId,
+        body: JSON.stringify(body),
+      },
+    ),
+  billingPortal: (organizationId: string, flow?: "cancel") =>
+    request<{ url: string | null; alreadyCanceling?: boolean }>(
+      "/api/saas/billing/portal",
+      {
+        method: "POST",
+        organizationId,
+        body: JSON.stringify(flow ? { flow } : {}),
+      },
+    ),
   getEntitlements: async (organizationId: string) => {
     try {
       return await request<SaasEntitlementsResponse>("/api/saas/entitlements", {
@@ -897,12 +1067,53 @@ export const saasApi = {
       ) {
         const { profiles } = await saasApi.listWatchProfiles(organizationId);
         return {
-          entitlements: { maxActiveWatchProfiles: DEFAULT_MAX_ACTIVE_WATCH_PROFILES },
+          entitlements: {
+            maxActiveWatchProfiles: DEFAULT_MAX_ACTIVE_WATCH_PROFILES,
+            maxActiveFollowedTenders: 20,
+            storageBytes: 250_000_000,
+            periodicScansPerDay: 1,
+            manualProfileScansPerDay: 10,
+            includedSeats: 1,
+            maxSeatsSelfService: 1,
+            advancedWatchProfileFilters: false,
+            emailMode: "DIGEST" as const,
+          },
           usage: {
             activeWatchProfiles: profiles.filter((p) => p.enabled).length,
             totalWatchProfiles: profiles.length,
+            activeFollowedTenders: 0,
+            members: 1,
           },
-        };
+          scanAccess: {
+            emailVerified: true,
+            status: "trial" as const,
+            planKey: "trial",
+            plan: "TRIAL",
+            trialEndsAt: null,
+            limits: {
+              maxActiveWatchProfiles: DEFAULT_MAX_ACTIVE_WATCH_PROFILES,
+              maxActiveFollowedTenders: 20,
+              storageBytes: 250_000_000,
+              periodicScansPerDay: 1,
+              manualProfileScansPerDay: 10,
+              includedSeats: 1,
+              maxSeatsSelfService: 1,
+              advancedWatchProfileFilters: false,
+              emailMode: "DIGEST" as const,
+            },
+            usage: { day: new Date().toISOString().slice(0, 10), periodic: 0, manual: 0 },
+            seats: {
+              includedSeats: 1,
+              extraSeats: 0,
+              seatLimit: 1,
+              selfServiceCap: 1,
+            },
+            canManualKimdisSearch: true,
+            canRunManualProfileScan: true,
+            canRunPeriodicScan: true,
+            blockCode: null,
+          },
+        } satisfies SaasEntitlementsResponse;
       }
       throw err;
     }
@@ -1067,9 +1278,13 @@ export const saasApi = {
         organizationId,
       },
     ),
-  scanWatchProfile: (organizationId: string, profileId: string) =>
+  scanWatchProfile: (
+    organizationId: string,
+    profileId: string,
+    opts?: { force?: boolean },
+  ) =>
     request<{ profile: WatchProfile }>(
-      `/api/saas/watch-profiles/${profileId}/scan`,
+      `/api/saas/watch-profiles/${profileId}/scan${opts?.force ? "?force=1" : ""}`,
       { method: "POST", organizationId },
     ),
   checkSimilarWatchProfiles: (

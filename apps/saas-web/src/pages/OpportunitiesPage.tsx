@@ -7,6 +7,7 @@ import { IconAction } from "@/components/IconAction";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
+import { ScoreBadge } from "@/components/ScoreBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -294,7 +295,7 @@ export const OpportunitiesPage = () => {
                       <span className="font-mono text-xs text-muted-foreground">
                         {opportunity.tender.referenceNumber}
                       </span>
-                      <Badge variant="secondary">{topScore}% συνάφεια</Badge>
+                      <ScoreBadge score={topScore} label="συνάφεια" />
                     </div>
                     <h3 className="text-base font-semibold leading-snug">
                       {opportunity.tender.title || "—"}

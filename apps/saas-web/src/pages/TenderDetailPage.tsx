@@ -7,6 +7,7 @@ import { CompanyDocumentPicker } from "@/components/CompanyDocumentPicker";
 import { IconAction } from "@/components/IconAction";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
+import { ScoreBadge } from "@/components/ScoreBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -702,7 +703,7 @@ export const TenderDetailPage = () => {
                   <div key={profile.id}>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{profile.name}</span>
-                      <Badge variant="secondary">{profile.score}%</Badge>
+                      <ScoreBadge score={profile.score} />
                     </div>
                     <ul className="mt-1 space-y-1 text-muted-foreground">
                       {profile.reasons.map((reason) => (
@@ -865,7 +866,9 @@ export const TenderDetailPage = () => {
           <DialogHeader>
             <DialogTitle>Καταγραφή Υποβολής</DialogTitle>
             <DialogDescription>
-              Τυπική υποβολή προσφοράς. Η παρακολούθηση αποτελέσματος παραμένει ενεργή.
+              Καταγράφει ότι υποβάλατε προσφορά εσείς (π.χ. στο ΕΣΗΔΗΣ/ΚΗΜΔΗΣ). Η εφαρμογή
+              δεν στέλνει ούτε υποβάλλει τίποτα αυτόματα· η παρακολούθηση αποτελέσματος
+              παραμένει ενεργή.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

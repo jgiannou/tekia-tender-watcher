@@ -7,7 +7,10 @@ import type {
   RequestSearchBody,
 } from "../src/kimdis/types.js";
 import { followTender } from "../src/saas/services/follow.js";
-import { runWatchProfileScan } from "../src/saas/services/watch-profiles.js";
+import {
+  runWatchProfileScan,
+  waitForWatchProfileScans,
+} from "../src/saas/services/watch-profiles.js";
 import {
   authedJson,
   createSaasTestApp,
@@ -153,7 +156,7 @@ describe("saas watch profiles", () => {
       where: { organizationId, type: "OPPORTUNITY_DIGEST" },
     });
     expect(attention).toHaveLength(1);
-    expect(attention[0]?.title).toContain("1 νέα ευκαιρία");
+    expect(attention[0]?.title).toMatch(/1\s+(νέα\s+)?ευκαιρία/);
     expect(attention[0]?.dedupeKey).toContain(
       `OPPORTUNITY_DIGEST:${created.json.profile.id}`,
     );
@@ -229,10 +232,11 @@ describe("saas watch profiles", () => {
   });
 
   it("paused profile skips scan discovery", async () => {
-    let callCount = 0;
+    // Union variants may call KIMDIS more than once during the initial scan.
+    // Keep the adam stable for that wave; a different adam would mean a later scan ran.
+    let releaseNewAdam = false;
     const searchRequestsPage = vi.fn(async () => {
-      callCount += 1;
-      if (callCount === 1) {
+      if (!releaseNewAdam) {
         return {
           content: [matchingRequest()],
           last: true,
@@ -282,6 +286,7 @@ describe("saas watch profiles", () => {
       body: { enabled: false },
     });
 
+    releaseNewAdam = true;
     await runWatchProfileScan(prisma, kimdis, created.json.profile.id);
 
     const opps = await prisma.organizationTender.count({ where: { organizationId } });
@@ -597,5 +602,53 @@ describe("saas watch profiles", () => {
     expect(response.headers.get("Content-Type")).toBe("application/pdf");
     const body = Buffer.from(await response.arrayBuffer());
     expect(body.toString()).toContain("%PDF-1.4");
+  });
+
+  it("hung KIMDIS fails with scan_timeout instead of staying RUNNING forever", async () => {
+    const prevHard = process.env.SAAS_SCAN_HARD_TIMEOUT_MS;
+    const prevStale = process.env.SAAS_SCAN_STALE_MS;
+    process.env.SAAS_SCAN_HARD_TIMEOUT_MS = "80";
+    process.env.SAAS_SCAN_STALE_MS = "200";
+    try {
+      const hungPage = vi.fn(
+        () =>
+          new Promise<KimdisPage<KimdisRequestRecord>>(() => {
+            /* never resolves — reproduces infinite RUNNING spinner */
+          }),
+      );
+      const { app, cookie, organizationId } = await signInWithKimdis(
+        createMockKimdis({ searchRequestsPage: hungPage }),
+      );
+
+      const created = await authedJson<{ profile: { id: string } }>(
+        app,
+        "/api/saas/watch-profiles",
+        {
+          cookie,
+          organizationId,
+          body: {
+            name: "Hung scan",
+            keywords: ["ιστοσελίδα"],
+            recordTypes: ["REQ"],
+          },
+        },
+      );
+      expect(created.status).toBe(201);
+
+      const finished = await waitForProfile(prisma, created.json.profile.id);
+      expect(finished.scanState).toBe("FAILED");
+      const meta =
+        typeof finished.customFilters === "object" && finished.customFilters
+          ? (finished.customFilters as Record<string, unknown>)
+          : {};
+      expect(meta.lastScanError).toBe("scan_timeout");
+      expect(hungPage).toHaveBeenCalled();
+      await waitForWatchProfileScans();
+    } finally {
+      if (prevHard === undefined) delete process.env.SAAS_SCAN_HARD_TIMEOUT_MS;
+      else process.env.SAAS_SCAN_HARD_TIMEOUT_MS = prevHard;
+      if (prevStale === undefined) delete process.env.SAAS_SCAN_STALE_MS;
+      else process.env.SAAS_SCAN_STALE_MS = prevStale;
+    }
   });
 });

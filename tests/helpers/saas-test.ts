@@ -18,6 +18,7 @@ export const saasTestConfig = (): SaasConfig => ({
   BETTER_AUTH_SECRET: "test-better-auth-secret-32chars!!",
   BETTER_AUTH_URL: "http://127.0.0.1:3000",
   SAAS_TRUSTED_ORIGINS: ["http://127.0.0.1:5173", "http://localhost:5173"],
+  SAAS_APP_URL: "http://127.0.0.1:5174",
   GEMI_API_KEY: "",
   GEMI_API_BASE_URL: "https://opendata-api.businessportal.gr/api/opendata/v1",
 });
@@ -74,6 +75,7 @@ export const createSaasTestApp = (
   process.env.DATABASE_URL = databaseUrl;
   process.env.BETTER_AUTH_SECRET = saasTestConfig().BETTER_AUTH_SECRET;
   process.env.BETTER_AUTH_URL = saasTestConfig().BETTER_AUTH_URL;
+  process.env.EMAIL_ENABLED = "false";
   return createSaasApp({
     prisma,
     config: saasTestConfig(),
@@ -85,6 +87,7 @@ export const signUpAndGetCookie = async (
   app: ReturnType<typeof createSaasTestApp>["app"],
   input: { name: string; email: string; password: string },
 ) => {
+  process.env.EMAIL_ENABLED = "false";
   const response = await app.request("/api/auth/sign-up/email", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -96,9 +99,22 @@ export const signUpAndGetCookie = async (
       ? setCookie.map((part) => part.split(";")[0]).join("; ")
       : response.headers.get("set-cookie")?.split(",").map((p) => p.split(";")[0].trim()).join("; ") ??
         "";
+  const bodyText = await response.text();
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`sign-up failed ${response.status}: ${body}`);
+    throw new Error(`sign-up failed ${response.status}: ${bodyText}`);
+  }
+  // Tests never exercise the verify gate; force verified even if the auth
+  // create hook races or EMAIL_ENABLED leaked from the developer .env.
+  try {
+    const body = JSON.parse(bodyText) as { user?: { id?: string } };
+    if (body.user?.id) {
+      await getSaasTestPrisma().user.update({
+        where: { id: body.user.id },
+        data: { emailVerified: true },
+      });
+    }
+  } catch {
+    // ignore parse failures — cookie path still returned
   }
   return { response, cookie: cookieHeader };
 };

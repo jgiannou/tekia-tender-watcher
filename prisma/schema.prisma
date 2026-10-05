@@ -197,8 +197,11 @@ model Subscription {
   stripeCustomerId     String?            @unique
   stripeSubscriptionId String?            @unique
   status               SubscriptionStatus @default(INCOMPLETE)
-  planKey              String             @default("saas_standard")
+  /// Public catalog keys: trial | basic | pro (legacy starter_499/pro_1000 normalized in code).
+  planKey              String             @default("trial")
   stripePriceId        String?
+  /// Paid seat add-ons beyond plan.includedSeats (Pro only). Not a third plan.
+  extraSeats           Int                @default(0)
   trialEndsAt          DateTime?
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean            @default(false)

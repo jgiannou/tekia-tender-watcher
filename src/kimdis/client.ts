@@ -61,6 +61,14 @@ const fetchJson = async <T>(
 
       return (await response.json()) as T;
     } catch (error) {
+      // Empty-result 404s are normal for out-of-range pages — do not burn
+      // retry/backoff budget (scans map 404 → empty via isNoResultsUpstream).
+      if (
+        error instanceof Error &&
+        /KIMDIS HTTP 404\b/.test(error.message)
+      ) {
+        throw error;
+      }
       if (attempt >= maxRetries) throw error;
       attempt += 1;
       await sleep(Math.min(30_000, 1000 * 2 ** attempt));

@@ -1,6 +1,14 @@
-# Local SaaS foundation services.
-# Phase 1: Postgres is available for Prisma migrations.
-# The watcher still defaults to SQLite (DATABASE_PATH) until cutover.
+# Local / staging-like stack for ARC Tenders SaaS.
+#
+# Postgres only (dev):
+#   pnpm db:up
+#
+# Full stack (api + web + postgres):
+#   docker compose --profile saas up -d --build
+#   → web http://127.0.0.1:8080  (proxies /api → saas-api)
+#
+# Production Coolify: build Dockerfile.saas-api + apps/saas-web/Dockerfile
+# Public host: https://arc-tenders.tekia.gr  (see docs/ops-setup.md §9)
 
 services:
   postgres:
@@ -20,5 +28,78 @@ services:
       timeout: 5s
       retries: 10
 
+  saas-api:
+    profiles: ["saas"]
+    build:
+      context: .
+      dockerfile: Dockerfile.saas-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      SAAS_ENABLED: "true"
+      DATABASE_URL: postgresql://tekia:tekia@postgres:5432/tekia_tender_watcher?schema=public
+      DATABASE_PATH: /data/tenders.db
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-local-dev-change-me-to-a-long-random-secret}
+      # Same-origin via web nginx proxy
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://127.0.0.1:8080}
+      SAAS_APP_URL: ${SAAS_APP_URL:-http://127.0.0.1:8080}
+      SAAS_TRUSTED_ORIGINS: ${SAAS_TRUSTED_ORIGINS:-http://127.0.0.1:8080,http://localhost:8080,http://127.0.0.1:5174,http://localhost:5174}
+      EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-contact@tekia.gr}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-ARC Tenders}
+      EMAIL_LOCALE: ${EMAIL_LOCALE:-el}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_TENDERS_BASIC_MONTHLY: ${STRIPE_PRICE_TENDERS_BASIC_MONTHLY:-}
+      STRIPE_PRICE_TENDERS_BASIC_ANNUAL: ${STRIPE_PRICE_TENDERS_BASIC_ANNUAL:-}
+      STRIPE_PRICE_TENDERS_PRO_MONTHLY: ${STRIPE_PRICE_TENDERS_PRO_MONTHLY:-}
+      STRIPE_PRICE_TENDERS_PRO_ANNUAL: ${STRIPE_PRICE_TENDERS_PRO_ANNUAL:-}
+      STRIPE_PRICE_TENDERS_EXTRA_SEAT_MONTHLY: ${STRIPE_PRICE_TENDERS_EXTRA_SEAT_MONTHLY:-}
+      STRIPE_PRICE_TENDERS_EXTRA_SEAT_ANNUAL: ${STRIPE_PRICE_TENDERS_EXTRA_SEAT_ANNUAL:-}
+      STRIPE_SUCCESS_URL: ${STRIPE_SUCCESS_URL:-http://127.0.0.1:8080/app/subscription?checkout=success}
+      STRIPE_CANCEL_URL: ${STRIPE_CANCEL_URL:-http://127.0.0.1:8080/app/subscription?checkout=cancel}
+      GEMI_API_KEY: ${GEMI_API_KEY:-}
+      GEMI_API_BASE_URL: ${GEMI_API_BASE_URL:-https://opendata-api.businessportal.gr/api/opendata/v1}
+      # Quiet internal watcher noise in SaaS compose (still starts; SQLite on volume)
+      POLL_INTERVAL_MINUTES: ${POLL_INTERVAL_MINUTES:-60}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      OPERATOR_API_TOKEN: ${OPERATOR_API_TOKEN:-}
+    volumes:
+      - tekia_saas_data:/data
+      - tekia_saas_storage:/app/storage
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  saas-web:
+    profiles: ["saas"]
+    build:
+      context: .
+      dockerfile: apps/saas-web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      saas-api:
+        condition: service_healthy
+    environment:
+      API_UPSTREAM: saas-api:3000
+    ports:
+      - "8080:80"
+
 volumes:
   tekia_pg_data:
+  tekia_saas_data:
+  tekia_saas_storage:

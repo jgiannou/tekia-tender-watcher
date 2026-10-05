@@ -3,8 +3,9 @@ import type {
   VaultDocumentSource,
   VaultDocumentStatus,
 } from "@prisma/client";
-import { badRequest, notFound } from "../errors.js";
+import { badRequest, conflict, notFound } from "../errors.js";
 import { requireOrgMembership } from "../auth/org-context.js";
+import { getOrganizationEntitlements } from "./entitlements.js";
 import {
   ALLOWED_VAULT_EXTENSIONS,
   createLocalDocumentStorage,
@@ -277,6 +278,24 @@ export type UploadDocumentInput = {
   source?: VaultDocumentSource;
 };
 
+const assertVaultStorageBudget = async (
+  prisma: PrismaClient,
+  input: { userId: string; organizationId: string; additionalBytes: number },
+) => {
+  const { entitlements } = await getOrganizationEntitlements(prisma, {
+    userId: input.userId,
+    organizationId: input.organizationId,
+  });
+  const used = await prisma.vaultDocumentVersion.aggregate({
+    where: { organizationId: input.organizationId },
+    _sum: { fileSize: true },
+  });
+  const usedBytes = used._sum.fileSize ?? 0;
+  if (usedBytes + input.additionalBytes > entitlements.storageBytes) {
+    throw conflict("vault_storage_limit_reached");
+  }
+};
+
 export const uploadDocument = async (
   prisma: PrismaClient,
   input: UploadDocumentInput,
@@ -298,6 +317,12 @@ export const uploadDocument = async (
     where: { id: input.folderId, organizationId },
   });
   if (!folder) throw notFound("vault_folder_not_found");
+
+  await assertVaultStorageBudget(prisma, {
+    userId,
+    organizationId,
+    additionalBytes: input.bytes.byteLength,
+  });
 
   const mimeType = assertSupportedFile(
     input.originalFilename,
@@ -441,6 +466,12 @@ export const uploadNewVersion = async (
   });
   if (!document) throw notFound("vault_document_not_found");
   if (!input.bytes.byteLength) throw badRequest("vault_empty_file");
+
+  await assertVaultStorageBudget(prisma, {
+    userId,
+    organizationId,
+    additionalBytes: input.bytes.byteLength,
+  });
 
   const mimeType = assertSupportedFile(
     input.originalFilename,

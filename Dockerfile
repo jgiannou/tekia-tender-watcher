@@ -1,3 +1,9 @@
+# Internal TEKIA watcher (SQLite / Coolify legacy path).
+# For ARC Tenders SaaS production use:
+#   - Dockerfile.saas-api
+#   - apps/saas-web/Dockerfile
+#   - docs/ops-setup.md §9 (https://arc-tenders.tekia.gr)
+
 FROM node:22-bookworm-slim AS build
 
 RUN apt-get update \

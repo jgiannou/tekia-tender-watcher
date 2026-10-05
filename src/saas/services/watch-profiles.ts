@@ -9,8 +9,66 @@ import type { RecordType } from "../../kimdis/types.js";
 import type { KimdisClient } from "../../kimdis/client.js";
 import { formatDateOnly } from "../../kimdis/client.js";
 import { requireOrgMembership } from "../auth/org-context.js";
-import { badRequest, conflict, notFound } from "../errors.js";
-import { attentionTitleFor } from "./attention.js";
+import { SaasError, badRequest, conflict, forbidden, notFound } from "../errors.js";
+import {
+  assertCanActivateWatchProfile,
+  getOrganizationEntitlements,
+} from "./entitlements.js";
+import {
+  assertCanRunWatchProfileScan,
+  consumeScanQuota,
+} from "./scan-access.js";
+
+/** Fields gated by Pro `advancedWatchProfileFilters`. */
+const hasAdvancedWatchProfileFilters = (input: {
+  authority?: string | null;
+  contractType?: string | null;
+  procedureType?: string | null;
+  minBudget?: number | null;
+  maxBudget?: number | null;
+  notificationOverride?: string | null;
+}): boolean =>
+  Boolean(
+    input.authority?.trim() ||
+      input.contractType?.trim() ||
+      input.procedureType?.trim() ||
+      input.minBudget != null ||
+      input.maxBudget != null ||
+      input.notificationOverride === "IMMEDIATE",
+  );
+
+const assertAdvancedFiltersAllowed = async (
+  prisma: PrismaClient,
+  input: {
+    userId: string;
+    organizationId: string;
+    authority?: string | null;
+    contractType?: string | null;
+    procedureType?: string | null;
+    minBudget?: number | null;
+    maxBudget?: number | null;
+    notificationOverride?: string | null;
+  },
+) => {
+  if (!hasAdvancedWatchProfileFilters(input)) return;
+  const { entitlements } = await getOrganizationEntitlements(prisma, {
+    userId: input.userId,
+    organizationId: input.organizationId,
+  });
+  if (!entitlements.advancedWatchProfileFilters) {
+    throw forbidden("advanced_watch_filters_requires_pro");
+  }
+};
+
+const scanBlockCodeFromError = (error: unknown): string | null => {
+  if (!(error instanceof SaasError) || error.status !== 403) return null;
+  return error.message || error.code || "manual_scan_blocked";
+};
+import {
+  attentionTitleFor,
+  pruneAttentionEventsForOrg,
+} from "./attention.js";
+import { orgEmailMode, queueAttentionEmail } from "./notify.js";
 import {
   kimdisItemFromTender,
   searchKimdis,
@@ -216,16 +274,63 @@ export const findSimilarWatchProfiles = async (
 
 /**
  * Hard wall-clock budget for an active scan. After this the scan fails with
- * `scan_timeout` and the user retries. Orphan reclaim uses a slightly larger
- * window so a live scan is not marked failed twice.
+ * `scan_timeout` and the user retries. Orphan RUNNING (no live worker in this
+ * process) is reclaimed within seconds — not minutes.
+ *
+ * Important: cooperative `assertScanBudget` alone is NOT enough — a single
+ * hung/slow `fetchAllKimdisItems` never returns to the loop. We also race the
+ * whole scan body against this deadline and flip a cancel flag so the loser
+ * stops starting new KIMDIS pages / DB upserts.
+ *
+ * Override with SAAS_SCAN_HARD_TIMEOUT_MS (tests / emergency ops).
  */
-const SCAN_HARD_TIMEOUT_MS = 3 * 60 * 1000;
-const STALE_SCAN_MS = 5 * 60 * 1000;
-const inflightScans = new Map<string, Promise<WatchProfile>>();
+const DEFAULT_SCAN_HARD_TIMEOUT_MS = 3 * 60 * 1000;
+/** Orphan RUNNING (no live worker in this process) — reclaim quickly. */
+const ORPHAN_RECLAIM_GRACE_MS = 8_000;
 
-const assertScanBudget = (startedAtMs: number): void => {
-  if (Date.now() - startedAtMs >= SCAN_HARD_TIMEOUT_MS) {
+export const scanHardTimeoutMs = (): number => {
+  const raw = Number(process.env.SAAS_SCAN_HARD_TIMEOUT_MS);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return DEFAULT_SCAN_HARD_TIMEOUT_MS;
+};
+
+const inflightScans = new Map<string, Promise<WatchProfile>>();
+/** Per-profile cancel bits so a timed-out race stops background work ASAP. */
+const scanCancelFlags = new Map<string, { cancelled: boolean }>();
+
+const assertScanBudget = (
+  startedAtMs: number,
+  cancel?: { cancelled: boolean },
+): void => {
+  if (cancel?.cancelled) throw new Error("scan_timeout");
+  if (Date.now() - startedAtMs >= scanHardTimeoutMs()) {
     throw new Error("scan_timeout");
+  }
+};
+
+const raceWithScanTimeout = async <T>(
+  work: Promise<T>,
+  startedAtMs: number,
+  cancel: { cancelled: boolean },
+): Promise<T> => {
+  const remaining = scanHardTimeoutMs() - (Date.now() - startedAtMs);
+  if (remaining <= 0) {
+    cancel.cancelled = true;
+    throw new Error("scan_timeout");
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          cancel.cancelled = true;
+          reject(new Error("scan_timeout"));
+        }, remaining);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 };
 
@@ -242,9 +347,51 @@ const scanStartedAtMs = (profile: WatchProfile): number => {
   return profile.updatedAt.getTime();
 };
 
+/** Persist FAILED only if this runner still owns the RUNNING slot. */
+const failScanIfOwner = async (
+  prisma: PrismaClient,
+  input: {
+    profileId: string;
+    scanToken: string;
+    error: string;
+    matchCount?: number;
+    lastMatchAt?: Date | null;
+    patch?: Record<string, unknown>;
+  },
+): Promise<WatchProfile> => {
+  const current = await prisma.watchProfile.findUnique({
+    where: { id: input.profileId },
+  });
+  if (!current) throw notFound("watch_profile_not_found");
+  const meta = readCustomFilters(current);
+  if (
+    current.scanState !== "RUNNING" ||
+    meta.scanStartedAt !== input.scanToken
+  ) {
+    return current;
+  }
+  const now = new Date();
+  return prisma.watchProfile.update({
+    where: { id: input.profileId },
+    data: {
+      scanState: "FAILED",
+      lastScannedAt: now,
+      ...(input.matchCount != null && input.matchCount > 0
+        ? { matchCount: input.matchCount, lastMatchAt: input.lastMatchAt ?? now }
+        : {}),
+      customFilters: mergeCustomFilters(current, {
+        lastScanError: input.error,
+        scanStartedAt: null,
+        ...(input.patch ?? {}),
+      }),
+    },
+  });
+};
+
 export const reclaimStaleWatchProfileScans = async (
   prisma: PrismaClient,
   organizationId?: string,
+  options?: { forceAll?: boolean },
 ): Promise<number> => {
   const candidates = await prisma.watchProfile.findMany({
     where: {
@@ -255,16 +402,27 @@ export const reclaimStaleWatchProfileScans = async (
 
   let reclaimed = 0;
   const now = Date.now();
+  const hard = scanHardTimeoutMs();
   for (const profile of candidates) {
-    // Never interrupt a scan that is still alive in this process.
-    if (inflightScans.has(profile.id)) continue;
-    if (now - scanStartedAtMs(profile) < STALE_SCAN_MS) continue;
+    const ageMs = now - scanStartedAtMs(profile);
+    const inflight = inflightScans.has(profile.id);
+    // forceAll = boot: every RUNNING row is orphan (empty inflight map).
+    // Orphans: reclaim after a short grace (covers enqueue→RUNNING gap).
+    // Live workers: hard timeout race should win first; reclaim as backstop.
+    const shouldReclaim = options?.forceAll
+      ? !inflight
+      : inflight
+        ? ageMs >= hard
+        : ageMs >= ORPHAN_RECLAIM_GRACE_MS;
+    if (!shouldReclaim) continue;
+    scanCancelFlags.get(profile.id) &&
+      (scanCancelFlags.get(profile.id)!.cancelled = true);
     await prisma.watchProfile.update({
       where: { id: profile.id },
       data: {
         scanState: "FAILED",
         customFilters: mergeCustomFilters(profile, {
-          lastScanError: "scan_interrupted",
+          lastScanError: inflight ? "scan_timeout" : "scan_interrupted",
           scanStartedAt: null,
         }),
       },
@@ -354,18 +512,60 @@ export const createWatchProfile = async (
     }
   }
 
+  await assertAdvancedFiltersAllowed(prisma, {
+    userId: input.userId,
+    organizationId,
+    authority: input.authority,
+    contractType: input.contractType,
+    procedureType: input.procedureType,
+    minBudget: input.minBudget,
+    maxBudget: input.maxBudget,
+    notificationOverride: input.notificationOverride,
+  });
+
   const data = profileDataFromInput(input);
+  if (data.enabled) {
+    await assertCanActivateWatchProfile(prisma, {
+      userId: input.userId,
+      organizationId,
+    });
+  }
+
+  let scanBlock: string | null = null;
+  if (data.enabled) {
+    try {
+      await assertCanRunWatchProfileScan(prisma, {
+        userId: input.userId,
+        organizationId,
+        kind: "manual",
+      });
+    } catch (error) {
+      scanBlock = scanBlockCodeFromError(error);
+      if (!scanBlock) throw error;
+    }
+  }
+
   const profile = await prisma.watchProfile.create({
     data: {
       organizationId,
       ...data,
-      customFilters: { source: input.source ?? "MANUAL" },
+      customFilters: {
+        source: input.source ?? "MANUAL",
+        ...(scanBlock ? { lastScanError: scanBlock } : {}),
+      },
+      scanState: scanBlock ? "FAILED" : data.scanState,
     },
   });
 
-  // The route returns as soon as the profile is PENDING. Every creation source
-  // enqueues this same scan; none of them wait for KIMDIS.
-  enqueueWatchProfileScan(prisma, kimdis, profile.id);
+  // The route returns as soon as the profile is PENDING. Creation enqueues a
+  // scan only when verification + plan quota allow it.
+  if (!scanBlock && profile.enabled) {
+    await consumeScanQuota(prisma, {
+      organizationId,
+      kind: "manual",
+    });
+    enqueueWatchProfileScan(prisma, kimdis, profile.id);
+  }
   return profile;
 };
 
@@ -399,18 +599,63 @@ export const updateWatchProfile = async (
     }
   }
 
+  await assertAdvancedFiltersAllowed(prisma, {
+    userId: input.userId,
+    organizationId,
+    authority: input.authority,
+    contractType: input.contractType,
+    procedureType: input.procedureType,
+    minBudget: input.minBudget,
+    maxBudget: input.maxBudget,
+    notificationOverride: input.notificationOverride,
+  });
+
   const data = profileDataFromInput(input);
+  if (data.enabled) {
+    await assertCanActivateWatchProfile(prisma, {
+      userId: input.userId,
+      organizationId,
+      excludeProfileId: existing.id,
+    });
+  }
   const material = isMaterialCriteriaChange(existing, normalizeWatchProfileCriteria(input));
 
+  let scanBlock: string | null = null;
+  if (material && data.enabled) {
+    try {
+      await assertCanRunWatchProfileScan(prisma, {
+        userId: input.userId,
+        organizationId,
+        kind: "manual",
+      });
+    } catch (error) {
+      scanBlock = scanBlockCodeFromError(error);
+      if (!scanBlock) throw error;
+    }
+  }
+
+  const existingMeta = readCustomFilters(existing);
   const profile = await prisma.watchProfile.update({
     where: { id: existing.id },
     data: {
       ...data,
-      scanState: material ? "PENDING" : existing.scanState,
+      scanState: material
+        ? scanBlock
+          ? "FAILED"
+          : "PENDING"
+        : existing.scanState,
+      customFilters: {
+        ...existingMeta,
+        ...(scanBlock ? { lastScanError: scanBlock } : {}),
+      },
     },
   });
 
-  if (material && profile.enabled) {
+  if (material && profile.enabled && !scanBlock) {
+    await consumeScanQuota(prisma, {
+      organizationId,
+      kind: "manual",
+    });
     enqueueWatchProfileScan(prisma, kimdis, profile.id);
   }
   return profile;
@@ -434,6 +679,13 @@ export const setWatchProfileEnabled = async (
     where: { id: input.profileId, organizationId },
   });
   if (!existing) throw notFound("watch_profile_not_found");
+  if (input.enabled) {
+    await assertCanActivateWatchProfile(prisma, {
+      userId: input.userId,
+      organizationId,
+      excludeProfileId: existing.id,
+    });
+  }
   return prisma.watchProfile.update({
     where: { id: existing.id },
     data: { enabled: input.enabled },
@@ -542,7 +794,7 @@ export const buildScanFilterVariants = (
   return variants;
 };
 
-const MAX_SCAN_PAGES = 20;
+const MAX_SCAN_PAGES = 8;
 
 /**
  * KIMDIS answers 404 for a page past the end, which the HTTP client retries
@@ -552,10 +804,13 @@ const MAX_SCAN_PAGES = 20;
 const fetchAllKimdisItems = async (
   kimdis: KimdisClient,
   filters: KimdisSearchFilters,
+  startedAtMs: number,
+  cancel?: { cancelled: boolean },
 ): Promise<KimdisSearchItem[]> => {
   const items: KimdisSearchItem[] = [];
   let page = 0;
   while (page < MAX_SCAN_PAGES) {
+    assertScanBudget(startedAtMs, cancel);
     const result = await searchKimdis(kimdis, { ...filters, page });
     items.push(...result.items);
     if (result.last || result.items.length === 0) break;
@@ -591,33 +846,55 @@ const ensureNewOpportunityAttention = async (
   const title = (input.tenderTitle?.trim() ||
     input.referenceNumber?.trim() ||
     attentionTitleFor(type, "CONFIRMED")) as string;
-  // Upsert (not find-then-create) so concurrent scans of different profiles
-  // matching the same tender can never produce a duplicate notification.
-  return prisma.organizationAttentionEvent.upsert({
+  const existing = await prisma.organizationAttentionEvent.findUnique({
     where: {
       organizationId_dedupeKey: {
         organizationId: input.organizationId,
         dedupeKey,
       },
     },
-    create: {
-      organizationId: input.organizationId,
-      organizationTenderId: input.organizationTenderId,
-      type,
-      title,
-      dedupeKey,
-      metadata: {
-        profileId: input.profileId,
-        profileName: input.profileName,
-        score: input.score,
-        referenceNumber: input.referenceNumber ?? null,
-        tenderTitle: input.tenderTitle ?? null,
-        recordType: input.recordType ?? null,
-        authority: input.authority ?? null,
-      },
-    },
-    update: {},
   });
+  if (existing) return existing;
+
+  try {
+    const event = await prisma.organizationAttentionEvent.create({
+      data: {
+        organizationId: input.organizationId,
+        organizationTenderId: input.organizationTenderId,
+        type,
+        title,
+        dedupeKey,
+        metadata: {
+          profileId: input.profileId,
+          profileName: input.profileName,
+          score: input.score,
+          referenceNumber: input.referenceNumber ?? null,
+          tenderTitle: input.tenderTitle ?? null,
+          recordType: input.recordType ?? null,
+          authority: input.authority ?? null,
+        },
+      },
+    });
+    await pruneAttentionEventsForOrg(prisma, input.organizationId);
+    queueAttentionEmail(prisma, event.id);
+    return event;
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const raced = await prisma.organizationAttentionEvent.findUnique({
+        where: {
+          organizationId_dedupeKey: {
+            organizationId: input.organizationId,
+            dedupeKey,
+          },
+        },
+      });
+      if (raced) return raced;
+    }
+    throw error;
+  }
 };
 
 const ensureOpportunityDigestAttention = async (
@@ -646,38 +923,41 @@ const ensureOpportunityDigestAttention = async (
     count === 1
       ? `1 ευκαιρία από την αναζήτηση «${input.profileName}»`
       : `${count} ευκαιρίες από την αναζήτηση «${input.profileName}»`;
-  return prisma.organizationAttentionEvent.upsert({
+  const metadata = {
+    profileId: input.profileId,
+    profileName: input.profileName,
+    matchCount: input.matchCount,
+    newCount: input.newCount,
+    topMatches: input.topMatches.slice(0, 5),
+  };
+  const existing = await prisma.organizationAttentionEvent.findUnique({
     where: {
       organizationId_dedupeKey: {
         organizationId: input.organizationId,
         dedupeKey,
       },
     },
-    create: {
+  });
+  if (existing) {
+    return prisma.organizationAttentionEvent.update({
+      where: { id: existing.id },
+      data: { title, metadata },
+    });
+  }
+
+  const event = await prisma.organizationAttentionEvent.create({
+    data: {
       organizationId: input.organizationId,
       organizationTenderId: input.organizationTenderId,
       type,
       title,
       dedupeKey,
-      metadata: {
-        profileId: input.profileId,
-        profileName: input.profileName,
-        matchCount: input.matchCount,
-        newCount: input.newCount,
-        topMatches: input.topMatches.slice(0, 5),
-      },
-    },
-    update: {
-      title,
-      metadata: {
-        profileId: input.profileId,
-        profileName: input.profileName,
-        matchCount: input.matchCount,
-        newCount: input.newCount,
-        topMatches: input.topMatches.slice(0, 5),
-      },
+      metadata,
     },
   });
+  await pruneAttentionEventsForOrg(prisma, input.organizationId);
+  queueAttentionEmail(prisma, event.id);
+  return event;
 };
 
 /** Scoring works on the KIMDIS search shape — reuse the shared adapter. */
@@ -1005,15 +1285,15 @@ export const runWatchProfileScan = async (
     return profile;
   }
 
-  const startedRecently =
-    profile.scanState === "RUNNING" &&
-    Date.now() - scanStartedAtMs(profile) < STALE_SCAN_MS;
-  if (startedRecently) {
-    return profile;
-  }
+  // Dedup is handled by enqueueWatchProfileScan (inflight map). Never early-
+  // return on RUNNING here: enqueue sets inflight before this async body
+  // resumes after its first await, which would falsely skip takeover of a
+  // stale RUNNING row left by a dead process.
 
   const scanStartedAt = new Date().toISOString();
   const scanStartedMs = Date.now();
+  const cancel = { cancelled: false };
+  scanCancelFlags.set(profileId, cancel);
   await prisma.watchProfile.update({
     where: { id: profileId },
     data: {
@@ -1039,13 +1319,13 @@ export const runWatchProfileScan = async (
   const upstreamErrors: string[] = [];
   const previousMatchCount = profile.matchCount ?? 0;
 
-  try {
-    assertScanBudget(scanStartedMs);
+  const runBody = async (): Promise<WatchProfile> => {
+    assertScanBudget(scanStartedMs, cancel);
     const seenAdam = await scanCanonicalTenders(
       prisma,
       profile,
       async (tenderId, match) => {
-        assertScanBudget(scanStartedMs);
+        assertScanBudget(scanStartedMs, cancel);
         matchedTenderIds.add(tenderId);
         const result = await linkOpportunityToProfile(prisma, {
           organizationId: profile.organizationId,
@@ -1067,11 +1347,16 @@ export const runWatchProfileScan = async (
     let variantsAttempted = 0;
     if (kimdis) {
       for (const filters of buildScanFilterVariants(profile)) {
-        assertScanBudget(scanStartedMs);
+        assertScanBudget(scanStartedMs, cancel);
         variantsAttempted += 1;
         let items: KimdisSearchItem[] = [];
         try {
-          items = await fetchAllKimdisItems(kimdis, filters);
+          items = await fetchAllKimdisItems(
+            kimdis,
+            filters,
+            scanStartedMs,
+            cancel,
+          );
         } catch (error) {
           if (error instanceof Error && error.message === "scan_timeout") {
             throw error;
@@ -1082,6 +1367,7 @@ export const runWatchProfileScan = async (
           continue;
         }
         for (const item of items) {
+          assertScanBudget(scanStartedMs, cancel);
           if (seenAdam.has(item.adam)) continue;
           seenAdam.add(item.adam);
           const match = scoreKimdisItemAgainstProfile(criteria, item, {
@@ -1121,6 +1407,7 @@ export const runWatchProfileScan = async (
     let reconciledStale = 0;
     // Never reconcile on partial/failed upstream — that would drop real matches.
     if (!partial) {
+      assertScanBudget(scanStartedMs, cancel);
       reconciledStale = await reconcileStaleProfileMatches(prisma, {
         organizationId: profile.organizationId,
         profileId: profile.id,
@@ -1128,25 +1415,49 @@ export const runWatchProfileScan = async (
       });
     }
 
-    if (isInitialScan && matchSummaries.length > 0) {
-      const topMatches = [...matchSummaries]
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5)
-        .map((row) => ({
-          referenceNumber: row.referenceNumber ?? "—",
-          title: row.tenderTitle,
-          score: row.score,
-        }));
-      await ensureOpportunityDigestAttention(prisma, {
-        organizationId: profile.organizationId,
-        organizationTenderId: matchSummaries[0]!.organizationTenderId,
-        profileId: profile.id,
-        profileName: profile.name,
-        matchCount: matchedTenderIds.size,
-        newCount: newMatchIds.size,
-        scannedAt: now,
-        topMatches,
-      });
+    // Digest attention:
+    // - always on initial scan (both plans — Pro has no per-match emails yet)
+    // - on later scans only for DIGEST plans when there are new matches
+    //   (Pro IMMEDIATE already emailed each NEW_OPPORTUNITY)
+    if (matchSummaries.length > 0) {
+      const emailMode = await orgEmailMode(prisma, profile.organizationId);
+      const wantDigest =
+        isInitialScan ||
+        (newMatchIds.size > 0 && emailMode === "DIGEST");
+      if (wantDigest) {
+        const topMatches = [...matchSummaries]
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5)
+          .map((row) => ({
+            referenceNumber: row.referenceNumber ?? "—",
+            title: row.tenderTitle,
+            score: row.score,
+          }));
+        await ensureOpportunityDigestAttention(prisma, {
+          organizationId: profile.organizationId,
+          organizationTenderId: matchSummaries[0]!.organizationTenderId,
+          profileId: profile.id,
+          profileName: profile.name,
+          matchCount: matchedTenderIds.size,
+          newCount: newMatchIds.size,
+          scannedAt: now,
+          topMatches,
+        });
+      }
+    }
+
+    // Timed-out/reclaimed runners may have already left RUNNING — do not
+    // resurrect a FAILED row as COMPLETED from a late background fetch.
+    const latest = await prisma.watchProfile.findUnique({
+      where: { id: profileId },
+    });
+    if (!latest) throw notFound("watch_profile_not_found");
+    const latestMeta = readCustomFilters(latest);
+    if (
+      latest.scanState !== "RUNNING" ||
+      latestMeta.scanStartedAt !== scanStartedAt
+    ) {
+      return latest;
     }
 
     return prisma.watchProfile.update({
@@ -1157,7 +1468,7 @@ export const runWatchProfileScan = async (
         initialScanCompletedAt: profile.initialScanCompletedAt ?? now,
         lastMatchAt: matchedTenderIds.size > 0 ? now : profile.lastMatchAt,
         matchCount: matchedTenderIds.size,
-        customFilters: mergeCustomFilters(profile, {
+        customFilters: mergeCustomFilters(latest, {
           lastScanError: partial ? (upstreamErrors[0] ?? null) : null,
           lastScanPartial: partial,
           lastScanNewCount: newMatchIds.size,
@@ -1169,28 +1480,31 @@ export const runWatchProfileScan = async (
         }),
       },
     });
+  };
+
+  try {
+    return await raceWithScanTimeout(runBody(), scanStartedMs, cancel);
   } catch (error) {
+    cancel.cancelled = true;
     const message =
       error instanceof Error ? error.message : "watch_profile_scan_failed";
-    const now = new Date();
-    return prisma.watchProfile.update({
-      where: { id: profileId },
-      data: {
-        scanState: "FAILED",
-        lastScannedAt: now,
-        ...(matchedTenderIds.size > 0
-          ? { matchCount: matchedTenderIds.size, lastMatchAt: now }
-          : {}),
-        customFilters: mergeCustomFilters(profile, {
-          lastScanError: message,
-          lastScanPartial: upstreamErrors.length > 0,
-          lastScanNewCount: newMatchIds.size,
-          lastScanPreviousMatchCount: previousMatchCount,
-          lastScanEvaluatedCount: matchedTenderIds.size,
-          scanStartedAt: null,
-        }),
+    return failScanIfOwner(prisma, {
+      profileId,
+      scanToken: scanStartedAt,
+      error: message,
+      matchCount: matchedTenderIds.size,
+      lastMatchAt: matchedTenderIds.size > 0 ? new Date() : null,
+      patch: {
+        lastScanPartial: upstreamErrors.length > 0,
+        lastScanNewCount: newMatchIds.size,
+        lastScanPreviousMatchCount: previousMatchCount,
+        lastScanEvaluatedCount: matchedTenderIds.size,
       },
     });
+  } finally {
+    if (scanCancelFlags.get(profileId) === cancel) {
+      scanCancelFlags.delete(profileId);
+    }
   }
 };
 
@@ -1199,9 +1513,16 @@ export const enqueueWatchProfileScan = (
   prisma: PrismaClient,
   kimdis: KimdisClient | undefined,
   profileId: string,
+  options?: { force?: boolean },
 ): Promise<WatchProfile> => {
-  const existing = inflightScans.get(profileId);
-  if (existing) return existing;
+  if (!options?.force) {
+    const existing = inflightScans.get(profileId);
+    if (existing) return existing;
+  } else {
+    // Drop the join handle so a new owner token can start. The old promise may
+    // still finish in the background; ownership guards discard its writes.
+    inflightScans.delete(profileId);
+  }
   const job = runWatchProfileScan(prisma, kimdis, profileId).finally(() => {
     if (inflightScans.get(profileId) === job) inflightScans.delete(profileId);
   });
@@ -1265,11 +1586,33 @@ export const triggerWatchProfileScanForRoute = async (
     userId: string;
     organizationId: string | null;
     profileId: string;
+    force?: boolean;
   },
 ) => {
   const profile = await getWatchProfile(prisma, input);
-  if (profile.enabled) {
-    enqueueWatchProfileScan(prisma, kimdis, profile.id);
+  if (!profile.enabled) {
+    return profile;
   }
+
+  const ageMs = Date.now() - scanStartedAtMs(profile);
+  const stuckPastBudget =
+    profile.scanState === "RUNNING" && ageMs >= scanHardTimeoutMs();
+  const force = Boolean(input.force || stuckPastBudget);
+
+  // Live short-running scan: join without burning another quota unit.
+  if (!force && inflightScans.has(profile.id)) {
+    return profile;
+  }
+
+  await assertCanRunWatchProfileScan(prisma, {
+    userId: input.userId,
+    organizationId: profile.organizationId,
+    kind: "manual",
+  });
+  await consumeScanQuota(prisma, {
+    organizationId: profile.organizationId,
+    kind: "manual",
+  });
+  enqueueWatchProfileScan(prisma, kimdis, profile.id, { force });
   return prisma.watchProfile.findUniqueOrThrow({ where: { id: profile.id } });
 };

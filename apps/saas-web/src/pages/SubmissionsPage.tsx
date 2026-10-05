@@ -70,7 +70,8 @@ export const SubmissionsPage = () => {
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Υποβολές</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Καταγεγραμμένες τυπικές υποβολές. Η παρακολούθηση αποτελέσματος συνεχίζεται.
+          Καταγεγραμμένες τυπικές υποβολές που δηλώσατε εσείς — όχι αυτόματη αποστολή από
+          την εφαρμογή. Η παρακολούθηση αποτελέσματος συνεχίζεται.
         </p>
       </div>
       {rows.length === 0 ? (

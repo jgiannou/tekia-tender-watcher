@@ -83,7 +83,8 @@ export const NotificationsSettingsPage = () => {
       <CardHeader>
         <CardTitle>Ειδοποιήσεις</CardTitle>
         <CardDescription>
-          Ειδοποιήσεις μέσω email. Το εσωτερικό Slack της TEKIA δεν εμφανίζεται εδώ.
+          Email όταν υπάρχουν νέες ευκαιρίες ή εξελίξεις. Basic: συγκεντρωτικά
+          (digest). Pro: άμεσα ανά αντιστοίχιση.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">

@@ -17,6 +17,8 @@ const saasEnvSchema = z.object({
         .map((origin) => origin.trim())
         .filter(Boolean);
     }),
+  /** Public saas-web origin for auth email redirects (password reset callback). */
+  SAAS_APP_URL: z.string().url().optional().default("http://127.0.0.1:5174"),
   /** Server-only GEMI OpenData key — never sent to saas-web. */
   GEMI_API_KEY: z.string().optional().default(""),
   GEMI_API_BASE_URL: z

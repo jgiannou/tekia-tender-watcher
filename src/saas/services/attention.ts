@@ -6,6 +6,9 @@ import type {
 import { requireOrgMembership } from "../auth/org-context.js";
 import { notFound } from "../errors.js";
 
+/** Soft cap per org — keeps the attention inbox and DB footprint bounded. */
+export const MAX_ATTENTION_EVENTS_PER_ORG = 25;
+
 export const attentionDedupeKey = (
   type: AttentionEventType,
   sourceTenderId: string,
@@ -48,17 +51,42 @@ export const attentionTitleFor = (
   }
 };
 
+/**
+ * Keep only the newest N attention events for an org.
+ * Cascades delete NotificationDelivery rows via Prisma FK.
+ */
+export const pruneAttentionEventsForOrg = async (
+  prisma: PrismaClient,
+  organizationId: string,
+  keep = MAX_ATTENTION_EVENTS_PER_ORG,
+): Promise<number> => {
+  const overflow = await prisma.organizationAttentionEvent.findMany({
+    where: { organizationId },
+    orderBy: { createdAt: "desc" },
+    skip: keep,
+    select: { id: true },
+  });
+  if (overflow.length === 0) return 0;
+  const result = await prisma.organizationAttentionEvent.deleteMany({
+    where: { id: { in: overflow.map((row) => row.id) } },
+  });
+  return result.count;
+};
+
 export const listAttentionEvents = async (
   prisma: PrismaClient,
   input: { userId: string; organizationId: string; unreadOnly?: boolean },
 ) => {
   await requireOrgMembership(prisma, input.userId, input.organizationId);
+  // Opportunistic prune so older orgs shrink even without new writes.
+  await pruneAttentionEventsForOrg(prisma, input.organizationId);
   return prisma.organizationAttentionEvent.findMany({
     where: {
       organizationId: input.organizationId,
       ...(input.unreadOnly ? { readAt: null } : {}),
     },
     orderBy: { createdAt: "desc" },
+    take: MAX_ATTENTION_EVENTS_PER_ORG,
     include: {
       relatedTender: true,
       organizationTender: { include: { tender: true } },

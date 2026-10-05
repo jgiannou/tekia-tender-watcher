@@ -20,6 +20,10 @@ const sections = [
     title: "Παρακολούθηση",
     items: [{ to: "/app/settings/notifications", label: "Ειδοποιήσεις" }],
   },
+  {
+    title: "Χρέωση",
+    items: [{ to: "/app/subscription", label: "Συνδρομή / πλάνα" }],
+  },
 ] as const;
 
 export const SettingsLayout = () => (

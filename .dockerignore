@@ -1,11 +1,14 @@
 node_modules
+**/node_modules
 dist
+**/dist
 data
 .git
 .env
 .env.*
 !.env.example
 *.md
+!docs/ops-setup.md
 tests
 coverage
 .vscode
@@ -14,3 +17,7 @@ coverage
 *.db
 *.db-shm
 *.db-wal
+apps/desktop
+apps/dashboard
+apps/desktop/release
+**/*.dmg

@@ -2,6 +2,12 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import type { PrismaClient } from "@prisma/client";
 import type { SaasConfig } from "../config.js";
+import {
+  isEmailEnabled,
+  resetPasswordEmailCopy,
+  sendMail,
+  verificationEmailCopy,
+} from "../mail/mail.js";
 
 export const createSaasAuth = (prisma: PrismaClient, config: SaasConfig) =>
   betterAuth({
@@ -14,6 +20,57 @@ export const createSaasAuth = (prisma: PrismaClient, config: SaasConfig) =>
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 8,
+      // Login stays open while unverified — product gates periodic scans instead.
+      requireEmailVerification: false,
+      sendResetPassword: async ({ user, url }) => {
+        const copy = resetPasswordEmailCopy({
+          name: user.name || "",
+          resetUrl: url,
+        });
+        const sent = await sendMail({
+          to: user.email,
+          subject: copy.subject,
+          html: copy.html,
+          text: copy.text,
+        });
+        if (!sent && process.env.NODE_ENV !== "production") {
+          console.info("[email] reset password URL (dev)", { userId: user.id, url });
+        }
+      },
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user, url }) => {
+        const copy = verificationEmailCopy({
+          name: user.name || "",
+          verifyUrl: url,
+        });
+        const sent = await sendMail({
+          to: user.email,
+          subject: copy.subject,
+          html: copy.html,
+          text: copy.text,
+        });
+        if (!sent && process.env.NODE_ENV !== "production") {
+          console.info("[email] verification URL (dev)", { userId: user.id, url });
+        }
+      },
+    },
+    databaseHooks: {
+      user: {
+        create: {
+          after: async (user) => {
+            // Tests / local without SMTP: auto-verify so scan flows stay usable.
+            if (!isEmailEnabled()) {
+              await prisma.user.update({
+                where: { id: user.id },
+                data: { emailVerified: true },
+              });
+            }
+          },
+        },
+      },
     },
     session: {
       expiresIn: 60 * 60 * 24 * 14,

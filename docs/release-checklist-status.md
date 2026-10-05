@@ -57,10 +57,10 @@
 
 | Σημείο | Κατάσταση | Στοιχεία |
 |---|---|---|
-| Brevo/SMTP αποστολή ARC SaaS | **Λείπει** | `monitor-followed-threads.ts`: «No Slack. No Brevo». Schema `NotificationDelivery` υπάρχει, δεν υπάρχει SaaS sender path |
-| User prefs immediate vs digest χωρίς spam | **Μερικό** | Settings `emailEnabled` + thresholds UI · χωρίς πραγματική παράδοση |
-| Retry failed deliveries + error log | **Λείπει** | Μοντέλο status υπάρχει · worker αποστολής όχι |
-| Auth verify-email / password reset email | **Λείπει** | `better-auth` email+password enabled, χωρίς `sendResetPassword` / email verification hooks |
+| Brevo/SMTP αποστολή ARC SaaS | **Μερικό** | `src/saas/mail/mail.ts` + `EMAIL_ENABLED` · verify/reset wired · opportunity digests ακόμα in-app only |
+| User prefs immediate vs digest χωρίς spam | **Μερικό** | Settings `emailEnabled` + thresholds UI · χωρίς πραγματική παράδοση digests |
+| Retry failed deliveries + error log | **Λείπει** | Μοντέλο status υπάρχει · digest worker αποστολής όχι |
+| Auth verify-email / password reset email | **Υλοποιημένο** | better-auth hooks + Forgot/Reset pages + EmailVerificationBanner · unverified = manual ΚΗΜΔΗΣ only |
 
 ---
 
@@ -70,7 +70,7 @@
 |---|---|---|
 | DISCOVER → FOLLOW → MONITOR → PREPARE → SUBMIT → MONITOR RESULT | **Μερικό** | Pipeline + UI actions υπάρχουν · end-to-end με πραγματικά AWRD/SYMV **όχι** browser-verified |
 | REQ ↔ PROC association | **Μερικό** | `relatedActLink` + monitor job · χρειάζεται real fixture pass |
-| Copy: καταγραφή ≠ αυτόματη αποστολή | **Υλοποιημένο** | Tender detail: «Η καταγραφή δεν στέλνει email στον φορέα…» / outreach ίδιο μήνυμα |
+| Copy: καταγραφή ≠ αυτόματη αποστολή | **Υλοποιημένο** | Outreach + submission dialogs + Submissions list · ρητά «δεν στέλνει/υποβάλλει αυτόματα» |
 
 ---
 
@@ -92,8 +92,11 @@
 | Απομόνωση org δεδομένων | **Μερικό** | `requireOrgMembership` σε SaaS routes · χρειάζεται adversarial QA cross-org |
 | Ρόλοι/δικαιώματα χρηστών | **Μερικό** | Membership roles στο schema · λεπτομερές RBAC UI περιορισμένο |
 | Scans μετά restart | **Μερικό** | Reclaim orphan RUNNING · **δεν** υπάρχει persistent job queue· pending δεν ξαναρχίζουν μόνα τους μετά restart (χρήστης/retry) |
-| Backup/restore, migrations, error logging | **Μερικό** | Prisma migrations υπάρχουν · ops runbook/backup **όχι** τεκμηριωμένα ως production-ready |
-| Fresh signup + multi-org QA | **Λείπει** | Release gate · δεν επαληθεύτηκε μετά τα τελευταία auth/org fixes |
+| Backup/restore, migrations, error logging | **Μερικό** | Prisma migrations υπάρχουν · checklist στο [prod-gates.md](./prod-gates.md) · restore ακόμα unverified σε staging |
+| Fresh signup + multi-org QA | **Μερικό** | Signup → trial subscription · isolation tests υπάρχουν · adversarial browser QA ακόμα ανοιχτό |
+| Verification + scan gating | **Υλοποιημένο** | Unverified/trial/paid quotas · cron periodic waves |
+| Commercial plans Basic/Pro + seats | **Μερικό** | Catalog locked (`docs/subscription-plans.md`) · Pro feature matrix provisional (spec truncated) · Stripe UI όχι |
+| In-app attention retention | **Υλοποιημένο** | Max 25 events/org · prune on write + list |
 
 ---
 
@@ -102,8 +105,9 @@
 1. **Ανοιχτά bugs / επανέλεγχος** — ascending sort date-range, reconcile matches, construction recall  
 2. **Timeouts/retry** — ✅ hard 3′ + orphan 5′ + UI Επανάληψη  
 3. **Πλήρες workflow + επίσημες RELATED ειδοποιήσεις** — πραγματικά fixtures  
-4. **Email** — Brevo wiring ή ρητή απόφαση «in-app only για v1»  
+4. **Email** — ✅ verify/reset Brevo · digests αργότερα  
 5. **PDF human verify + vault versions**  
-6. **Production gates** — multi-org, signup, backup/restart playbook  
+6. **Production gates** — [prod-gates.md](./prod-gates.md) · staging restore + adversarial multi-org  
+7. **Plans/Stripe** — placeholders μόνο · UI αργότερα (€4.99 / €10)
 
 Πηγή ιστορικού QA: [ARC-Tenders-ReQA-083982a.md](/Users/johngiannousis/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an/outputs/ARC-Tenders-ReQA-083982a.md)

@@ -269,15 +269,18 @@ describe("SaaS request → outreach → submission workflow", () => {
 
   it("scan finds opportunities from canonical tenders without KIMDIS", async () => {
     const { user, organization } = await seedUserOrg("scan@example.com", "Scan Co");
+    const publishedAt = new Date();
     await upsertCanonicalTender(prisma, {
       referenceNumber: "26REQ100004",
       recordType: "REQ",
       title: "Ανάπτυξη ιστοσελίδας και portal",
+      submissionDate: publishedAt,
     });
     await upsertCanonicalTender(prisma, {
       referenceNumber: "26REQ100005",
       recordType: "REQ",
       title: "Προμήθεια καυσίμων",
+      submissionDate: publishedAt,
     });
 
     const profile = await prisma.watchProfile.create({

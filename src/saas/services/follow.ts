@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { requireOrgMembership } from "../auth/org-context.js";
 import { notFound } from "../errors.js";
+import { assertCanFollowTender } from "./entitlements.js";
 
 export const followTender = async (
   prisma: PrismaClient,
@@ -16,6 +17,12 @@ export const followTender = async (
     where: { id: input.tenderId },
   });
   if (!tender) throw notFound("tender_not_found");
+
+  await assertCanFollowTender(prisma, {
+    userId: input.userId,
+    organizationId: input.organizationId,
+    tenderId: input.tenderId,
+  });
 
   const now = new Date();
   return prisma.$transaction(async (tx) => {

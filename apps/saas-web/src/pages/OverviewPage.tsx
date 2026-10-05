@@ -7,6 +7,7 @@ import { IconAction } from "@/components/IconAction";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
+import { ScoreBadge } from "@/components/ScoreBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -352,7 +353,7 @@ export const OverviewPage = () => {
                         >
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge>{opportunity.tender.recordType}</Badge>
-                            <Badge variant="secondary">{topScore}%</Badge>
+                            <ScoreBadge score={topScore} />
                             <span className="text-xs text-muted-foreground">
                               {profileName}
                             </span>

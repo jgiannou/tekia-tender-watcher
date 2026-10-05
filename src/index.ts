@@ -65,9 +65,26 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
   try {
     const { getPrisma } = await import("./db/prisma.js");
     const { createSaasApp } = await import("./saas/app.js");
+    const { runPeriodicWatchProfileScans } = await import(
+      "./saas/jobs/periodic-watch-scans.js"
+    );
     const { app: saasApp } = createSaasApp({ prisma: getPrisma(), kimdis });
     app.route("/", saasApp);
     console.log("saas API: enabled (/api/auth/* , /api/saas/*)");
+
+    // ~6 waves/day; trial/paid quotas inside runPeriodicWatchProfileScans.
+    const periodicExpression = "15 */4 * * *";
+    if (cron.validate(periodicExpression)) {
+      cron.schedule(periodicExpression, () => {
+        void runPeriodicWatchProfileScans(getPrisma(), kimdis).catch((error) => {
+          console.error(
+            "periodic watch scan error:",
+            error instanceof Error ? error.message : error,
+          );
+        });
+      });
+      console.log(`saas periodic scans: cron ${periodicExpression}`);
+    }
   } catch (error) {
     console.error(
       "saas API: failed to start (internal watcher continues):",
@@ -131,12 +148,25 @@ setTimeout(() => {
 
 const shutdown = (signal: string) => {
   console.log(`shutting down on ${signal}`);
-  scheduled.stop();
-  server.close(() => {
-    db.close();
+  try {
+    scheduled.stop();
+  } catch {
+    /* ignore */
+  }
+  try {
+    server.close(() => {
+      try {
+        db.close();
+      } catch {
+        /* ignore */
+      }
+      process.exit(0);
+    });
+  } catch {
     process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 5_000).unref();
+  }
+  // tsx watch must be able to recycle this process; do not wait on hung fetches.
+  setTimeout(() => process.exit(1), 1_500).unref();
 };
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));

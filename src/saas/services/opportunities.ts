@@ -16,16 +16,26 @@ export const listOpportunities = async (
     where: {
       organizationId,
       pipelineStage: { not: "DISMISSED" },
-      NOT: {
-        OR: [
-          { relevanceStatus: "EXPIRED" },
-          { ignoreReason: { in: ["user_marked_expired", "user_dismissed"] } },
-        ],
-      },
-      OR: [
-        { score: { not: null } },
-        { watchProfileId: { not: null } },
-        { matchMeta: { not: Prisma.DbNull } },
+      // SQL NULL trap: `NOT (ignoreReason IN (...))` excludes null rows.
+      AND: [
+        { NOT: { relevanceStatus: "EXPIRED" } },
+        {
+          OR: [
+            { ignoreReason: null },
+            {
+              ignoreReason: {
+                notIn: ["user_marked_expired", "user_dismissed"],
+              },
+            },
+          ],
+        },
+        {
+          OR: [
+            { score: { not: null } },
+            { watchProfileId: { not: null } },
+            { matchMeta: { not: Prisma.DbNull } },
+          ],
+        },
       ],
     },
     include: { tender: true, watchProfile: true },

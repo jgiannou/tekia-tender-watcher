@@ -55,7 +55,9 @@ export const SignupPage = () => {
       if (organization?.id) {
         await saasApi.setActiveOrganization(organization.id).catch(() => null);
       }
-      toast.success("Ο λογαριασμός δημιουργήθηκε");
+      toast.success(
+        "Ο λογαριασμός δημιουργήθηκε. Ελέγξτε το email σας για επιβεβαίωση.",
+      );
       navigate("/app", { replace: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Αποτυχία εγγραφής");

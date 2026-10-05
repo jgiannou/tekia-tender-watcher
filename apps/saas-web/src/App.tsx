@@ -4,6 +4,8 @@ import { RequireAuth } from "@/auth/RequireAuth";
 import { AppShell } from "@/components/layout/AppShell";
 import { LoginPage } from "@/pages/LoginPage";
 import { SignupPage } from "@/pages/SignupPage";
+import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { SearchPage } from "@/pages/SearchPage";
 import { TenderDetailPage } from "@/pages/TenderDetailPage";
@@ -20,6 +22,7 @@ import { AppearanceSettingsPage } from "@/pages/settings/AppearanceSettingsPage"
 import { CompanySettingsPage } from "@/pages/settings/CompanySettingsPage";
 import { ActivitiesSettingsPage } from "@/pages/settings/ActivitiesSettingsPage";
 import { NotificationsSettingsPage } from "@/pages/settings/NotificationsSettingsPage";
+import { SubscriptionPage } from "@/pages/SubscriptionPage";
 
 export const App = () => (
   <SessionProvider>
@@ -27,6 +30,8 @@ export const App = () => (
       <Route path="/" element={<Navigate to="/app" replace />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route element={<RequireAuth />}>
         <Route path="/app" element={<AppShell />}>
           <Route index element={<OverviewPage />} />
@@ -38,6 +43,7 @@ export const App = () => (
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="saved-searches" element={<SavedSearchesPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="subscription" element={<SubscriptionPage />} />
           <Route path="setup" element={<SetupPage />} />
           <Route path="settings" element={<SettingsLayout />}>
             <Route index element={<Navigate to="profile" replace />} />

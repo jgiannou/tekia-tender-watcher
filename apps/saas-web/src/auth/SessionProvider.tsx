@@ -107,6 +107,7 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
               name: session.user.name ?? "",
               email: session.user.email ?? "",
               image: session.user.image ?? null,
+              emailVerified: Boolean(session.user.emailVerified),
             }
           : null),
       theme: me?.theme ?? null,

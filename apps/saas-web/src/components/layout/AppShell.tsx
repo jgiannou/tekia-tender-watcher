@@ -15,8 +15,10 @@ import {
   Search,
   Settings,
   Send,
+  CreditCard,
 } from "lucide-react";
 import { useSessionContext } from "@/auth/SessionProvider";
+import { EmailVerificationBanner } from "@/components/auth/EmailVerificationBanner";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -70,6 +72,12 @@ const navSections: NavSection[] = [
       { to: "/app/saved-searches", label: "Αποθηκευμένες Αναζητήσεις", icon: Bookmark },
     ],
   },
+  {
+    title: "Λογαριασμός",
+    items: [
+      { to: "/app/subscription", label: "Συνδρομή", icon: CreditCard },
+    ],
+  },
 ];
 
 const titleForPath = (pathname: string): string => {
@@ -83,6 +91,7 @@ const titleForPath = (pathname: string): string => {
   if (pathname.startsWith("/app/documents")) return "Έγγραφα";
   if (pathname.startsWith("/app/saved-searches")) return "Αποθηκευμένες Αναζητήσεις";
   if (pathname.startsWith("/app/notifications")) return "Ειδοποιήσεις";
+  if (pathname.startsWith("/app/subscription")) return "Συνδρομή";
   return "Επισκόπηση";
 };
 
@@ -264,6 +273,7 @@ export const AppShell = () => {
         </header>
 
         <main className="flex-1 px-6 py-6">
+          <EmailVerificationBanner />
           <Outlet />
         </main>
       </div>

@@ -56,6 +56,7 @@ import {
 } from "./services/org-settings.js";
 import { getUserPreference, setUserTheme } from "./services/user-preferences.js";
 import { getEntitlementsView } from "./services/entitlements.js";
+import { registerBillingRoutes } from "./billing/routes.js";
 import { listOpportunities } from "./services/opportunities.js";
 import {
   createWatchProfile,
@@ -112,7 +113,9 @@ export const createSaasApp = (deps: SaasAppDeps) => {
   const app = new Hono<{ Variables: SaasVariables }>();
 
   // Orphan RUNNING scans survive process restarts — reclaim immediately on boot.
-  void reclaimStaleWatchProfileScans(deps.prisma).catch(() => null);
+  void reclaimStaleWatchProfileScans(deps.prisma, undefined, {
+    forceAll: true,
+  }).catch(() => null);
 
   app.use(
     "*",
@@ -160,13 +163,26 @@ export const createSaasApp = (deps: SaasAppDeps) => {
   }): string | null =>
     c.req.header("X-Organization-Id") ?? c.get("activeOrganizationId");
 
+  registerBillingRoutes({
+    app,
+    prisma: deps.prisma,
+    requireSession: requireSession as never,
+    resolveOrgId,
+  });
+
   app.get("/api/saas/me", requireSession, async (c) => {
     const userId = c.get("userId");
     const [memberships, user, preference] = await Promise.all([
       listUserOrganizations(deps.prisma, userId),
       deps.prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, name: true, email: true, image: true },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+          emailVerified: true,
+        },
       }),
       getUserPreference(deps.prisma, userId),
     ]);
@@ -178,10 +194,12 @@ export const createSaasApp = (deps: SaasAppDeps) => {
             name: user.name,
             email: user.email,
             image: user.image,
+            emailVerified: user.emailVerified,
           }
         : null,
       theme: preference.theme,
       gemiConfigured: companyRegistry.isConfigured(),
+      emailEnabled: String(process.env.EMAIL_ENABLED || "").toLowerCase() === "true",
       activeOrganizationId: c.get("activeOrganizationId"),
       organizations: memberships.map((m) => ({
         id: m.organization.id,
@@ -905,6 +923,8 @@ export const createSaasApp = (deps: SaasAppDeps) => {
   });
 
   app.post("/api/saas/watch-profiles/:id/scan", requireSession, async (c) => {
+    const force =
+      c.req.query("force") === "1" || c.req.query("force") === "true";
     const profile = await triggerWatchProfileScanForRoute(
       deps.prisma,
       deps.kimdis,
@@ -912,6 +932,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
         userId: c.get("userId"),
         organizationId: resolveOrgId(c),
         profileId: c.req.param("id"),
+        force,
       },
     );
     return c.json({ profile: toWatchProfileDto(profile) });

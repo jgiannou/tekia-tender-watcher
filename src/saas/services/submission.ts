@@ -1,7 +1,7 @@
 import type { AttentionEventType, PrismaClient } from "@prisma/client";
 import { requireOrgMembership } from "../auth/org-context.js";
 import { notFound } from "../errors.js";
-import { attentionTitleFor } from "./attention.js";
+import { attentionTitleFor, pruneAttentionEventsForOrg } from "./attention.js";
 
 type SubmissionDocumentRef = {
   documentId: string;
@@ -75,7 +75,7 @@ export const recordFormalSubmission = async (
   const submittedAt = input.submittedAt ?? new Date();
   const now = new Date();
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const submission = await tx.submission.create({
       data: {
         organizationId: input.organizationId,
@@ -168,6 +168,9 @@ export const recordFormalSubmission = async (
 
     return { submission, organizationTender };
   });
+
+  await pruneAttentionEventsForOrg(prisma, input.organizationId);
+  return result;
 };
 
 export const listFormalSubmissions = async (

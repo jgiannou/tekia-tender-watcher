@@ -69,7 +69,15 @@ export const LoginPage = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Κωδικός</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="password">Κωδικός</Label>
+                <Link
+                  className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+                  to="/forgot-password"
+                >
+                  Ξεχάσατε τον κωδικό;
+                </Link>
+              </div>
               <PasswordInput
                 id="password"
                 autoComplete="current-password"

@@ -1,6 +1,8 @@
 import type { MemberRole, PrismaClient } from "@prisma/client";
 import { badRequest, forbidden, notFound } from "../errors.js";
 import { requireOrgMembership } from "../auth/org-context.js";
+import { PLAN_KEYS, TRIAL_DURATION_MS } from "../plans/catalog.js";
+import { assertCanAddOrganizationMember } from "./entitlements.js";
 
 const slugify = (name: string): string =>
   name
@@ -56,6 +58,15 @@ export const createOrganization = async (
         onboardingStatus: "NOT_STARTED",
       },
     });
+    await tx.subscription.create({
+      data: {
+        organizationId: organization.id,
+        status: "TRIALING",
+        planKey: PLAN_KEYS.trial,
+        trialEndsAt: new Date(Date.now() + TRIAL_DURATION_MS),
+        extraSeats: 0,
+      },
+    });
     return organization;
   });
 };
@@ -98,6 +109,21 @@ export const addOrganizationMember = async (
   }
   const user = await prisma.user.findUnique({ where: { id: input.userId } });
   if (!user) throw notFound("user_not_found");
+
+  const existing = await prisma.organizationMember.findUnique({
+    where: {
+      organizationId_userId: {
+        organizationId: input.organizationId,
+        userId: input.userId,
+      },
+    },
+  });
+  if (!existing) {
+    await assertCanAddOrganizationMember(prisma, {
+      userId: input.actorUserId,
+      organizationId: input.organizationId,
+    });
+  }
 
   return prisma.organizationMember.upsert({
     where: {

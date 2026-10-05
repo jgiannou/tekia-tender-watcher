@@ -1,7 +1,7 @@
 import type { AttentionEventType, PrismaClient } from "@prisma/client";
 import { requireOrgMembership } from "../auth/org-context.js";
 import { notFound } from "../errors.js";
-import { attentionTitleFor } from "./attention.js";
+import { attentionTitleFor, pruneAttentionEventsForOrg } from "./attention.js";
 
 export type OutreachDocumentRef = {
   documentId: string;
@@ -172,5 +172,6 @@ export const recordOutreachSent = async (
     return orgTender;
   });
 
+  await pruneAttentionEventsForOrg(prisma, input.organizationId);
   return updated;
 };
