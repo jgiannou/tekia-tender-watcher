@@ -33,9 +33,21 @@ export const createAdminRoutes = (deps: {
   const app = new Hono<AdminEnv>();
 
   const requireAdmin = createMiddleware(async (c, next) => {
-    const token = c.req.header("X-Admin-Token");
+    const headerToken = c.req.header("X-Admin-Token")?.trim();
+    const auth = c.req.header("Authorization")?.trim() || "";
+    const bearer =
+      auth.toLowerCase().startsWith("bearer ")
+        ? auth.slice("bearer ".length).trim()
+        : "";
+    const token = headerToken || bearer;
     if (!token || token !== deps.adminToken) {
-      return c.json({ error: "unauthorized" }, 401);
+      return c.json(
+        {
+          error: "unauthorized",
+          hint: "Use Coolify ADMIN_TOKEN as X-Admin-Token or Authorization: Bearer <token>",
+        },
+        401,
+      );
     }
     await next();
   });
@@ -280,6 +292,161 @@ export const createAdminRoutes = (deps: {
 
   app.post("/admin/saas/grant-plan", grantPlanHandler);
   app.post("/admin/grant-plan", grantPlanHandler);
+
+  app.get("/admin/ops/stats", async (c) => {
+    try {
+      const { getPrisma } = await import("../db/prisma.js");
+      const { getLogStats } = await import("../saas/ops/logger.js");
+      const prisma = getPrisma();
+      const [users, organizations, memberships, subs] = await Promise.all([
+        prisma.user.count(),
+        prisma.organization.count(),
+        prisma.organizationMember.count(),
+        prisma.subscription.findMany({
+          select: { planKey: true, status: true },
+        }),
+      ]);
+
+      const byPlan = { trial: 0, basic: 0, pro: 0 };
+      const byBillingStatus = {
+        trialing: 0,
+        active: 0,
+        past_due: 0,
+        canceled: 0,
+        incomplete: 0,
+      };
+      for (const sub of subs) {
+        if (sub.planKey in byPlan) {
+          byPlan[sub.planKey as keyof typeof byPlan] += 1;
+        }
+        const statusKey = sub.status.toLowerCase() as keyof typeof byBillingStatus;
+        if (statusKey in byBillingStatus) {
+          byBillingStatus[statusKey] += 1;
+        }
+      }
+      const payingOrgs = subs.filter(
+        (s) =>
+          (s.planKey === "basic" || s.planKey === "pro") &&
+          (s.status === "ACTIVE" || s.status === "PAST_DUE"),
+      ).length;
+
+      return c.json({
+        data: {
+          generatedAt: new Date().toISOString(),
+          users,
+          organizations,
+          memberships,
+          byPlan,
+          byBillingStatus,
+          payingOrgs,
+          logs: getLogStats(),
+        },
+      });
+    } catch (error) {
+      return c.json(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        500,
+      );
+    }
+  });
+
+  app.get("/admin/ops/logs", async (c) => {
+    const { getRecentLogs, getLogStats } = await import(
+      "../saas/ops/logger.js"
+    );
+    const levelRaw = String(c.req.query("level") || "error_warn");
+    const level =
+      levelRaw === "all"
+        ? undefined
+        : (levelRaw as "info" | "warn" | "error" | "debug" | "error_warn");
+    const limit = Number(c.req.query("limit") || 100);
+    const q = c.req.query("q") || undefined;
+    return c.json({
+      data: getRecentLogs({ level, limit, q }),
+      meta: {
+        note: "In-memory ring buffer for this API process only (clears on restart).",
+        ...getLogStats(),
+      },
+    });
+  });
+
+  app.get("/admin/ops/requests", async (c) => {
+    const { getRecentRequests, getLogStats } = await import(
+      "../saas/ops/logger.js"
+    );
+    const limit = Number(c.req.query("limit") || 100);
+    const errorsOnly = c.req.query("errors") === "1";
+    return c.json({
+      data: getRecentRequests({
+        limit,
+        minStatus: errorsOnly ? 400 : undefined,
+      }),
+      meta: {
+        note: "In-memory ring buffer for this API process only (clears on restart).",
+        ...getLogStats(),
+      },
+    });
+  });
+
+  app.get("/admin/ops/health", async (c) => {
+    const { getLogStats } = await import("../saas/ops/logger.js");
+    let dbOk = false;
+    try {
+      const { getPrisma } = await import("../db/prisma.js");
+      await getPrisma().$queryRaw`SELECT 1`;
+      dbOk = true;
+    } catch {
+      dbOk = false;
+    }
+    return c.json({
+      data: {
+        ok: dbOk,
+        service: "arc-tenders-api",
+        db: dbOk,
+        slackConfigured: Boolean(
+          String(process.env.SLACK_WEBHOOK_URL || "").trim(),
+        ),
+        generatedAt: new Date().toISOString(),
+        ...getLogStats(),
+      },
+    });
+  });
+
+  app.post("/admin/ops/stats/notify", async (c) => {
+    try {
+      const { getPrisma } = await import("../db/prisma.js");
+      const { getLogStats, opsLogger } = await import("../saas/ops/logger.js");
+      const prisma = getPrisma();
+      const [users, organizations, paying] = await Promise.all([
+        prisma.user.count(),
+        prisma.organization.count(),
+        prisma.subscription.count({
+          where: {
+            planKey: { in: ["basic", "pro"] },
+            status: { in: ["ACTIVE", "PAST_DUE"] },
+          },
+        }),
+      ]);
+      const logs = getLogStats();
+      const text = [
+        `[arc-tenders] users=${users} orgs=${organizations} paying=${paying}`,
+        `errors=${logs.errorsInBuffer} warns=${logs.warnsInBuffer} 5xx=${logs.http5xxInBuffer}`,
+      ].join(" · ");
+      const sent = await deps.slack.sendText(text);
+      opsLogger.info("ops_stats_notify", { sent, users, organizations, paying });
+      return c.json({ ok: true, slackSent: sent, text });
+    } catch (error) {
+      return c.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        500,
+      );
+    }
+  });
 
   return app;
 };

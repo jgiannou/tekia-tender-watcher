@@ -57,6 +57,35 @@ console.log(
 console.log(`bootstrap send alerts: ${config.BOOTSTRAP_SEND_ALERTS}`);
 
 const app = new Hono();
+
+app.use("*", async (c, next) => {
+  const started = Date.now();
+  const requestId = crypto.randomUUID();
+  c.header("X-Request-Id", requestId);
+  await next();
+  try {
+    const { recordRequestLog, opsLogger } = await import("./saas/ops/logger.js");
+    const status = c.res.status;
+    const path = c.req.path;
+    const method = c.req.method;
+    const ms = Date.now() - started;
+    recordRequestLog({
+      requestId,
+      method,
+      path,
+      status,
+      ms,
+    });
+    if (status >= 500) {
+      opsLogger.error("http_5xx", { requestId, method, path, status, ms });
+    } else if (status >= 400) {
+      opsLogger.warn("http_4xx", { requestId, method, path, status, ms });
+    }
+  } catch {
+    // ops logger is best-effort
+  }
+});
+
 app.route("/", createHealthRoutes(repo, { databasePath: config.databasePath }));
 
 // Optional additive SaaS surface. Mount before admin so /api/auth and /api/saas
