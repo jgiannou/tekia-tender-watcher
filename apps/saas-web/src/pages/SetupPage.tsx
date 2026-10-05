@@ -238,10 +238,12 @@ export const SetupPage = () => {
         await saasApi.updateNotifications(activeOrganization.id, {
           emailEnabled,
           recipients: [user.email],
+          digestHours: ["08:00"],
           events: {
             newOpportunity: true,
             relatedActOnFollowed: true,
             postSubmissionUpdate: true,
+            deadlineRadar: false,
           },
         });
       }

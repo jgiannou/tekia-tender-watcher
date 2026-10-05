@@ -94,60 +94,36 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
   try {
     const { getPrisma } = await import("./db/prisma.js");
     const { createSaasApp } = await import("./saas/app.js");
-    const { runPeriodicWatchProfileScans } = await import(
-      "./saas/jobs/periodic-watch-scans.js"
-    );
-    const { monitorFollowedThreads } = await import(
-      "./saas/jobs/monitor-followed-threads.js"
-    );
-    const { flushRelatedActEmailDigests } = await import(
-      "./saas/services/notify.js"
+    const { runHourlyNotificationWave } = await import(
+      "./saas/jobs/notification-waves.js"
     );
     const { app: saasApp } = createSaasApp({ prisma: getPrisma(), kimdis });
     app.route("/", saasApp);
     console.log("saas API: enabled (/api/auth/* , /api/saas/*)");
 
-    // ~6 waves/day; trial/paid quotas inside runPeriodicWatchProfileScans.
-    const periodicExpression = "15 */4 * * *";
-    if (cron.validate(periodicExpression)) {
-      cron.schedule(periodicExpression, () => {
-        void (async () => {
-          await runPeriodicWatchProfileScans(getPrisma(), kimdis);
-          // Discover related acts, then one grouped email per Pro org (not N emails).
-          await monitorFollowedThreads(getPrisma());
-          const proFlush = await flushRelatedActEmailDigests(getPrisma(), {
-            modes: ["IMMEDIATE"],
-          });
-          console.log(
-            "[email] related-act pro flush",
-            JSON.stringify(proFlush),
-          );
-        })().catch((error) => {
-          console.error(
-            "periodic watch/monitor error:",
-            error instanceof Error ? error.message : error,
-          );
-        });
-      });
-      console.log(`saas periodic scans: cron ${periodicExpression}`);
-    }
-
-    // Basic/Trial: one related-act email digest per day (Europe/Athens morning).
-    const relatedDigestExpression = "0 7 * * *";
-    if (cron.validate(relatedDigestExpression)) {
+    // Hourly Athens wave: each org runs only at its selected digest hours
+    // (capped by plan periodicScansPerDay). Pro also gets Deadline Radar.
+    const hourlyWaveExpression = "5 * * * *";
+    if (cron.validate(hourlyWaveExpression)) {
       cron.schedule(
-        relatedDigestExpression,
+        hourlyWaveExpression,
         () => {
-          void flushRelatedActEmailDigests(getPrisma(), { modes: ["DIGEST"] })
+          void runHourlyNotificationWave(getPrisma(), kimdis)
             .then((summary) => {
               console.log(
-                "[email] related-act digest flush",
-                JSON.stringify(summary),
+                "[email] hourly notification wave",
+                JSON.stringify({
+                  hour: summary.hour,
+                  dueOrgs: summary.dueOrgs,
+                  scanned: summary.scans.orgsScanned,
+                  relatedSent: summary.relatedFlush.sent,
+                  deadlineEmails: summary.deadlineRadar.emailsSent,
+                }),
               );
             })
             .catch((error) => {
               console.error(
-                "related-act digest flush error:",
+                "hourly notification wave error:",
                 error instanceof Error ? error.message : error,
               );
             });
@@ -155,7 +131,7 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
         { timezone: "Europe/Athens" },
       );
       console.log(
-        `saas related-act email digest: cron ${relatedDigestExpression} Europe/Athens`,
+        `saas notification waves: cron ${hourlyWaveExpression} Europe/Athens`,
       );
     }
   } catch (error) {

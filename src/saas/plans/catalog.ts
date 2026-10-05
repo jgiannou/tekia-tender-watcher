@@ -3,10 +3,8 @@
  * Only TWO public plans: Basic + Pro. No Business/Enterprise yet.
  * Pro extra seats are a recurring add-on, not a third plan.
  *
- * Basic entitlements are locked (full procurement lifecycle, DIGEST email =
- * related-act updates once/day, advanced filters off). Pro differentiates on
- * volume/seats/speed/support (IMMEDIATE = grouped email after each monitor wave,
- * DIGEST = one daily related-act email) — not by crippling Basic workflow features.
+ * Basic: DIGEST email at user-chosen hours (max = periodicScansPerDay).
+ * Pro: more slots + Deadline Radar. Always respect plan hour/scan caps.
  */
 
 export const PLAN_KEYS = {
@@ -56,6 +54,8 @@ export type PlanEntitlements = {
   documentVersioning: boolean;
   inAppNotifications: boolean;
   emailMode: EmailMode;
+  /** Pro-only: approaching-deadline radar emails. */
+  deadlineRadar: boolean;
   advancedWatchProfileFilters: boolean;
   prioritySupport: boolean;
 };
@@ -97,6 +97,7 @@ export const BASIC_PLAN: PlanEntitlements = {
   documentVersioning: true,
   inAppNotifications: true,
   emailMode: "DIGEST",
+  deadlineRadar: false,
   advancedWatchProfileFilters: false,
   prioritySupport: false,
 };
@@ -136,6 +137,7 @@ export const PRO_PLAN: PlanEntitlements = {
   documentVersioning: true,
   inAppNotifications: true,
   emailMode: "IMMEDIATE",
+  deadlineRadar: true,
   advancedWatchProfileFilters: true,
   prioritySupport: true,
 };

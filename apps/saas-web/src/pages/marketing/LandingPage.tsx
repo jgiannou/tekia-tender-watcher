@@ -3,6 +3,7 @@ import { Bell, FolderSearch, Radar } from "lucide-react";
 import { PublicShell } from "@/components/marketing/PublicShell";
 import { PricingCards } from "@/components/marketing/PricingCards";
 import { Button } from "@/components/ui/button";
+import { ArcMark } from "@/components/brand/ArcMark";
 import { LEGAL_CONTROLLER } from "@/legal/meta";
 import { MARKETING_PLANS, TRIAL_DAYS, formatEur } from "@/marketing/pricing";
 
@@ -72,45 +73,42 @@ const faqs = [
 
 const ProductVisual = () => (
   <div
-    className="relative overflow-hidden rounded-2xl border border-border/70 bg-card/80 p-4 shadow-2xl shadow-primary/10 sm:p-5"
+    className="relative overflow-hidden border border-border/70 bg-card/70 p-5 sm:p-6"
     aria-hidden
   >
-    <div className="mb-4 flex items-center justify-between gap-3">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
-          Ευκαιρίες
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">Από Αποθηκευμένες Αναζητήσεις</p>
-      </div>
-      <span className="rounded-md border border-primary/25 bg-primary/10 px-2 py-1 text-xs text-primary">
-        ΚΗΜΔΗΣ
-      </span>
-    </div>
-    <div className="space-y-3">
+    <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+      Ροή εργασίας
+    </p>
+    <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">
+      Από την εύρεση στην υποβολή
+    </p>
+    <ol className="mt-6 space-y-0 border-l border-border/80 pl-4">
       {[
-        { title: "Προμήθεια λογισμικού διαχείρισης", score: "86", tag: "Νέα" },
-        { title: "Υπηρεσίες ανάπτυξης εφαρμογών", score: "74", tag: "REQ" },
-        { title: "Συντήρηση πληροφοριακών συστημάτων", score: "69", tag: "PROC" },
-      ].map((row) => (
-        <div
-          key={row.title}
-          className="rounded-lg border border-border/60 bg-background/60 px-3 py-3"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-foreground">{row.title}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Αποθηκευμένη αναζήτηση · βαθμός συνάφειας {row.score}
-              </p>
-            </div>
-            <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              {row.tag}
+        {
+          title: "Εύρεση",
+          body: "Αποθηκευμένες αναζητήσεις στο ΚΗΜΔΗΣ",
+        },
+        {
+          title: "Παρακολούθηση",
+          body: "Νέες πράξεις και προθεσμίες σε ένα σημείο",
+        },
+        {
+          title: "Προετοιμασία",
+          body: "Vault, ενδιαφέρον, καταγραφή υποβολής",
+        },
+      ].map((step, index) => (
+        <li key={step.title} className="relative pb-5 last:pb-0">
+          <span className="absolute -left-[1.3rem] top-1 h-2 w-2 rounded-sm bg-primary" />
+          <p className="text-sm font-medium text-foreground">
+            <span className="mr-2 font-mono text-xs text-muted-foreground">
+              0{index + 1}
             </span>
-          </div>
-        </div>
+            {step.title}
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">{step.body}</p>
+        </li>
       ))}
-    </div>
-    <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-primary/10 blur-2xl" />
+    </ol>
   </div>
 );
 
@@ -118,16 +116,19 @@ export const LandingPage = () => (
   <PublicShell featuresHref="#features" contactHref="#contact">
     <main>
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 lg:grid-cols-2 lg:py-20">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-primary">
-            ARC Tenders
-          </p>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl lg:text-5xl lg:leading-[1.1]">
-            Βρείτε δημόσιους διαγωνισμούς που σας αφορούν.
+        <div className="arc-hero-copy">
+          <div className="inline-flex items-center gap-2.5">
+            <ArcMark className="h-8 w-8" />
+            <p className="font-mono text-sm font-semibold tracking-tight text-foreground">
+              ARC Tenders
+            </p>
+          </div>
+          <h1 className="mt-5 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl lg:text-[2.75rem] lg:leading-[1.15]">
+            Δημόσιοι διαγωνισμοί, οργανωμένα από την εύρεση έως την υποβολή.
           </h1>
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-            Το ARC Tenders σας βοηθά να εντοπίζετε σχετικές ευκαιρίες στο ΚΗΜΔΗΣ, να
-            παρακολουθείτε την εξέλιξή τους και να οργανώνετε όλη τη διαδικασία σε ένα σημείο.
+            Εντοπίστε σχετικές ευκαιρίες στο ΚΗΜΔΗΣ, παρακολουθήστε εξελίξεις και κρατήστε
+            έγγραφα, ενδιαφέρον και υποβολές σε έναν χώρο εργασίας — χωρίς θόρυβο στο inbox.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Button asChild size="lg">
@@ -141,7 +142,9 @@ export const LandingPage = () => (
             </Button>
           </div>
         </div>
-        <ProductVisual />
+        <div className="arc-hero-visual">
+          <ProductVisual />
+        </div>
       </section>
 
       <section id="features" className="border-t border-border/60 scroll-mt-20">
@@ -150,15 +153,10 @@ export const LandingPage = () => (
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
             Χωρίς επαναλαμβανόμενη χειροκίνητη αναζήτηση στο ΚΗΜΔΗΣ — με οργανωμένη ροή εργασίας.
           </p>
-          <div className="mt-8 grid gap-5 md:grid-cols-3">
+          <div className="mt-8 grid gap-8 md:grid-cols-3 md:gap-10">
             {values.map((item) => (
-              <div
-                key={item.title}
-                className="rounded-xl border border-border/70 bg-card/50 p-5"
-              >
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary">
-                  <item.icon className="h-4 w-4" aria-hidden />
-                </span>
+              <div key={item.title} className="border-t border-border/70 pt-5">
+                <item.icon className="h-5 w-5 text-primary" aria-hidden />
                 <h3 className="mt-4 text-base font-semibold">{item.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.body}</p>
               </div>
@@ -170,15 +168,10 @@ export const LandingPage = () => (
       <section className="border-t border-border/60">
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
           <h2 className="text-2xl font-semibold tracking-tight">Πώς λειτουργεί</h2>
-          <ol className="mt-8 grid gap-4 md:grid-cols-2">
+          <ol className="mt-8 grid gap-8 md:grid-cols-2">
             {steps.map((step) => (
-              <li
-                key={step.n}
-                className="rounded-xl border border-border/70 bg-card/40 p-5"
-              >
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-                  Βήμα {step.n}
-                </div>
+              <li key={step.n} className="border-t border-border/70 pt-5">
+                <div className="font-mono text-xs text-muted-foreground">Βήμα {step.n}</div>
                 <h3 className="mt-2 text-base font-semibold">{step.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
               </li>
@@ -218,7 +211,7 @@ export const LandingPage = () => (
             {faqs.map((item) => (
               <details
                 key={item.q}
-                className="rounded-xl border border-border/70 bg-card/40 px-4 py-3"
+                className="border-b border-border/70 py-3 first:border-t"
               >
                 <summary className="cursor-pointer text-sm font-medium text-foreground">
                   {item.q}

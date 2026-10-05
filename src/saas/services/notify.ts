@@ -49,8 +49,8 @@ export const orgEmailMode = async (
 /**
  * Opportunity digests always email (one email per scan batch).
  * Related-act / deadline updates are NEVER sent one-by-one — they are grouped by
- * flushRelatedActEmailDigests (Basic daily, Pro after each monitor wave).
- * NEW_OPPORTUNITY stays in-app only.
+ * flushRelatedActEmailDigests runs in the hourly Athens wave for due orgs.
+ * NEW_OPPORTUNITY stays in-app only. DEADLINE_APPROACHING uses Pro radar job.
  */
 export const shouldEmailAttentionType = (
   type: AttentionEventType,
@@ -58,6 +58,7 @@ export const shouldEmailAttentionType = (
 ): boolean => {
   if (RELATED_TYPES.has(type)) return false;
   if (type === "NEW_OPPORTUNITY") return false;
+  if (type === "DEADLINE_APPROACHING") return false; // Pro radar digest job
   if (type === "OPPORTUNITY_DIGEST") return true;
   if (type === "SUBMISSION_RECORDED" || type === "OUTREACH_RECORDED") {
     return true;
@@ -74,12 +75,16 @@ const eventPrefEnabled = (
     newOpportunity: boolean;
     relatedActOnFollowed: boolean;
     postSubmissionUpdate: boolean;
+    deadlineRadar: boolean;
   },
 ): boolean => {
   if (type === "NEW_OPPORTUNITY" || type === "OPPORTUNITY_DIGEST") {
     return events.newOpportunity;
   }
-  if (RELATED_TYPES.has(type)) return events.relatedActOnFollowed;
+  if (RELATED_TYPES.has(type) || type === "DEADLINE_CHANGED") {
+    return events.relatedActOnFollowed;
+  }
+  if (type === "DEADLINE_APPROACHING") return events.deadlineRadar;
   if (type === "SUBMISSION_RECORDED" || type === "OUTREACH_RECORDED") {
     return events.postSubmissionUpdate;
   }
@@ -238,7 +243,14 @@ export const deliverAttentionEmail = async (
     where: { organizationId: event.organizationId },
     select: { notifications: true, company: true },
   });
-  const prefs = normalizeNotifications(settings?.notifications);
+  const subscription = await prisma.subscription.findUnique({
+    where: { organizationId: event.organizationId },
+    select: { planKey: true },
+  });
+  const prefs = normalizeNotifications(
+    settings?.notifications,
+    subscription?.planKey ?? "trial",
+  );
   if (!prefs.emailEnabled) return "skipped";
   if (!eventPrefEnabled(event.type, prefs.events)) return "skipped";
 
@@ -382,22 +394,28 @@ export type FlushRelatedActModes = Array<"DIGEST" | "IMMEDIATE">;
 
 /**
  * Group pending related-act / deadline updates into ONE email per organization.
- * - DIGEST (Basic/Trial): call once/day (cron).
+ * - DIGEST (Basic/Trial): call at 08:00 & 18:00 Europe/Athens.
  * - IMMEDIATE (Pro): call after each monitor wave so Pro still gets sooner notice,
  *   but never N separate emails for N events in the same batch.
  */
 export const flushRelatedActEmailDigests = async (
   prisma: PrismaClient,
-  options?: { modes?: FlushRelatedActModes },
+  options?: { modes?: FlushRelatedActModes; organizationIds?: string[] },
 ): Promise<{ orgs: number; events: number; sent: number; skipped: number }> => {
   const modes = new Set<string>(
     options?.modes?.length ? options.modes : ["DIGEST", "IMMEDIATE"],
   );
+  const orgFilter = options?.organizationIds?.length
+    ? new Set(options.organizationIds)
+    : null;
   const since = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
   const pending = await prisma.organizationAttentionEvent.findMany({
     where: {
       type: { in: [...RELATED_TYPES] },
       createdAt: { gte: since },
+      ...(orgFilter
+        ? { organizationId: { in: [...orgFilter] } }
+        : {}),
       deliveries: {
         none: {
           channel: "EMAIL",
@@ -420,6 +438,10 @@ export const flushRelatedActEmailDigests = async (
   let skipped = 0;
 
   for (const [organizationId, events] of byOrg) {
+    if (orgFilter && !orgFilter.has(organizationId)) {
+      skipped += events.length;
+      continue;
+    }
     const emailMode = await orgEmailMode(prisma, organizationId);
     if (!modes.has(emailMode)) {
       skipped += events.length;
@@ -430,7 +452,14 @@ export const flushRelatedActEmailDigests = async (
       where: { organizationId },
       select: { notifications: true, company: true },
     });
-    const prefs = normalizeNotifications(settings?.notifications);
+    const subscription = await prisma.subscription.findUnique({
+      where: { organizationId },
+      select: { planKey: true },
+    });
+    const prefs = normalizeNotifications(
+      settings?.notifications,
+      subscription?.planKey ?? "trial",
+    );
     if (!prefs.emailEnabled || !prefs.events.relatedActOnFollowed) {
       skipped += events.length;
       continue;

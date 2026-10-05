@@ -635,6 +635,7 @@ enum AttentionEventType {
   RELATED_AWARD_DISCOVERED
   RELATED_CONTRACT_DISCOVERED
   DEADLINE_CHANGED
+  DEADLINE_APPROACHING
 }
 
 /// Org-specific "needs attention" fact. System of record for in-app attention.

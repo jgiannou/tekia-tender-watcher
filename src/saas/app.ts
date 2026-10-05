@@ -446,10 +446,12 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       .object({
         emailEnabled: z.boolean(),
         recipients: z.array(z.string().email()).default([]),
+        digestHours: z.array(z.string().regex(/^([01]\d|2[0-3]):00$/)).min(1),
         events: z.object({
           newOpportunity: z.boolean(),
           relatedActOnFollowed: z.boolean(),
           postSubmissionUpdate: z.boolean(),
+          deadlineRadar: z.boolean().default(false),
         }),
       })
       .parse(await c.req.json());

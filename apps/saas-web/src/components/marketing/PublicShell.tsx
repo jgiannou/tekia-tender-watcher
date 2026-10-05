@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
+import { ArcBrand } from "@/components/brand/ArcMark";
 import { Button } from "@/components/ui/button";
 import { LEGAL_CONTROLLER } from "@/legal/meta";
 import { cn } from "@/lib/utils";
@@ -29,23 +30,15 @@ export const PublicShell = ({
     );
 
   return (
-    <div className="relative min-h-screen overflow-x-clip bg-background text-foreground">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_10%_-10%,var(--arc-glow-cyan),transparent_50%),radial-gradient(ellipse_at_90%_0%,var(--arc-glow-magenta),transparent_45%)]"
-      />
-
-      <header className="relative z-20 border-b border-border/60 bg-background/80 backdrop-blur-md">
+    <div className="arc-public-atmosphere relative min-h-screen overflow-x-clip bg-background text-foreground">
+      <header className="relative z-20 border-b border-border/60 bg-background/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
           <Link
             to="/"
-            className="inline-flex items-baseline gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="ARC Tenders"
           >
-            <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-primary">
-              ARC
-            </span>
-            <span className="text-sm font-semibold tracking-tight">Tenders</span>
+            <ArcBrand compact />
           </Link>
 
           <nav className="hidden items-center gap-6 md:flex" aria-label="Δημόσια πλοήγηση">

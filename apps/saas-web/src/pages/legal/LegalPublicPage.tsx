@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { LegalDocumentView } from "@/components/LegalDocumentView";
 import { getLegalDocument, isLegalDocId, LEGAL_HUB_ITEMS } from "@/legal";
+import { ArcBrand } from "@/components/brand/ArcMark";
 import { LEGAL_CONTROLLER } from "@/legal/meta";
 
 const COPYRIGHT_YEAR = new Date().getFullYear();
@@ -32,12 +33,12 @@ export const LegalPublicPage = () => {
   const document = getLegalDocument(docId);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="arc-public-atmosphere min-h-screen bg-background text-foreground">
       <div className="border-b border-border">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-4 px-4 py-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-            ARC Tenders
-          </div>
+          <Link to="/" aria-label="ARC Tenders">
+            <ArcBrand compact />
+          </Link>
           <nav className="flex flex-wrap gap-3 text-xs text-muted-foreground" aria-label="Νομικά">
             <Link className="hover:text-foreground" to="/legal/terms">
               Όροι Χρήσης

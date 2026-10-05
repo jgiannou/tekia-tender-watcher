@@ -2,6 +2,8 @@ import type { OnboardingStatus, Prisma, PrismaClient } from "@prisma/client";
 import { badRequest } from "../errors.js";
 import { requireOrgMembership } from "../auth/org-context.js";
 import type { CompanyRegistryRecord } from "../company-registry/types.js";
+import { entitlementsForPlanKey, PLAN_KEYS } from "../plans/catalog.js";
+import { defaultDigestHoursForPlanKey, normalizeDigestHours } from "./digest-hours.js";
 
 export type CompanyProfile = {
   legalName: string;
@@ -37,10 +39,14 @@ export type OrganizationActivity = {
 export type NotificationPreferences = {
   emailEnabled: boolean;
   recipients: string[];
+  /** Europe/Athens HH:00 slots; length always capped by plan periodicScansPerDay. */
+  digestHours: string[];
   events: {
     newOpportunity: boolean;
     relatedActOnFollowed: boolean;
     postSubmissionUpdate: boolean;
+    /** Pro-only; ignored/forced false on Basic/Trial. */
+    deadlineRadar: boolean;
   };
 };
 
@@ -52,13 +58,17 @@ export type OrgSettingsView = {
   onboardingMeta: Record<string, unknown> | null;
 };
 
-const defaultNotifications = (): NotificationPreferences => ({
+const defaultNotifications = (
+  planKey: string = PLAN_KEYS.basic,
+): NotificationPreferences => ({
   emailEnabled: true,
   recipients: [],
+  digestHours: defaultDigestHoursForPlanKey(planKey),
   events: {
     newOpportunity: true,
     relatedActOnFollowed: true,
     postSubmissionUpdate: true,
+    deadlineRadar: entitlementsForPlanKey(planKey).deadlineRadar,
   },
 });
 
@@ -150,19 +160,32 @@ const normalizeActivities = (raw: unknown): OrganizationActivity[] => {
   return result;
 };
 
-export const normalizeNotifications = (raw: unknown): NotificationPreferences => {
-  const base = defaultNotifications();
+export const normalizeNotifications = (
+  raw: unknown,
+  planKey: string = PLAN_KEYS.basic,
+): NotificationPreferences => {
+  const plan = entitlementsForPlanKey(planKey);
+  const base = defaultNotifications(planKey);
   if (!raw || typeof raw !== "object") return base;
   const obj = raw as Record<string, unknown>;
   const events =
     obj.events && typeof obj.events === "object"
       ? (obj.events as Record<string, unknown>)
       : {};
+  const deadlineRadarRequested =
+    typeof events.deadlineRadar === "boolean"
+      ? events.deadlineRadar
+      : base.events.deadlineRadar;
   return {
     emailEnabled: typeof obj.emailEnabled === "boolean" ? obj.emailEnabled : base.emailEnabled,
     recipients: Array.isArray(obj.recipients)
       ? obj.recipients.filter((v): v is string => typeof v === "string" && v.includes("@"))
       : base.recipients,
+    digestHours: normalizeDigestHours(
+      obj.digestHours,
+      plan.periodicScansPerDay,
+      planKey,
+    ),
     events: {
       newOpportunity:
         typeof events.newOpportunity === "boolean"
@@ -176,8 +199,20 @@ export const normalizeNotifications = (raw: unknown): NotificationPreferences =>
         typeof events.postSubmissionUpdate === "boolean"
           ? events.postSubmissionUpdate
           : base.events.postSubmissionUpdate,
+      deadlineRadar: plan.deadlineRadar ? deadlineRadarRequested : false,
     },
   };
+};
+
+const planKeyForOrganization = async (
+  prisma: PrismaClient,
+  organizationId: string,
+): Promise<string> => {
+  const subscription = await prisma.subscription.findUnique({
+    where: { organizationId },
+    select: { planKey: true },
+  });
+  return subscription?.planKey ?? PLAN_KEYS.trial;
 };
 
 const toView = (
@@ -189,10 +224,11 @@ const toView = (
     onboardingMeta: unknown;
   },
   orgName: string,
+  planKey: string,
 ): OrgSettingsView => ({
   company: normalizeCompanyProfile(row.company, orgName),
   activities: normalizeActivities(row.activities),
-  notifications: normalizeNotifications(row.notifications),
+  notifications: normalizeNotifications(row.notifications, planKey),
   onboardingStatus: row.onboardingStatus,
   onboardingMeta:
     row.onboardingMeta && typeof row.onboardingMeta === "object"
@@ -206,16 +242,33 @@ const ensureSettings = async (prisma: PrismaClient, organizationId: string) => {
     include: { organization: { select: { name: true } } },
   });
   if (existing) return existing;
+  const planKey = await planKeyForOrganization(prisma, organizationId);
   return prisma.organizationSettings.create({
     data: {
       organizationId,
       company: { legalName: "", source: "MANUAL" },
       activities: [],
-      notifications: defaultNotifications(),
+      notifications: defaultNotifications(planKey),
       onboardingStatus: "NOT_STARTED",
     },
     include: { organization: { select: { name: true } } },
   });
+};
+
+const toViewForOrg = async (
+  prisma: PrismaClient,
+  organizationId: string,
+  row: {
+    company: unknown;
+    activities: unknown;
+    notifications: unknown;
+    onboardingStatus: OnboardingStatus;
+    onboardingMeta: unknown;
+  },
+  orgName: string,
+): Promise<OrgSettingsView> => {
+  const planKey = await planKeyForOrganization(prisma, organizationId);
+  return toView(row, orgName, planKey);
 };
 
 export const getOrgSettings = async (
@@ -228,7 +281,7 @@ export const getOrgSettings = async (
     input.organizationId,
   );
   const row = await ensureSettings(prisma, organizationId);
-  return toView(row, row.organization.name);
+  return toViewForOrg(prisma, organizationId, row, row.organization.name);
 };
 
 export const updateCompanyProfile = async (
@@ -277,7 +330,7 @@ export const updateCompanyProfile = async (
     });
   }
 
-  return toView(updated, next.legalName);
+  return toViewForOrg(prisma, organizationId, updated, next.legalName);
 };
 
 export const applyGemiCompanyConfirmation = async (
@@ -344,7 +397,7 @@ export const applyGemiCompanyConfirmation = async (
     data: { name: company.legalName },
   });
 
-  return toView(updated, company.legalName);
+  return toViewForOrg(prisma, organizationId, updated, company.legalName);
 };
 
 export const updateActivities = async (
@@ -370,7 +423,7 @@ export const updateActivities = async (
     data: { activities: activities as unknown as Prisma.InputJsonValue },
     include: { organization: { select: { name: true } } },
   });
-  return toView(updated, updated.organization.name);
+  return toViewForOrg(prisma, organizationId, updated, updated.organization.name);
 };
 
 export const updateNotifications = async (
@@ -387,13 +440,17 @@ export const updateNotifications = async (
     input.organizationId,
   );
   await ensureSettings(prisma, organizationId);
-  const notifications = normalizeNotifications(input.notifications);
+  const planKey = await planKeyForOrganization(prisma, organizationId);
+  const notifications = normalizeNotifications(input.notifications, planKey);
+  if (!notifications.digestHours.length) {
+    throw badRequest("digest_hours_required");
+  }
   const updated = await prisma.organizationSettings.update({
     where: { organizationId },
     data: { notifications: notifications as unknown as Prisma.InputJsonValue },
     include: { organization: { select: { name: true } } },
   });
-  return toView(updated, updated.organization.name);
+  return toViewForOrg(prisma, organizationId, updated, updated.organization.name);
 };
 
 export const updateOnboardingStatus = async (
@@ -434,5 +491,5 @@ export const updateOnboardingStatus = async (
     },
     include: { organization: { select: { name: true } } },
   });
-  return toView(updated, updated.organization.name);
+  return toViewForOrg(prisma, organizationId, updated, updated.organization.name);
 };

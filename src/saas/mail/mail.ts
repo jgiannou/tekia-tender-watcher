@@ -958,3 +958,98 @@ ${detailCard({
     text: `${subject}\n${ctaHref}`,
   };
 };
+
+export type DeadlineRadarEmailItem = {
+  referenceNumber: string;
+  title: string | null;
+  finalSubmissionDate: string;
+  daysRemaining: number;
+};
+
+/** Pro Deadline Radar — one grouped email for approaching submission deadlines. */
+export const deadlineRadarEmailCopy = (input: {
+  appUrl: string;
+  companyName?: string | null;
+  items: DeadlineRadarEmailItem[];
+  locale?: "el" | "en";
+}): { subject: string; html: string; text: string } => {
+  const locale = input.locale ?? "el";
+  const appUrl = input.appUrl.replace(/\/$/, "");
+  const company = input.companyName?.trim() || "";
+  const items = input.items.slice(0, 12);
+  const urgent = items.filter((i) => i.daysRemaining <= 2).length;
+  const listHtml = items
+    .map((item) => {
+      const when =
+        item.daysRemaining <= 0
+          ? locale === "en"
+            ? "Today"
+            : "Σήμερα"
+          : item.daysRemaining === 1
+            ? locale === "en"
+              ? "Tomorrow"
+              : "Αύριο"
+            : locale === "en"
+              ? `In ${item.daysRemaining} days`
+              : `Σε ${item.daysRemaining} ημέρες`;
+      const deadline = formatMatchDate(item.finalSubmissionDate, locale);
+      return `<li style="margin:0 0 10px;">
+  <strong style="color:${BRAND.ink};">${escapeHtml(item.referenceNumber)}</strong>
+  ${item.title ? ` — ${escapeHtml(item.title)}` : ""}
+  <br/><span style="font-size:12px;color:${BRAND.muted};">${escapeHtml(when)}${
+        deadline ? ` · ${escapeHtml(deadline)}` : ""
+      }</span>
+</li>`;
+    })
+    .join("");
+
+  if (locale === "en") {
+    const subject = `ARC Tenders · Deadline radar · ${items.length} upcoming`;
+    const bodyHtml = `
+<p style="margin:0 0 16px;font-size:14px;line-height:1.55;color:${BRAND.ink};">
+  ${urgent > 0 ? `${urgent} deadline(s) within 48 hours. ` : ""}
+  Upcoming submission deadlines on tenders you follow.
+</p>
+<ul style="margin:0 0 16px;padding-left:18px;font-size:14px;line-height:1.5;color:${BRAND.ink};">
+${listHtml}
+</ul>
+<p style="margin:0 0 10px;">${ctaButton(`${appUrl}/app`, "Open ARC Tenders")}</p>`;
+    return {
+      subject,
+      html: wrapEmailLayout({
+        locale,
+        appUrl,
+        preheader: subject,
+        eyebrow: "Deadline radar",
+        heading: "Upcoming deadlines",
+        bodyHtml,
+        companyName: company,
+      }),
+      text: `${subject}\n${appUrl}/app`,
+    };
+  }
+
+  const subject = `ARC Tenders · Deadline radar · ${items.length} προθεσμίες`;
+  const bodyHtml = `
+<p style="margin:0 0 16px;font-size:14px;line-height:1.55;color:${BRAND.ink};">
+  ${urgent > 0 ? `${urgent} προθεσμία(ες) εντός 48 ωρών. ` : ""}
+  Επερχόμενες καταληκτικές σε διαγωνισμούς που παρακολουθείτε.
+</p>
+<ul style="margin:0 0 16px;padding-left:18px;font-size:14px;line-height:1.5;color:${BRAND.ink};">
+${listHtml}
+</ul>
+<p style="margin:0 0 10px;">${ctaButton(`${appUrl}/app`, "Άνοιγμα στο ARC Tenders")}</p>`;
+  return {
+    subject,
+    html: wrapEmailLayout({
+      locale,
+      appUrl,
+      preheader: subject,
+      eyebrow: "Deadline radar",
+      heading: "Επερχόμενες προθεσμίες",
+      bodyHtml,
+      companyName: company,
+    }),
+    text: `${subject}\n${appUrl}/app`,
+  };
+};

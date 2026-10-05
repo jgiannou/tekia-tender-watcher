@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { ArcMark } from "@/components/brand/ArcMark";
 import {
   Binoculars,
   Bookmark,
@@ -151,10 +152,17 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
   return (
     <div className="flex h-full min-h-0 flex-col bg-sidebar text-sidebar-foreground">
       <div className="px-4 py-5">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
-          ARC
-        </div>
-        <div className="mt-1 text-sm font-semibold">ARC Tenders</div>
+        <Link
+          to="/app"
+          className="inline-flex items-center gap-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="ARC Tenders"
+        >
+          <ArcMark className="h-8 w-8" />
+          <div>
+            <div className="font-mono text-xs font-semibold tracking-tight">ARC</div>
+            <div className="text-sm font-semibold leading-tight">Tenders</div>
+          </div>
+        </Link>
       </div>
 
       <div className="px-3 pb-3">

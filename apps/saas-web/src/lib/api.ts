@@ -92,10 +92,14 @@ export type OrganizationActivity = {
 export type NotificationPreferences = {
   emailEnabled: boolean;
   recipients: string[];
+  /** Europe/Athens HH:00 slots; capped by plan periodicScansPerDay. */
+  digestHours: string[];
   events: {
     newOpportunity: boolean;
     relatedActOnFollowed: boolean;
     postSubmissionUpdate: boolean;
+    /** Pro-only. */
+    deadlineRadar: boolean;
   };
 };
 
@@ -329,6 +333,7 @@ export type SaasEntitlementsResponse = {
     maxSeatsSelfService: number;
     advancedWatchProfileFilters: boolean;
     emailMode: "DIGEST" | "IMMEDIATE";
+    deadlineRadar: boolean;
   };
   usage: {
     activeWatchProfiles: number;
@@ -350,6 +355,7 @@ export type SaasEntitlementsResponse = {
       advancedWatchProfileFilters?: boolean;
       prioritySupport?: boolean;
       emailMode?: "DIGEST" | "IMMEDIATE";
+      deadlineRadar?: boolean;
       opportunityMatching?: boolean;
       matchScore?: boolean;
       matchReasons?: boolean;
@@ -1246,6 +1252,7 @@ export const saasApi = {
             maxSeatsSelfService: 1,
             advancedWatchProfileFilters: false,
             emailMode: "DIGEST" as const,
+            deadlineRadar: false,
           },
           usage: {
             activeWatchProfiles: profiles.filter((p) => p.enabled).length,

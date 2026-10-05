@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { ArcBrand } from "@/components/brand/ArcMark";
 import { LEGAL_CONTROLLER } from "@/legal/meta";
 import { MARKETING_PLANS, formatEur } from "@/marketing/pricing";
 
@@ -20,26 +21,16 @@ type AuthShellProps = {
 
 /** Compact auth layout — product story lives on / and /pricing. */
 export const AuthShell = ({ title, description, children, footer }: AuthShellProps) => (
-  <div className="relative min-h-screen overflow-hidden bg-background">
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_12%_0%,var(--arc-glow-cyan),transparent_52%),radial-gradient(ellipse_at_90%_10%,var(--arc-glow-magenta),transparent_45%)]"
-    />
-
+  <div className="arc-public-atmosphere relative min-h-screen overflow-hidden bg-background">
     <div className="relative mx-auto grid min-h-screen max-w-5xl lg:grid-cols-[1fr_1.05fr]">
       <aside className="auth-panel-enter relative flex flex-col justify-between px-6 py-8 sm:px-10 lg:border-r lg:border-border/60 lg:px-12 lg:py-12">
         <div>
           <Link
             to="/"
-            className="inline-flex items-baseline gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="ARC Tenders"
           >
-            <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-primary">
-              ARC
-            </span>
-            <span className="text-lg font-semibold tracking-tight text-foreground">
-              Tenders
-            </span>
+            <ArcBrand />
           </Link>
 
           <h1 className="mt-10 max-w-sm text-2xl font-semibold tracking-tight text-foreground sm:text-3xl lg:mt-14">
@@ -101,16 +92,16 @@ export const AuthShell = ({ title, description, children, footer }: AuthShellPro
       <main className="auth-form-enter flex items-center justify-center px-4 py-8 sm:px-8 lg:px-10 lg:py-12">
         <div className="w-full max-w-md">
           <div className="mb-6 lg:mb-8">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary lg:hidden">
-              ARC Tenders
-            </p>
+            <div className="lg:hidden">
+              <ArcBrand compact />
+            </div>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
               {title}
             </h2>
             <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>
           </div>
 
-          <div className="rounded-xl border border-border/80 bg-card/80 p-5 shadow-lg shadow-primary/5 backdrop-blur-sm sm:p-6">
+          <div className="border border-border bg-card p-5 sm:p-6">
             {children}
           </div>
 

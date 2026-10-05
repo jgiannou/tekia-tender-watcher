@@ -62,11 +62,12 @@
   --arc-sidebar-muted: #a0a0a0;
   --arc-sidebar-accent: #152024;
   --arc-sidebar-border: rgb(0 243 255 / 0.14);
-  --arc-glow-cyan: rgb(0 139 150 / 0.08);
-  --arc-glow-magenta: rgb(180 0 140 / 0.05);
+  --arc-glow-ink: rgb(0 139 150 / 0.08);
+  --arc-glow-signal: rgb(0 139 150 / 0.1);
 }
 
 .dark {
+  /* App chrome — original ARC dark (unchanged for logged-in UI) */
   --arc-background: #0a0a0a;
   --arc-foreground: #f5f5f5;
   --arc-card: #111111;
@@ -91,8 +92,8 @@
   --arc-sidebar-muted: #a0a0a0;
   --arc-sidebar-accent: #121212;
   --arc-sidebar-border: rgb(0 243 255 / 0.14);
-  --arc-glow-cyan: rgb(0 243 255 / 0.12);
-  --arc-glow-magenta: rgb(255 0 229 / 0.08);
+  --arc-glow-ink: rgb(0 243 255 / 0.1);
+  --arc-glow-signal: rgb(0 243 255 / 0.12);
 }
 
 @layer base {
@@ -125,9 +126,10 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    background-color: var(--arc-background);
     background-image:
-      radial-gradient(900px 420px at 8% -10%, var(--arc-glow-cyan), transparent 55%),
-      radial-gradient(800px 380px at 100% 0%, var(--arc-glow-magenta), transparent 50%);
+      radial-gradient(ellipse 85% 55% at 50% -18%, var(--arc-glow-signal), transparent 58%),
+      radial-gradient(ellipse 60% 40% at 100% 100%, var(--arc-glow-ink), transparent 55%);
     /* fixed backgrounds + Radix scroll-lock jump the mobile drawer upward */
     background-attachment: scroll;
   }
@@ -220,10 +222,60 @@
   animation: auth-fade-up 0.45s ease-out both;
 }
 
+/*
+ * Marketing / auth only: softer ink atmosphere (no magenta twin-glow).
+ * Scoped tokens — logged-in app keeps original ARC dark.
+ */
+.arc-public-atmosphere {
+  --arc-background: #0e1416;
+  --arc-foreground: #e8eef0;
+  --arc-card: #151c1f;
+  --arc-card-foreground: #e8eef0;
+  --arc-popover: #1a2226;
+  --arc-popover-foreground: #e8eef0;
+  --arc-primary: #5ec4c9;
+  --arc-primary-foreground: #061012;
+  --arc-secondary: #1c262a;
+  --arc-secondary-foreground: #e8eef0;
+  --arc-muted: #182024;
+  --arc-muted-foreground: #9aabae;
+  --arc-accent: #1a2a2e;
+  --arc-accent-foreground: #5ec4c9;
+  --arc-border: rgb(94 196 201 / 0.16);
+  --arc-input: rgb(94 196 201 / 0.2);
+  --arc-ring: #5ec4c9;
+  background-color: var(--arc-background);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -12%, rgb(94 196 201 / 0.12), transparent 55%),
+    radial-gradient(ellipse 55% 40% at 100% 80%, rgb(30 55 60 / 0.45), transparent 50%);
+  color: var(--arc-foreground);
+}
+
+@keyframes arc-hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.arc-hero-copy {
+  animation: arc-hero-rise 0.6s ease-out both;
+}
+
+.arc-hero-visual {
+  animation: arc-hero-rise 0.7s ease-out 0.1s both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .auth-panel-enter,
   .auth-form-enter,
-  .auth-highlight-enter {
+  .auth-highlight-enter,
+  .arc-hero-copy,
+  .arc-hero-visual {
     animation: none;
   }
 }

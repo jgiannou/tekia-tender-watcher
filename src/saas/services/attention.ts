@@ -46,6 +46,8 @@ export const attentionTitleFor = (
       return "Νέα σχετική σύμβαση";
     case "DEADLINE_CHANGED":
       return "Αλλαγή προθεσμίας σε αίτημα που παρακολουθείτε";
+    case "DEADLINE_APPROACHING":
+      return "Επερχόμενη προθεσμία σε διαγωνισμό που παρακολουθείτε";
     default:
       return "Νέα εξέλιξη σε διαγωνισμό που παρακολουθείτε";
   }

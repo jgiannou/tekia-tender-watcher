@@ -26,6 +26,7 @@ export type OrganizationEntitlements = {
   maxSeatsSelfService: number;
   advancedWatchProfileFilters: boolean;
   emailMode: PlanEntitlements["emailMode"];
+  deadlineRadar: boolean;
 };
 
 /** Near-limit guidance threshold (not a hard block). */
@@ -56,6 +57,7 @@ export const getOrganizationEntitlements = async (
       maxSeatsSelfService: scanAccess.limits.maxSeatsSelfService,
       advancedWatchProfileFilters: scanAccess.limits.advancedWatchProfileFilters,
       emailMode: scanAccess.limits.emailMode,
+      deadlineRadar: plan.deadlineRadar,
     },
     plan,
     scanAccess,
@@ -130,6 +132,7 @@ export const getEntitlementsView = async (
         advancedWatchProfileFilters: plan.advancedWatchProfileFilters,
         prioritySupport: plan.prioritySupport,
         emailMode: plan.emailMode,
+        deadlineRadar: plan.deadlineRadar,
       },
     },
     catalog: publicPlans().map((entry) => ({
