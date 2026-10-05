@@ -2,7 +2,7 @@ import { Platform } from "react-native";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
-import { saasApi } from "@/lib/api";
+import { saasApi, type AttentionEvent } from "@/lib/api";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -31,6 +31,18 @@ const projectId = (): string | undefined => {
   return undefined;
 };
 
+const hintForType = (type: string, title: string) => {
+  if (type === "NEW_OPPORTUNITY" || type === "OPPORTUNITY_DIGEST") {
+    return "Νέα ευκαιρία στο inbox σας.";
+  }
+  if (type.startsWith("RELATED_")) {
+    return "Νέα εξέλιξη σε παρακολουθούμενο διαγωνισμό.";
+  }
+  if (type.startsWith("DEADLINE_")) return "Ενημέρωση προθεσμίας.";
+  if (type === "SUBMISSION_RECORDED") return "Καταχωρήθηκε υποβολή.";
+  return title;
+};
+
 export const ensureAndroidChannel = async () => {
   if (Platform.OS !== "android") return;
   await Notifications.setNotificationChannelAsync("arc-tenders-alerts", {
@@ -41,6 +53,20 @@ export const ensureAndroidChannel = async () => {
     sound: "default",
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   });
+};
+
+const ensurePermission = async () => {
+  const current = await Notifications.getPermissionsAsync();
+  if (current.status === "granted") return true;
+  const asked = await Notifications.requestPermissionsAsync({
+    ios: {
+      allowAlert: true,
+      allowBadge: true,
+      allowSound: true,
+      allowDisplayInCarPlay: false,
+    },
+  });
+  return asked.status === "granted";
 };
 
 const fetchExpoPushToken = async (): Promise<string> => {
@@ -68,21 +94,7 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
   }
 
   await ensureAndroidChannel();
-
-  const current = await Notifications.getPermissionsAsync();
-  let status = current.status;
-  if (status !== "granted") {
-    const asked = await Notifications.requestPermissionsAsync({
-      ios: {
-        allowAlert: true,
-        allowBadge: true,
-        allowSound: true,
-        allowDisplayInCarPlay: false,
-      },
-    });
-    status = asked.status;
-  }
-  if (status !== "granted") return null;
+  if (!(await ensurePermission())) return null;
 
   cachedToken = await fetchExpoPushToken();
 
@@ -114,43 +126,122 @@ export const unregisterPushNotifications = async () => {
 
 export const getCachedPushToken = () => cachedToken;
 
-/** Local notification with sound — works on simulator for UX testing. */
-export const sendLocalTestNotification = async () => {
+const fallbackDemoEvents = (): Array<{
+  title: string;
+  type: string;
+  url: string;
+}> => [
+  {
+    title:
+      "Πρόσκληση για υποβολή προσφοράς για Πακέτα λογισμικού και συστήματα πληροφορικής",
+    type: "NEW_OPPORTUNITY",
+    url: "arctenders://notifications",
+  },
+  {
+    title: "Σχετική κατακύρωση εντοπίστηκε σε παρακολουθούμενο διαγωνισμό",
+    type: "RELATED_AWARD_DISCOVERED",
+    url: "arctenders://notifications",
+  },
+  {
+    title: "Λήγει σε 3 ημέρες — τελική υποβολή",
+    type: "DEADLINE_APPROACHING",
+    url: "arctenders://notifications",
+  },
+];
+
+const samplesFromAttention = (events: AttentionEvent[]) =>
+  events.slice(0, 3).map((event) => {
+    const tender =
+      event.organizationTender?.tender ?? event.relatedTender ?? null;
+    const referenceNumber = tender?.referenceNumber;
+    const recordType = tender?.recordType;
+    return {
+      title: event.title,
+      type: event.type,
+      url:
+        recordType && referenceNumber
+          ? `arctenders://tenders/${recordType}/${encodeURIComponent(referenceNumber)}`
+          : "arctenders://notifications",
+      attentionEventId: event.id,
+      referenceNumber,
+      recordType,
+    };
+  });
+
+/** Schedule lock-screen notifications with real attention titles + sound. */
+export const sendLocalDemoNotifications = async (organizationId?: string | null) => {
   await ensureAndroidChannel();
-  const current = await Notifications.getPermissionsAsync();
-  if (current.status !== "granted") {
-    const asked = await Notifications.requestPermissionsAsync();
-    if (asked.status !== "granted") {
-      throw new Error("Δεν δόθηκε άδεια ειδοποιήσεων");
+  if (!(await ensurePermission())) {
+    throw new Error("Δεν δόθηκε άδεια ειδοποιήσεων");
+  }
+
+  let samples = fallbackDemoEvents().map((s) => ({
+    ...s,
+    attentionEventId: undefined as string | undefined,
+    referenceNumber: undefined as string | undefined,
+    recordType: undefined as string | undefined,
+  }));
+
+  if (organizationId) {
+    try {
+      const res = await saasApi.attention(organizationId, {
+        limit: 3,
+        light: true,
+      });
+      if (res.events.length > 0) {
+        samples = samplesFromAttention(res.events);
+      }
+    } catch {
+      // Keep fallback samples.
     }
   }
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: "ARC Tenders",
-      body: "Δοκιμαστική ειδοποίηση — ήχος & lock screen OK.",
-      sound: "default",
-      priority: Notifications.AndroidNotificationPriority.MAX,
-      data: { test: true },
-    },
-    trigger: null,
-  });
+
+  for (let i = 0; i < samples.length; i += 1) {
+    const sample = samples[i]!;
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "ARC Tenders",
+        body: `${sample.title}\n${hintForType(sample.type, sample.title)}`,
+        sound: "default",
+        priority: Notifications.AndroidNotificationPriority.MAX,
+        data: {
+          test: true,
+          type: sample.type,
+          attentionEventId: sample.attentionEventId,
+          referenceNumber: sample.referenceNumber,
+          recordType: sample.recordType,
+          url: sample.url,
+        },
+      },
+      trigger:
+        i === 0
+          ? null
+          : {
+              type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+              seconds: i * 2,
+              repeats: false,
+            },
+    });
+  }
+
+  return samples.length;
 };
 
 /**
- * Register device (if possible) then ask the API to send a remote Expo push.
- * Falls back to a local notification when remote is unavailable.
+ * Prefer remote Expo push when available; always fall back to local demos
+ * built from real attention events so lock-screen UX can be verified in Expo Go.
  */
-export const sendPushSelfTest = async (): Promise<{
+export const sendPushSelfTest = async (organizationId?: string | null): Promise<{
   mode: "remote" | "local";
   detail: string;
 }> => {
   await ensureAndroidChannel();
 
   if (!Device.isDevice) {
-    await sendLocalTestNotification();
+    const count = await sendLocalDemoNotifications(organizationId);
     return {
       mode: "local",
-      detail: "Simulator: τοπική ειδοποίηση με ήχο.",
+      detail: `Simulator: ${count} τοπικές ειδοποιήσεις με πραγματικά data.`,
     };
   }
 
@@ -162,32 +253,32 @@ export const sendPushSelfTest = async (): Promise<{
     tokenError = err instanceof Error ? err.message : String(err);
   }
 
-  if (!token) {
-    await sendLocalTestNotification();
-    return {
-      mode: "local",
-      detail: tokenError
-        ? `Remote token απέτυχε (${tokenError}). Τοπική ειδοποίηση OK.`
-        : "Χωρίς push token — τοπική ειδοποίηση.",
-    };
+  if (token) {
+    try {
+      const res = await saasApi.sendPushTest();
+      return {
+        mode: "remote",
+        detail: `Remote Expo push σε ${res.sent} συσκευή(ές) με πραγματικά attention data.`,
+      };
+    } catch (err) {
+      const count = await sendLocalDemoNotifications(organizationId);
+      return {
+        mode: "local",
+        detail:
+          err instanceof Error
+            ? `Remote απέτυχε (${err.message}). Έστειλα ${count} τοπικές με πραγματικά data.`
+            : `Remote απέτυχε. Έστειλα ${count} τοπικές με πραγματικά data.`,
+      };
+    }
   }
 
-  try {
-    const res = await saasApi.sendPushTest();
-    return {
-      mode: "remote",
-      detail: `Remote Expo push σε ${res.sent} συσκευή(ές).`,
-    };
-  } catch (err) {
-    await sendLocalTestNotification();
-    return {
-      mode: "local",
-      detail:
-        err instanceof Error
-          ? `Remote απέτυχε (${err.message}) — τοπική ειδοποίηση.`
-          : "Remote απέτυχε — τοπική ειδοποίηση.",
-    };
-  }
+  const count = await sendLocalDemoNotifications(organizationId);
+  return {
+    mode: "local",
+    detail: tokenError
+      ? `Expo Go περιορίζει remote push (${tokenError}). Έστειλα ${count} τοπικές με πραγματικά data — κλείδωσε την οθόνη.`
+      : `Έστειλα ${count} τοπικές ειδοποιήσεις με πραγματικά data — κλείδωσε την οθόνη.`,
+  };
 };
 
 export const attachPushResponseListeners = (

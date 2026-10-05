@@ -75,9 +75,9 @@ export default function NotificationSettingsScreen() {
   const handleTestPush = async () => {
     setTesting(true);
     try {
-      const result = await sendPushSelfTest();
+      const result = await sendPushSelfTest(activeOrganization?.id);
       Alert.alert(
-        result.mode === "remote" ? "Remote push OK" : "Τοπική δοκιμή OK",
+        result.mode === "remote" ? "Remote push OK" : "Ειδοποιήσεις στάλθηκαν",
         result.detail,
       );
     } catch (err) {
