@@ -12,11 +12,17 @@ import {
 import { trackProductEventSafe } from "../ops/product-events.js";
 
 const mobileTrustedOrigins = [
+  // Standalone / dev-client scheme (app.json → scheme: arctenders)
   "arctenders://",
   "arctenders://*",
-  ...(process.env.NODE_ENV === "development"
-    ? ["exp://", "exp://**", "exp://192.168.*.*:*/**"]
-    : []),
+  // Expo Go hits the prod API during development — Origin is exp://<lan-ip>:8081
+  // (server NODE_ENV=production, so we cannot gate these on development alone).
+  "exp://",
+  "exp://**",
+  "exp://192.168.*.*:*/**",
+  "exp://10.*.*.*:*/**",
+  "exp://127.0.0.1:*/**",
+  "exp://localhost:*/**",
 ];
 
 export const createSaasAuth = (prisma: PrismaClient, config: SaasConfig) =>

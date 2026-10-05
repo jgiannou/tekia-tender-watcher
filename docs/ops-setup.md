@@ -62,6 +62,8 @@ BETTER_AUTH_SECRET=<long random>
 BETTER_AUTH_URL=https://arc-tenders.tekia.gr
 SAAS_APP_URL=https://arc-tenders.tekia.gr
 SAAS_TRUSTED_ORIGINS=https://arc-tenders.tekia.gr,http://localhost:5174,http://127.0.0.1:5174
+# Mobile (Expo): arctenders:// + exp:// are appended in code (src/saas/auth/auth.ts).
+# After shipping mobile auth changes, Redeploy saas-api on Coolify or login returns INVALID_ORIGIN.
 GEMI_API_KEY=…
 GEMI_API_BASE_URL=https://opendata-api.businessportal.gr/api/opendata/v1
 ```
