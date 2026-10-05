@@ -836,6 +836,7 @@ export type KimdisSearchItem = {
   recordType: "REQ" | "PROC";
   title: string;
   contractingAuthority: string;
+  description?: string;
   cpvs: string[];
   budgetWithoutVat: number | null;
   budgetWithVat: number | null;
@@ -1022,6 +1023,99 @@ export const saasApi = {
       method: "POST",
       body: JSON.stringify({ organizationId }),
     }),
+  getTeam: (organizationId: string) =>
+    request<{
+      organization: { id: string; name: string; slug: string };
+      role: "OWNER" | "ADMIN" | "MEMBER";
+      seats: {
+        includedSeats: number;
+        extraSeats: number;
+        seatLimit: number;
+        selfServiceCap: number;
+      };
+      members: Array<{
+        id: string;
+        userId: string;
+        role: "OWNER" | "ADMIN" | "MEMBER";
+        createdAt: string;
+        user: {
+          id: string;
+          name: string;
+          email: string;
+          image: string | null;
+        };
+      }>;
+      invitations: Array<{
+        id: string;
+        email: string;
+        role: "OWNER" | "ADMIN" | "MEMBER";
+        status: string;
+        expiresAt: string;
+        createdAt: string;
+      }>;
+    }>("/api/saas/organizations/members", { organizationId }),
+  inviteMember: (
+    organizationId: string,
+    body: { email: string; role?: "MEMBER" | "ADMIN" },
+  ) =>
+    request<{
+      invitation: {
+        id: string;
+        email: string;
+        role: string;
+        status: string;
+        expiresAt: string;
+        createdAt: string;
+      };
+      emailSent: boolean;
+      acceptUrl?: string;
+    }>("/api/saas/organizations/invitations", {
+      method: "POST",
+      organizationId,
+      body: JSON.stringify(body),
+    }),
+  cancelInvitation: (organizationId: string, invitationId: string) =>
+    request<{ ok: true }>(
+      `/api/saas/organizations/invitations/${encodeURIComponent(invitationId)}`,
+      { method: "DELETE", organizationId },
+    ),
+  peekInvitation: (token: string) =>
+    request<{
+      invitation: {
+        email: string;
+        role: string;
+        expiresAt: string;
+        organization: { id: string; name: string; slug: string };
+      };
+    }>(
+      `/api/saas/organizations/invitations/peek?token=${encodeURIComponent(token)}`,
+    ),
+  acceptInvitation: (token: string) =>
+    request<{
+      organization: { id: string; name: string; slug: string };
+      role: string;
+    }>("/api/saas/organizations/invitations/accept", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+  removeMember: (organizationId: string, memberUserId: string) =>
+    request<{ ok: true }>(
+      `/api/saas/organizations/members/${encodeURIComponent(memberUserId)}`,
+      { method: "DELETE", organizationId },
+    ),
+  updateMemberRole: (
+    organizationId: string,
+    memberUserId: string,
+    role: "MEMBER" | "ADMIN",
+  ) =>
+    request<{ member: { id: string; userId: string; role: string } }>(
+      `/api/saas/organizations/members/${encodeURIComponent(memberUserId)}`,
+      {
+        method: "PATCH",
+        organizationId,
+        body: JSON.stringify({ role }),
+      },
+    ),
   attention: (organizationId: string) =>
     request<{ events: AttentionEvent[] }>("/api/saas/attention", {
       organizationId,

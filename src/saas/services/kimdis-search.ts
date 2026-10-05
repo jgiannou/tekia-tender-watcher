@@ -72,6 +72,8 @@ export type KimdisSearchItem = {
   recordType: RecordType;
   title: string;
   contractingAuthority: string;
+  /** Object-detail short descriptions from KIMDIS (SaaS match haystack). */
+  description?: string;
   cpvs: string[];
   budgetWithoutVat: number | null;
   budgetWithVat: number | null;
@@ -85,6 +87,14 @@ export type KimdisSearchItem = {
   officialPdfUrl: string;
   openState: KimdisOpenState;
 };
+
+const collectDescription = (
+  details: Array<{ shortDescription?: string | null }> | null | undefined,
+): string =>
+  (details ?? [])
+    .map((detail) => detail.shortDescription?.trim() ?? "")
+    .filter(Boolean)
+    .join("\n");
 
 export type KimdisSearchResult = {
   items: KimdisSearchItem[];
@@ -221,6 +231,7 @@ const normalizeItem = (
     title: record.title?.trim() || "(no title)",
     contractingAuthority:
       record.organization?.value?.trim() || "Unknown organization",
+    description: collectDescription(record.objectDetails),
     cpvs: collectCpvs(record.objectDetails),
     budgetWithoutVat:
       typeof record.totalCostWithoutVAT === "number"
@@ -279,6 +290,7 @@ export const kimdisItemFromTender = (tender: Tender): KimdisSearchItem => ({
   recordType: (tender.recordType === "PROC" ? "PROC" : "REQ") as RecordType,
   title: tender.title ?? "",
   contractingAuthority: tender.contractingAuthority ?? "",
+  description: "",
   cpvs: Array.isArray(tender.cpvs)
     ? tender.cpvs.map((cpv) => String(cpv))
     : [],

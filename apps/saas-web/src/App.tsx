@@ -20,9 +20,11 @@ import { SettingsLayout } from "@/pages/settings/SettingsLayout";
 import { ProfileSettingsPage } from "@/pages/settings/ProfileSettingsPage";
 import { AppearanceSettingsPage } from "@/pages/settings/AppearanceSettingsPage";
 import { CompanySettingsPage } from "@/pages/settings/CompanySettingsPage";
+import { TeamSettingsPage } from "@/pages/settings/TeamSettingsPage";
 import { ActivitiesSettingsPage } from "@/pages/settings/ActivitiesSettingsPage";
 import { NotificationsSettingsPage } from "@/pages/settings/NotificationsSettingsPage";
 import { SubscriptionPage } from "@/pages/SubscriptionPage";
+import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
 
 export const App = () => (
   <SessionProvider>
@@ -32,6 +34,7 @@ export const App = () => (
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/accept-invite" element={<AcceptInvitePage />} />
       <Route element={<RequireAuth />}>
         <Route path="/app" element={<AppShell />}>
           <Route index element={<OverviewPage />} />
@@ -50,6 +53,7 @@ export const App = () => (
             <Route path="profile" element={<ProfileSettingsPage />} />
             <Route path="appearance" element={<AppearanceSettingsPage />} />
             <Route path="company" element={<CompanySettingsPage />} />
+            <Route path="team" element={<TeamSettingsPage />} />
             <Route path="activities" element={<ActivitiesSettingsPage />} />
             <Route path="notifications" element={<NotificationsSettingsPage />} />
           </Route>

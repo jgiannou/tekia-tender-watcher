@@ -4,6 +4,7 @@ import {
   resolveContractTypeCode,
   resolveProcedureTypeCode,
 } from "./kimdis-search.js";
+import { softenGreekInflection } from "../../filters/web-relevance.js";
 
 export type MatchingMode = "STRICT" | "BALANCED" | "BROAD";
 
@@ -42,10 +43,11 @@ export type WatchMatchResult = {
   rejected: boolean;
 };
 
+/** Recalled slightly so user keyword searches surface more real opportunities. */
 const MODE_THRESHOLDS: Record<MatchingMode, number> = {
   STRICT: 70,
-  BALANCED: 45,
-  BROAD: 30,
+  BALANCED: 35,
+  BROAD: 25,
 };
 
 export const effectiveScoreThreshold = (criteria: WatchProfileCriteria): number => {
@@ -56,6 +58,78 @@ export const effectiveScoreThreshold = (criteria: WatchProfileCriteria): number 
 
 const normalize = (value: string): string =>
   value.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+
+/** Match-time normalize + Greek inflection softener (+ genitive -ου). */
+const matchNorm = (value: string): string =>
+  softenGreekInflection(normalize(value)).replace(
+    /(^|[^\p{L}])([\p{L}]+?)ου(?=[^\p{L}]|$)/gu,
+    "$1$2ο",
+  );
+
+/**
+ * Synonym clusters for SaaS keyword expansion (match-only; does not rewrite profiles).
+ * Any member expands to the full cluster.
+ */
+const KEYWORD_SYNONYM_CLUSTERS: readonly (readonly string[])[] = [
+  [
+    "ιστοσελίδα",
+    "ιστότοπος",
+    "ιστοτόπος",
+    "ιστοχώρος",
+    "δικτυακός τόπος",
+    "website",
+    "web site",
+    "web",
+  ],
+  [
+    "φιλοξενία",
+    "φιλοξενια",
+    "hosting",
+    "web hosting",
+  ],
+  [
+    "cms",
+    "wordpress",
+    "joomla",
+    "drupal",
+  ],
+  [
+    "διαδικτυακή πύλη",
+    "ψηφιακή πλατφόρμα",
+    "πλατφόρμα",
+    "portal",
+    "platform",
+  ],
+  [
+    "web εφαρμογή",
+    "διαδικτυακή εφαρμογή",
+    "εφαρμογή web",
+    "web application",
+  ],
+];
+
+const synonymLookup = (() => {
+  const map = new Map<string, string[]>();
+  for (const cluster of KEYWORD_SYNONYM_CLUSTERS) {
+    const expanded = cluster.map((term) => matchNorm(term)).filter(Boolean);
+    for (const term of expanded) {
+      const prev = map.get(term) ?? [];
+      map.set(term, [...new Set([...prev, ...expanded])]);
+    }
+  }
+  return map;
+})();
+
+/** Expand a user keyword to itself + known synonyms (normalized for matching). */
+export const expandKeywordNeedles = (keyword: string): string[] => {
+  const base = matchNorm(keyword);
+  if (!base) return [];
+  const extras = synonymLookup.get(base) ?? [];
+  return [...new Set([base, ...extras])];
+};
+
+const textIncludesAny = (haystack: string, needles: string[]): boolean =>
+  needles.some((needle) => needle.length > 0 && haystack.includes(needle));
 
 const cpvPrefix = (cpv: string): string => cpv.replace(/\D/g, "").slice(0, 8);
 
@@ -92,12 +166,15 @@ export const scoreKimdisItemAgainstProfile = (
     };
   }
 
-  const haystack = normalize(`${item.title} ${item.contractingAuthority}`);
+  const description = item.description?.trim() ?? "";
+  const haystackRaw = `${item.title} ${item.contractingAuthority} ${description}`;
+  const haystack = matchNorm(haystackRaw);
+  const titleNorm = matchNorm(item.title);
 
   for (const neg of criteria.negativeKeywords) {
-    const needle = normalize(neg);
-    if (!needle) continue;
-    if (haystack.includes(needle)) {
+    const needles = expandKeywordNeedles(neg);
+    if (needles.length === 0) continue;
+    if (textIncludesAny(haystack, needles)) {
       return {
         score: 0,
         reasons: [`Αποκλείστηκε: αρνητική λέξη «${neg.trim()}»`],
@@ -110,8 +187,8 @@ export const scoreKimdisItemAgainstProfile = (
   }
 
   if (criteria.authority?.trim()) {
-    const authNeedle = normalize(criteria.authority);
-    const authHay = normalize(item.contractingAuthority);
+    const authNeedle = matchNorm(criteria.authority);
+    const authHay = matchNorm(item.contractingAuthority);
     if (!authHay.includes(authNeedle)) {
       return {
         score: 0,
@@ -194,19 +271,20 @@ export const scoreKimdisItemAgainstProfile = (
 
   // A single strong signal (title keyword or CPV) must be enough to qualify in
   // BALANCED mode; extra signals add less so scores stay comparable.
-  const titleNorm = normalize(item.title);
   for (const kw of criteria.keywords) {
-    const needle = normalize(kw);
-    if (!needle) continue;
+    const needles = expandKeywordNeedles(kw);
+    if (needles.length === 0) continue;
     const first = matchedKeywords.length === 0;
-    if (titleNorm.includes(needle)) {
-      matchedKeywords.push(kw.trim());
+    const label = kw.trim();
+    if (textIncludesAny(titleNorm, needles)) {
+      matchedKeywords.push(label);
       score += first ? 45 : 12;
-      reasons.push(`λέξη-κλειδί «${kw.trim()}» στον τίτλο`);
-    } else if (haystack.includes(needle)) {
-      matchedKeywords.push(kw.trim());
-      score += first ? 30 : 8;
-      reasons.push(`λέξη-κλειδί «${kw.trim()}» στο κείμενο`);
+      reasons.push(`λέξη-κλειδί «${label}» στον τίτλο`);
+    } else if (textIncludesAny(haystack, needles)) {
+      matchedKeywords.push(label);
+      // First body hit must clear BALANCED (35); title hits stay stronger.
+      score += first ? 35 : 8;
+      reasons.push(`λέξη-κλειδί «${label}» στο κείμενο`);
     }
   }
 

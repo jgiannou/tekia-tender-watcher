@@ -13,6 +13,7 @@ const sections = [
     title: "Επιχείρηση",
     items: [
       { to: "/app/settings/company", label: "Στοιχεία επιχείρησης" },
+      { to: "/app/settings/team", label: "Ομάδα" },
       { to: "/app/settings/activities", label: "Δραστηριότητες / ΚΑΔ" },
     ],
   },

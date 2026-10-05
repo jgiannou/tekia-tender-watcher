@@ -28,6 +28,15 @@ import {
   listUserOrganizations,
   setActiveOrganization,
 } from "./services/organizations.js";
+import {
+  acceptOrganizationInvitation,
+  cancelOrganizationInvitation,
+  createOrganizationInvitation,
+  listOrganizationTeam,
+  peekInvitationByToken,
+  removeOrganizationMember,
+  updateOrganizationMemberRole,
+} from "./services/invitations.js";
 import { recordOutreachSent } from "./services/outreach.js";
 import {
   WORKSPACE_SECTIONS,
@@ -969,6 +978,100 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     });
     return c.json(result);
   });
+
+  app.get("/api/saas/organizations/members", requireSession, async (c) => {
+    const team = await listOrganizationTeam(deps.prisma, {
+      userId: c.get("userId"),
+      organizationId: resolveOrgId(c),
+    });
+    return c.json(team);
+  });
+
+  app.post("/api/saas/organizations/invitations", requireSession, async (c) => {
+    const body = z
+      .object({
+        email: z.string().email(),
+        role: z.enum(["MEMBER", "ADMIN"]).optional(),
+      })
+      .parse(await c.req.json());
+    const result = await createOrganizationInvitation(deps.prisma, {
+      userId: c.get("userId"),
+      organizationId: resolveOrgId(c),
+      email: body.email,
+      role: body.role,
+    });
+    return c.json(result, 201);
+  });
+
+  app.delete(
+    "/api/saas/organizations/invitations/:id",
+    requireSession,
+    async (c) => {
+      const result = await cancelOrganizationInvitation(deps.prisma, {
+        userId: c.get("userId"),
+        organizationId: resolveOrgId(c),
+        invitationId: c.req.param("id"),
+      });
+      return c.json(result);
+    },
+  );
+
+  app.get("/api/saas/organizations/invitations/peek", async (c) => {
+    const token = c.req.query("token")?.trim() ?? "";
+    if (!token) throw badRequest("token_required");
+    const invitation = await peekInvitationByToken(deps.prisma, token);
+    return c.json({ invitation });
+  });
+
+  app.post(
+    "/api/saas/organizations/invitations/accept",
+    requireSession,
+    async (c) => {
+      const body = z
+        .object({ token: z.string().min(1) })
+        .parse(await c.req.json());
+      const result = await acceptOrganizationInvitation(deps.prisma, {
+        userId: c.get("userId"),
+        token: body.token,
+      });
+      await setActiveOrganization(deps.prisma, {
+        userId: c.get("userId"),
+        sessionToken: c.get("sessionToken"),
+        organizationId: result.organization.id,
+      });
+      return c.json(result);
+    },
+  );
+
+  app.delete(
+    "/api/saas/organizations/members/:userId",
+    requireSession,
+    async (c) => {
+      const result = await removeOrganizationMember(deps.prisma, {
+        userId: c.get("userId"),
+        organizationId: resolveOrgId(c),
+        memberUserId: c.req.param("userId"),
+      });
+      return c.json(result);
+    },
+  );
+
+  app.patch(
+    "/api/saas/organizations/members/:userId",
+    requireSession,
+    async (c) => {
+      const body = z
+        .object({ role: z.enum(["MEMBER", "ADMIN"]) })
+        .parse(await c.req.json());
+      const result = await updateOrganizationMemberRole(deps.prisma, {
+        userId: c.get("userId"),
+        organizationId: resolveOrgId(c),
+        memberUserId: c.req.param("userId"),
+        role: body.role,
+      });
+      return c.json({ member: result });
+    },
+  );
 
   app.post("/api/saas/tenders/:tenderId/follow", requireSession, async (c) => {
     const organizationId = resolveOrgId(c);

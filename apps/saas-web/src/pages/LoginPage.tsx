@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import { PasswordInput } from "@/components/ui/password-input";
 
 export const LoginPage = () => {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = params.get("next")?.trim() || "/app";
   const { refetch } = authClient.useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,7 +37,7 @@ export const LoginPage = () => {
       }
 
       toast.success("Καλωσήρθατε");
-      navigate("/app", { replace: true });
+      navigate(next.startsWith("/") ? next : "/app", { replace: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Αποτυχία σύνδεσης");
     } finally {

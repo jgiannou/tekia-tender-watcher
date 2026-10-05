@@ -46,6 +46,24 @@ export const humanSaasError = (message: string): string => {
   if (message.includes("seat_limit_reached")) {
     return "Έχετε φτάσει το όριο θέσεων χρηστών. Προσθέστε έξτρα θέσεις στο Pro ή αναβαθμίστε.";
   }
+  if (message.includes("already_a_member")) {
+    return "Αυτό το email είναι ήδη μέλος του οργανισμού.";
+  }
+  if (message.includes("invite_already_pending")) {
+    return "Υπάρχει ήδη ανοιχτή πρόσκληση για αυτό το email.";
+  }
+  if (message.includes("invite_email_mismatch")) {
+    return "Συνδεθείτε με το email της πρόσκλησης για να την αποδεχτείτε.";
+  }
+  if (message.includes("invitation_expired")) {
+    return "Η πρόσκληση έχει λήξει. Ζητήστε νέα από τον διαχειριστή.";
+  }
+  if (message.includes("invitation_not_found")) {
+    return "Η πρόσκληση δεν βρέθηκε ή έχει ακυρωθεί.";
+  }
+  if (message.includes("cannot_remove_owner") || message.includes("cannot_remove_self")) {
+    return "Δεν μπορείτε να αφαιρέσετε αυτό το μέλος.";
+  }
   if (message.includes("advanced_watch_filters_requires_pro")) {
     return "Τα προχωρημένα φίλτρα (αρχή, προϋπολογισμός, άμεσο email) είναι διαθέσιμα στο Pro.";
   }

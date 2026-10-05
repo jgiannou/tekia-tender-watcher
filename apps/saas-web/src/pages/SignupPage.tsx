@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { saasApi } from "@/lib/api";
@@ -11,6 +11,9 @@ import { PasswordInput } from "@/components/ui/password-input";
 
 export const SignupPage = () => {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = params.get("next")?.trim() || "/app";
+  const inviteFlow = next.startsWith("/accept-invite");
   const { refetch } = authClient.useSession();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -38,27 +41,32 @@ export const SignupPage = () => {
         authClient.hydrateSession(session.data);
       }
 
-      // Session cookie can lag one tick after sign-up; retry org create once.
-      let organization: { id: string } | null = null;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          const created = await saasApi.createOrganization(
-            organizationName.trim() || "ARC Tenders",
-          );
-          organization = created.organization;
-          break;
-        } catch (err) {
-          if (attempt === 2) throw err;
-          await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+      if (!inviteFlow) {
+        // Session cookie can lag one tick after sign-up; retry org create once.
+        let organization: { id: string } | null = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            const created = await saasApi.createOrganization(
+              organizationName.trim() || "ARC Tenders",
+            );
+            organization = created.organization;
+            break;
+          } catch (err) {
+            if (attempt === 2) throw err;
+            await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+          }
+        }
+        if (organization?.id) {
+          await saasApi.setActiveOrganization(organization.id).catch(() => null);
         }
       }
-      if (organization?.id) {
-        await saasApi.setActiveOrganization(organization.id).catch(() => null);
-      }
+
       toast.success(
-        "Ο λογαριασμός δημιουργήθηκε. Ελέγξτε το email σας για επιβεβαίωση.",
+        inviteFlow
+          ? "Ο λογαριασμός δημιουργήθηκε. Αποδεχτείτε την πρόσκληση."
+          : "Ο λογαριασμός δημιουργήθηκε. Ελέγξτε το email σας για επιβεβαίωση.",
       );
-      navigate("/app", { replace: true });
+      navigate(next.startsWith("/") ? next : "/app", { replace: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Αποτυχία εγγραφής");
     } finally {
@@ -89,15 +97,21 @@ export const SignupPage = () => {
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="org">Οργανισμός</Label>
-              <Input
-                id="org"
-                required
-                value={organizationName}
-                onChange={(e) => setOrganizationName(e.target.value)}
-              />
-            </div>
+            {!inviteFlow ? (
+              <div className="space-y-2">
+                <Label htmlFor="org">Οργανισμός</Label>
+                <Input
+                  id="org"
+                  required
+                  value={organizationName}
+                  onChange={(e) => setOrganizationName(e.target.value)}
+                />
+              </div>
+            ) : (
+              <p className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                Εγγραφή μέσω πρόσκλησης — θα ενταχθείτε στον οργανισμό μετά την αποδοχή.
+              </p>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -126,7 +140,10 @@ export const SignupPage = () => {
           </form>
           <p className="mt-4 text-center text-sm text-muted-foreground">
             Έχετε ήδη λογαριασμό;{" "}
-            <Link className="font-medium text-primary underline-offset-4 hover:underline" to="/login">
+            <Link
+              className="font-medium text-primary underline-offset-4 hover:underline"
+              to={inviteFlow ? `/login?next=${encodeURIComponent(next)}` : "/login"}
+            >
               Σύνδεση
             </Link>
           </p>
