@@ -1,3 +1,4 @@
+import { expo } from "@better-auth/expo";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import type { PrismaClient } from "@prisma/client";
@@ -10,6 +11,14 @@ import {
 } from "../mail/mail.js";
 import { trackProductEventSafe } from "../ops/product-events.js";
 
+const mobileTrustedOrigins = [
+  "arctenders://",
+  "arctenders://*",
+  ...(process.env.NODE_ENV === "development"
+    ? ["exp://", "exp://**", "exp://192.168.*.*:*/**"]
+    : []),
+];
+
 export const createSaasAuth = (prisma: PrismaClient, config: SaasConfig) =>
   betterAuth({
     database: prismaAdapter(prisma, {
@@ -17,7 +26,8 @@ export const createSaasAuth = (prisma: PrismaClient, config: SaasConfig) =>
     }),
     secret: config.BETTER_AUTH_SECRET,
     baseURL: config.BETTER_AUTH_URL,
-    trustedOrigins: config.SAAS_TRUSTED_ORIGINS,
+    trustedOrigins: [...config.SAAS_TRUSTED_ORIGINS, ...mobileTrustedOrigins],
+    plugins: [expo()],
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 8,
@@ -121,6 +131,6 @@ export const createSaasAuth = (prisma: PrismaClient, config: SaasConfig) =>
     user: {
       additionalFields: {},
     },
-  });
+  }) as unknown as ReturnType<typeof betterAuth>;
 
-export type SaasAuth = ReturnType<typeof createSaasAuth>;
+export type SaasAuth = ReturnType<typeof betterAuth>;

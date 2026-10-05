@@ -78,7 +78,12 @@ import {
   updateNotifications,
   updateOnboardingStatus,
 } from "./services/org-settings.js";
-import { getUserPreference, setUserTheme } from "./services/user-preferences.js";
+import { getUserPreference, setMobilePushPreference, setUserTheme } from "./services/user-preferences.js";
+import {
+  disablePushDevice,
+  upsertPushDevice,
+  sendTestPushToUser,
+} from "./services/push.js";
 import { getEntitlementsView } from "./services/entitlements.js";
 import { registerBillingRoutes } from "./billing/routes.js";
 import { createOpsEnterHandler } from "./ops/enter.js";
@@ -145,8 +150,14 @@ export const createSaasApp = (deps: SaasAppDeps) => {
   app.use(
     "*",
     cors({
-      origin: config.SAAS_TRUSTED_ORIGINS,
-      allowHeaders: ["Content-Type", "Authorization", "X-Organization-Id"],
+      origin: [
+        ...config.SAAS_TRUSTED_ORIGINS,
+        "arctenders://",
+        ...(process.env.NODE_ENV === "development"
+          ? ["exp://", "http://localhost:8081", "http://127.0.0.1:8081"]
+          : []),
+      ],
+      allowHeaders: ["Content-Type", "Authorization", "X-Organization-Id", "Cookie"],
       allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
       credentials: true,
     }),
@@ -244,6 +255,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
           }
         : null,
       theme: preference.theme,
+      mobilePushEnabled: preference.mobilePushEnabled,
       gemiConfigured: companyRegistry.isConfigured(),
       emailEnabled: String(process.env.EMAIL_ENABLED || "").toLowerCase() === "true",
       activeOrganizationId,
@@ -332,18 +344,80 @@ export const createSaasApp = (deps: SaasAppDeps) => {
 
   app.get("/api/saas/me/preferences", requireSession, async (c) => {
     const preference = await getUserPreference(deps.prisma, c.get("userId"));
-    return c.json({ theme: preference.theme });
+    return c.json({
+      theme: preference.theme,
+      mobilePushEnabled: preference.mobilePushEnabled,
+    });
   });
 
   app.put("/api/saas/me/preferences", requireSession, async (c) => {
     const body = z
-      .object({ theme: z.enum(["DARK", "LIGHT", "SYSTEM"]) })
+      .object({
+        theme: z.enum(["DARK", "LIGHT", "SYSTEM"]).optional(),
+        mobilePushEnabled: z.boolean().optional(),
+      })
       .parse(await c.req.json());
-    const preference = await setUserTheme(deps.prisma, {
-      userId: c.get("userId"),
-      theme: body.theme,
+    let preference = await getUserPreference(deps.prisma, c.get("userId"));
+    if (body.theme) {
+      preference = await setUserTheme(deps.prisma, {
+        userId: c.get("userId"),
+        theme: body.theme,
+      });
+    }
+    if (typeof body.mobilePushEnabled === "boolean") {
+      preference = await setMobilePushPreference(deps.prisma, {
+        userId: c.get("userId"),
+        mobilePushEnabled: body.mobilePushEnabled,
+      });
+    }
+    return c.json({
+      theme: preference.theme,
+      mobilePushEnabled: preference.mobilePushEnabled,
     });
-    return c.json({ theme: preference.theme });
+  });
+
+  app.post("/api/saas/me/push-devices", requireSession, async (c) => {
+    const body = z
+      .object({
+        token: z.string().min(8),
+        platform: z.enum(["ios", "android", "web"]).default("ios"),
+        enabled: z.boolean().optional(),
+      })
+      .parse(await c.req.json());
+    const device = await upsertPushDevice(deps.prisma, {
+      userId: c.get("userId"),
+      token: body.token,
+      platform: body.platform,
+      enabled: body.enabled,
+    });
+    return c.json({ device: { id: device.id, platform: device.platform } });
+  });
+
+  app.delete("/api/saas/me/push-devices", requireSession, async (c) => {
+    const body = z
+      .object({ token: z.string().min(8) })
+      .parse(await c.req.json());
+    await disablePushDevice(deps.prisma, {
+      userId: c.get("userId"),
+      token: body.token,
+    });
+    return c.json({ ok: true });
+  });
+
+  app.post("/api/saas/me/push-test", requireSession, async (c) => {
+    const result = await sendTestPushToUser(deps.prisma, c.get("userId"));
+    if (result.sent === 0) {
+      return c.json(
+        {
+          error: "no_devices",
+          message:
+            "Δεν υπάρχει εγγεγραμμένη συσκευή. Άνοιξε την εφαρμογή σε φυσική συσκευή με push ενεργό.",
+          ...result,
+        },
+        404,
+      );
+    }
+    return c.json(result);
   });
 
   app.get("/api/saas/settings", requireSession, async (c) => {

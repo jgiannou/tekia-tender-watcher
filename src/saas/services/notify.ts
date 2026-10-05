@@ -7,6 +7,7 @@ import {
 } from "../mail/mail.js";
 import { entitlementsForPlanKey } from "../plans/catalog.js";
 import { normalizeNotifications } from "./org-settings.js";
+import { queueAttentionPush } from "./push.js";
 
 const RELATED_TYPES = new Set<AttentionEventType>([
   "RELATED_PROC_DISCOVERED",
@@ -563,4 +564,5 @@ export const queueAttentionEmail = (
       error instanceof Error ? error.message : error,
     );
   });
+  queueAttentionPush(prisma, attentionEventId);
 };

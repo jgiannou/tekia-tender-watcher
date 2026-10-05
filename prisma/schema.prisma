@@ -54,6 +54,7 @@ model User {
   invitationsSent Invitation[] @relation("InvitationInviter")
   preference  UserPreference?
   legalAcceptance LegalAcceptance?
+  pushDevices PushDevice[]
 
   @@map("users")
 }
@@ -80,15 +81,34 @@ model LegalAcceptance {
 
 /// Per-user UI preferences (theme belongs to the user, not the organization).
 model UserPreference {
-  id        String          @id @default(cuid())
-  userId    String          @unique
-  theme     ThemePreference @default(DARK)
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  theme             ThemePreference @default(DARK)
+  /// Master switch for mobile lock-screen / sound push notifications.
+  mobilePushEnabled Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_preferences")
+}
+
+/// Expo push tokens for mobile devices (per user).
+model PushDevice {
+  id         String   @id @default(cuid())
+  userId     String
+  token      String   @unique
+  platform   String
+  enabled    Boolean  @default(true)
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, enabled])
+  @@map("push_devices")
 }
 
 model Session {

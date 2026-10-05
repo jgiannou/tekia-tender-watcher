@@ -2,6 +2,7 @@ import type { AttentionEventType, PrismaClient } from "@prisma/client";
 import { requireOrgMembership } from "../auth/org-context.js";
 import { notFound } from "../errors.js";
 import { attentionTitleFor, pruneAttentionEventsForOrg } from "./attention.js";
+import { queueAttentionEmail } from "./notify.js";
 
 type SubmissionDocumentRef = {
   documentId: string;
@@ -147,7 +148,7 @@ export const recordFormalSubmission = async (
       orgTender.tender.title?.trim() ||
       orgTender.tender.referenceNumber ||
       attentionTitleFor(type, "CONFIRMED");
-    await tx.organizationAttentionEvent.create({
+    const attention = await tx.organizationAttentionEvent.create({
       data: {
         organizationId: input.organizationId,
         organizationTenderId: orgTender.id,
@@ -166,10 +167,11 @@ export const recordFormalSubmission = async (
       },
     });
 
-    return { submission, organizationTender };
+    return { submission, organizationTender, attentionId: attention.id };
   });
 
   await pruneAttentionEventsForOrg(prisma, input.organizationId);
+  queueAttentionEmail(prisma, result.attentionId);
   return result;
 };
 
