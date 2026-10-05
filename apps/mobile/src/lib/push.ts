@@ -16,14 +16,18 @@ Notifications.setNotificationHandler({
 let cachedToken: string | null = null;
 let listenersAttached = false;
 
+const isUuid = (value: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+
 const projectId = (): string | undefined => {
   const fromEas = Constants.easConfig?.projectId;
   const fromExtra = Constants.expoConfig?.extra?.eas?.projectId as
     | string
     | undefined;
   const id = fromEas || fromExtra;
-  // Expo expects a UUID; ignore placeholder slug values.
-  if (id && /^[0-9a-f-]{36}$/i.test(id)) return id;
+  if (id && isUuid(id)) return id;
   return undefined;
 };
 
@@ -37,6 +41,24 @@ export const ensureAndroidChannel = async () => {
     sound: "default",
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   });
+};
+
+const fetchExpoPushToken = async (): Promise<string> => {
+  const id = projectId();
+  if (!id) {
+    throw new Error(
+      "Λείπει το EAS projectId (UUID). Τρέξε `eas init` στο apps/mobile.",
+    );
+  }
+  try {
+    const tokenResponse = await Notifications.getExpoPushTokenAsync({
+      projectId: id,
+    });
+    return tokenResponse.data;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Expo push token: ${message}`);
+  }
 };
 
 export const registerForPushNotifications = async (): Promise<string | null> => {
@@ -62,11 +84,7 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
   }
   if (status !== "granted") return null;
 
-  const id = projectId();
-  const tokenResponse = id
-    ? await Notifications.getExpoPushTokenAsync({ projectId: id })
-    : await Notifications.getExpoPushTokenAsync();
-  cachedToken = tokenResponse.data;
+  cachedToken = await fetchExpoPushToken();
 
   const platform =
     Platform.OS === "ios"
@@ -85,12 +103,13 @@ export const registerForPushNotifications = async (): Promise<string | null> => 
 };
 
 export const unregisterPushNotifications = async () => {
-  const token =
-    cachedToken ||
-    (await Notifications.getExpoPushTokenAsync().catch(() => null))?.data;
-  if (!token) return;
-  await saasApi.unregisterPushDevice(token);
-  cachedToken = null;
+  try {
+    const token = cachedToken || (await fetchExpoPushToken().catch(() => null));
+    if (!token) return;
+    await saasApi.unregisterPushDevice(token);
+  } finally {
+    cachedToken = null;
+  }
 };
 
 export const getCachedPushToken = () => cachedToken;
@@ -119,7 +138,7 @@ export const sendLocalTestNotification = async () => {
 
 /**
  * Register device (if possible) then ask the API to send a remote Expo push.
- * Falls back to a local notification when running on simulator.
+ * Falls back to a local notification when remote is unavailable.
  */
 export const sendPushSelfTest = async (): Promise<{
   mode: "remote" | "local";
@@ -135,12 +154,21 @@ export const sendPushSelfTest = async (): Promise<{
     };
   }
 
-  const token = await registerForPushNotifications();
+  let token: string | null = null;
+  let tokenError: string | null = null;
+  try {
+    token = await registerForPushNotifications();
+  } catch (err) {
+    tokenError = err instanceof Error ? err.message : String(err);
+  }
+
   if (!token) {
     await sendLocalTestNotification();
     return {
       mode: "local",
-      detail: "Χωρίς push token — τοπική ειδοποίηση.",
+      detail: tokenError
+        ? `Remote token απέτυχε (${tokenError}). Τοπική ειδοποίηση OK.`
+        : "Χωρίς push token — τοπική ειδοποίηση.",
     };
   }
 

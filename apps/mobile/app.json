@@ -12,7 +12,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.arctenders.app",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -57,9 +59,11 @@
       "typedRoutes": true
     },
     "extra": {
+      "router": {},
       "eas": {
-        "projectId": "arc-tenders-mobile"
+        "projectId": "77367e8b-b5e9-4f66-885a-99832b68e1b8"
       }
-    }
+    },
+    "owner": "jgiann"
   }
 }
