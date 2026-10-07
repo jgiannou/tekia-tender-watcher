@@ -23,6 +23,7 @@ import {
 import { useSessionContext } from "@/auth/SessionProvider";
 import { CreateOrganizationDialog } from "@/components/CreateOrganizationDialog";
 import { EmailVerificationBanner } from "@/components/auth/EmailVerificationBanner";
+import { TrialBanner } from "@/components/billing/TrialBanner";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -437,6 +438,7 @@ export const AppShell = () => {
 
         <main className="min-w-0 flex-1 overflow-x-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
           <EmailVerificationBanner />
+          <TrialBanner />
           <Outlet />
         </main>
       </div>
