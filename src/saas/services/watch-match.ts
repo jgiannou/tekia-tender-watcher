@@ -76,9 +76,12 @@ const MODE_THRESHOLDS: Record<MatchingMode, number> = {
  * Points — calibrated for search intent, not "company bid fit".
  *
  * If the user searches only for «ιστοσελίδα» and it hits the title, that IS a
- * strong match for their query (~48%). Extra CPV / company-ΚΑΔ signals boost
- * further for ranking among good hits — they must not punish keyword-only
- * profiles that already surface the right opportunities.
+ * strong match for their query (~48% keyword component). Extra CPV / company-ΚΑΔ
+ * / stage / budget signals boost further for ranking among good hits — they must
+ * not punish keyword-only profiles that already surface the right opportunities.
+ *
+ * Selected Slack TEKIA scorer ideas (early REQ, mid-range budget) apply as soft
+ * boosts only. No hard web-relevance gate: SaaS clients are not all web shops.
  */
 const POINTS = {
   titleFirstCluster: 48,
@@ -96,6 +99,15 @@ const POINTS = {
   contractType: 5,
   procedureType: 5,
   budgetInRange: 4,
+  /**
+   * Slack-style: budget in the middle half of the profile's own min–max range
+   * (not TEKIA's absolute €3k–€20k sweet spot — that is industry-specific).
+   */
+  budgetMidRange: 6,
+  /** Slack-style early-stage: REQ is usually more actionable than PROC. */
+  earlyReq: 8,
+  /** Slack-style early REQ + title keyword (without TEKIA web-only gate). */
+  earlyReqTitleKeyword: 8,
   /** Directed / closed invitations are not actionable for an uninvited firm. */
   targetedPenalty: 55,
   targetedScoreCap: 22,
@@ -367,6 +379,19 @@ export const scoreKimdisItemAgainstProfile = (
     score += POINTS.budgetInRange;
     breakdown.filters += POINTS.budgetInRange;
     reasons.push("Προϋπολογισμός εντός ορίων");
+
+    if (criteria.minBudget != null && criteria.maxBudget != null) {
+      const span = criteria.maxBudget - criteria.minBudget;
+      if (span > 0) {
+        const midLo = criteria.minBudget + span * 0.25;
+        const midHi = criteria.minBudget + span * 0.75;
+        if (budget >= midLo && budget <= midHi) {
+          score += POINTS.budgetMidRange;
+          breakdown.filters += POINTS.budgetMidRange;
+          reasons.push("Προϋπολογισμός στο μεσαίο εύρος του προφίλ");
+        }
+      }
+    }
   }
 
   // One score per synonym cluster — profile ["ιστοσελίδα","website"] must not
@@ -374,6 +399,7 @@ export const scoreKimdisItemAgainstProfile = (
   const scoredClusters = new Set<string>();
   let extraClusters = 0;
   let keywordPoints = 0;
+  let firstKeywordInTitle = false;
 
   for (const kw of criteria.keywords) {
     const needles = expandKeywordNeedles(kw);
@@ -390,6 +416,7 @@ export const scoreKimdisItemAgainstProfile = (
     const isFirst = scoredClusters.size === 1;
 
     if (isFirst) {
+      firstKeywordInTitle = inTitle;
       const pts = inTitle ? POINTS.titleFirstCluster : POINTS.bodyFirstCluster;
       keywordPoints += pts;
       reasons.push(
@@ -462,18 +489,39 @@ export const scoreKimdisItemAgainstProfile = (
   score += companyPoints;
   breakdown.company = companyPoints;
 
+  const targeted = detectTargetedInvitation(item);
+
+  // Slack-style stage boosts — soft ranking only, never a web gate.
+  const hasCoreMatch = matchedKeywords.length > 0 || matchedCpvs.length > 0;
+  if (
+    !targeted.targeted &&
+    item.recordType === "REQ" &&
+    hasCoreMatch &&
+    !item.cancelled
+  ) {
+    score += POINTS.earlyReq;
+    breakdown.filters += POINTS.earlyReq;
+    reasons.push("Πρώιμο αίτημα (REQ)");
+    breakdown.signals.push("early");
+
+    if (firstKeywordInTitle) {
+      score += POINTS.earlyReqTitleKeyword;
+      breakdown.filters += POINTS.earlyReqTitleKeyword;
+      reasons.push("Αίτημα με λέξη-κλειδί στον τίτλο");
+    }
+  }
+
   if (matchedKeywords.length > 0) breakdown.signals.push("keywords");
   if (matchedCpvs.length > 0) breakdown.signals.push("cpv");
   if (companyPoints > 0) breakdown.signals.push("company");
 
   // Explainability only — never punish a correct keyword-only hit.
-  if (breakdown.signals.length >= 2) {
+  if (breakdown.signals.filter((s) => s !== "early").length >= 2) {
     reasons.unshift(
-      `Ισχυρό match · ${breakdown.signals.join(" + ")}`,
+      `Ισχυρό match · ${breakdown.signals.filter((s) => s !== "early").join(" + ")}`,
     );
   }
 
-  const targeted = detectTargetedInvitation(item);
   if (targeted.targeted) {
     score -= POINTS.targetedPenalty;
     breakdown.penalties += POINTS.targetedPenalty;

@@ -10,7 +10,6 @@ import {
   Plus,
   Search,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { AuthenticatedPdfViewer } from "@/components/AuthenticatedPdfViewer";
@@ -303,10 +302,6 @@ export const DocumentsPage = () => {
             aria-label="Αναζήτηση εγγράφων"
           />
         </div>
-        <Button variant="outline" onClick={() => setUploadOpen(true)}>
-          <Upload className="h-4 w-4" />
-          Μεταφόρτωση
-        </Button>
         <Button variant="outline" onClick={() => void handleCreateFolder()}>
           <FolderPlus className="h-4 w-4" />
           Νέος φάκελος
@@ -347,24 +342,18 @@ export const DocumentsPage = () => {
         </Card>
 
         <div className="space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-semibold tracking-tight">
-                {search.trim()
-                  ? `Αποτελέσματα αναζήτησης`
-                  : activeFolder?.name ?? "Έγγραφα"}
-              </h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {documents.length} έγγραφα
-                {expiringSoonCount > 0
-                  ? ` · ${expiringSoonCount} λήγουν σύντομα`
-                  : ""}
-              </p>
-            </div>
-            <Button size="sm" onClick={() => setUploadOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Μεταφόρτωση
-            </Button>
+          <div>
+            <h3 className="text-lg font-semibold tracking-tight">
+              {search.trim()
+                ? `Αποτελέσματα αναζήτησης`
+                : activeFolder?.name ?? "Έγγραφα"}
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {documents.length} έγγραφα
+              {expiringSoonCount > 0
+                ? ` · ${expiringSoonCount} λήγουν σύντομα`
+                : ""}
+            </p>
           </div>
 
           {childFolders.length > 0 && !search.trim() ? (
@@ -387,7 +376,7 @@ export const DocumentsPage = () => {
             <EmptyState
               title="Κενός φάκελος"
               description="Δεν υπάρχουν ακόμη έγγραφα σε αυτή την κατηγορία."
-              actionLabel="+ Μεταφόρτωση εγγράφου"
+              actionLabel="Μεταφόρτωση εγγράφου"
               onAction={() => setUploadOpen(true)}
             />
           ) : (

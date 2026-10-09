@@ -124,15 +124,17 @@ describe("SaaS watch-match scoring", () => {
     );
   });
 
-  it("treats a title keyword hit as a strong search match (~48%)", () => {
+  it("treats a title keyword hit as a strong search match (~48% keyword)", () => {
     const result = scoreKimdisItemAgainstProfile(
       balancedCriteria,
       baseItem({
+        recordType: "PROC",
         title: "Συντήρηση της ιστοσελίδας του Δήμου",
       }),
     );
     expect(result.qualifies).toBe(true);
     expect(result.matchedKeywords).toContain("ιστοσελίδα");
+    expect(result.breakdown.keywords).toBe(48);
     expect(result.score).toBe(48);
     expect(result.breakdown.signals).toEqual(["keywords"]);
     expect(result.breakdown.capped).toBe(false);
@@ -142,11 +144,15 @@ describe("SaaS watch-match scoring", () => {
   it("matches synonym website in title while keeping user keyword in reasons", () => {
     const result = scoreKimdisItemAgainstProfile(
       balancedCriteria,
-      baseItem({ title: "Municipality website redesign and CMS" }),
+      baseItem({
+        recordType: "PROC",
+        title: "Municipality website redesign and CMS",
+      }),
     );
     expect(result.qualifies).toBe(true);
     expect(result.matchedKeywords).toEqual(["ιστοσελίδα"]);
     expect(result.reasons.some((r) => r.includes("ιστοσελίδα"))).toBe(true);
+    expect(result.breakdown.keywords).toBe(48);
     expect(result.score).toBe(48);
   });
 
@@ -159,6 +165,7 @@ describe("SaaS watch-match scoring", () => {
     const result = scoreKimdisItemAgainstProfile(
       criteria,
       baseItem({
+        recordType: "PROC",
         title: "Συντήρηση ιστοσελίδας Δήμου",
         cpvs: ["72413000-8"],
       }),
@@ -173,12 +180,14 @@ describe("SaaS watch-match scoring", () => {
     const result = scoreKimdisItemAgainstProfile(
       balancedCriteria,
       baseItem({
+        recordType: "PROC",
         title: "Παροχή υπηρεσιών πληροφορικής",
         description: "Αναβάθμιση ιστοτόπου και φιλοξενία",
       }),
     );
     expect(result.qualifies).toBe(true);
     expect(result.score).toBe(35);
+    expect(result.breakdown.keywords).toBe(35);
     expect(result.reasons.some((r) => r.includes("στο κείμενο"))).toBe(true);
   });
 
@@ -190,6 +199,7 @@ describe("SaaS watch-match scoring", () => {
     const result = scoreKimdisItemAgainstProfile(
       criteria,
       baseItem({
+        recordType: "PROC",
         title: "Ιστοσελίδα portal CMS για δημόσια υπηρεσία",
       }),
     );
@@ -212,6 +222,7 @@ describe("SaaS watch-match scoring", () => {
     const result = scoreKimdisItemAgainstProfile(
       criteria,
       baseItem({
+        recordType: "PROC",
         title: "Συντήρηση ιστοσελίδας Δήμου",
         cpvs: ["72413000-8"],
       }),
@@ -220,6 +231,45 @@ describe("SaaS watch-match scoring", () => {
     expect(result.breakdown.signals).toEqual(["keywords", "company"]);
     expect(result.score).toBe(62); // 48 + 14 company CPV
     expect(result.reasons.some((r) => r.includes("δραστηριότητες"))).toBe(true);
+  });
+
+  it("applies Slack-style early REQ boosts without a web gate", () => {
+    const result = scoreKimdisItemAgainstProfile(
+      balancedCriteria,
+      baseItem({
+        recordType: "REQ",
+        title: "Συντήρηση της ιστοσελίδας του Δήμου",
+      }),
+    );
+    expect(result.qualifies).toBe(true);
+    expect(result.breakdown.keywords).toBe(48);
+    // 48 keyword + 8 early REQ + 8 title-on-REQ
+    expect(result.score).toBe(64);
+    expect(result.breakdown.signals).toEqual(["early", "keywords"]);
+    expect(result.reasons.some((r) => r.includes("Πρώιμο αίτημα"))).toBe(true);
+    expect(result.reasons.some((r) => r.includes("λέξη-κλειδί στον τίτλο"))).toBe(
+      true,
+    );
+  });
+
+  it("boosts mid-range budget relative to the profile's own limits", () => {
+    const criteria = criteriaFromWatchProfile({
+      ...balancedCriteria,
+      minBudget: 1000,
+      maxBudget: 20000,
+    });
+    const result = scoreKimdisItemAgainstProfile(
+      criteria,
+      baseItem({
+        recordType: "PROC",
+        title: "Συντήρηση ιστοσελίδας Δήμου",
+        budgetWithoutVat: 8000,
+      }),
+    );
+    expect(result.qualifies).toBe(true);
+    // 48 keyword + 4 in-range + 6 mid-range
+    expect(result.score).toBe(58);
+    expect(result.reasons.some((r) => r.includes("μεσαίο εύρος"))).toBe(true);
   });
 
   it("rejects directed invitation titles (Sparti-style) in BALANCED mode", () => {
@@ -255,6 +305,7 @@ describe("SaaS watch-match scoring", () => {
     const result = scoreKimdisItemAgainstProfile(
       balancedCriteria,
       baseItem({
+        recordType: "PROC",
         title:
           "Υπηρεσίες Συντήρησης, Καλής Λειτουργίας, Υποστήριξης, της Ιστοσελίδας του Δήμου Κορδελιού- Ευόσμου",
       }),
@@ -262,5 +313,6 @@ describe("SaaS watch-match scoring", () => {
     expect(result.targetedInvitation).toBe(false);
     expect(result.qualifies).toBe(true);
     expect(result.score).toBe(48);
+    expect(result.breakdown.keywords).toBe(48);
   });
 });
