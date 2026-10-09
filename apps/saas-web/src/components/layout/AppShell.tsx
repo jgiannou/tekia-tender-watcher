@@ -26,6 +26,7 @@ import { EmailVerificationBanner } from "@/components/auth/EmailVerificationBann
 import { TrialBanner } from "@/components/billing/TrialBanner";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { NotificationBell } from "@/components/layout/NotificationBell";
+import { SeoHead } from "@/components/SeoHead";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -356,6 +357,12 @@ export const AppShell = () => {
 
   return (
     <div className="flex min-h-screen overflow-x-clip">
+      <SeoHead
+        title="Εφαρμογή | ARC Tenders"
+        description="Ιδιωτικός χώρος εργασίας ARC Tenders."
+        path="/app"
+        noindex
+      />
       {/* Desktop sidebar — unchanged above lg */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-sidebar-border lg:flex">
         <SidebarPanel onCreateOrganization={handleCreateOrganization} />

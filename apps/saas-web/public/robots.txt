@@ -1,0 +1,16 @@
+# https://arc-tenders.tekia.gr
+User-agent: *
+Allow: /
+Allow: /pricing
+Allow: /login
+Allow: /signup
+Allow: /legal/
+Allow: /forgot-password
+
+# Authenticated app — no public value for search
+Disallow: /app/
+Disallow: /api/
+Disallow: /accept-invite
+Disallow: /reset-password
+
+Sitemap: https://arc-tenders.tekia.gr/sitemap.xml

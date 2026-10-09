@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
 import { PublicShell } from "@/components/marketing/PublicShell";
 import { PricingCards } from "@/components/marketing/PricingCards";
+import { SeoHead } from "@/components/SeoHead";
 import { Button } from "@/components/ui/button";
+import { MARKETING_SEO } from "@/lib/seo";
 import {
   COMPARISON_ROWS,
   MARKETING_PLANS,
@@ -35,6 +37,7 @@ const faqs = [
 
 export const PricingPage = () => (
   <PublicShell>
+    <SeoHead {...MARKETING_SEO.pricing} />
     <main className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:py-16">
       <div className="max-w-2xl">
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">

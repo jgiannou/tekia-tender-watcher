@@ -1,7 +1,7 @@
 {
   "name": "ARC Tenders",
   "short_name": "ARC Tenders",
-  "description": "Παρακολούθηση δημόσιων διαγωνισμών",
+  "description": "ARC Tenders — δημόσιοι διαγωνισμοί οργανωμένοι: ΚΗΜΔΗΣ, ειδοποιήσεις και ροή εργασίας.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0a",

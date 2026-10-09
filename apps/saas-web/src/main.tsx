@@ -11,7 +11,7 @@ createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <TooltipProvider>
         <App />
-        <Toaster richColors position="top-right" />
+        <Toaster richColors position="top-center" />
       </TooltipProvider>
     </BrowserRouter>
   </StrictMode>,

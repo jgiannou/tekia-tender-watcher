@@ -2,9 +2,12 @@ import { Link } from "react-router-dom";
 import { Bell, FolderSearch, Radar } from "lucide-react";
 import { PublicShell } from "@/components/marketing/PublicShell";
 import { PricingCards } from "@/components/marketing/PricingCards";
+import { JsonLd } from "@/components/JsonLd";
+import { SeoHead } from "@/components/SeoHead";
 import { Button } from "@/components/ui/button";
 import { ArcMark } from "@/components/brand/ArcMark";
 import { LEGAL_CONTROLLER } from "@/legal/meta";
+import { MARKETING_SEO } from "@/lib/seo";
 import {
   MARKETING_PLANS,
   TRIAL_DAYS,
@@ -76,6 +79,16 @@ const faqs = [
   },
 ] as const;
 
+const faqJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map((item) => ({
+    "@type": "Question",
+    name: item.q,
+    acceptedAnswer: { "@type": "Answer", text: item.a },
+  })),
+};
+
 const ProductVisual = () => (
   <div
     className="relative overflow-hidden border border-border/70 bg-card/70 p-5 sm:p-6"
@@ -119,6 +132,8 @@ const ProductVisual = () => (
 
 export const LandingPage = () => (
   <PublicShell featuresHref="#features" contactHref="#contact">
+    <SeoHead {...MARKETING_SEO.home} />
+    <JsonLd id="home-faq" data={faqJsonLd} />
     <main>
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 lg:grid-cols-2 lg:py-20">
         <div className="arc-hero-copy">
@@ -129,7 +144,7 @@ export const LandingPage = () => (
             </p>
           </div>
           <h1 className="mt-5 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl lg:text-[2.75rem] lg:leading-[1.15]">
-            Δημόσιοι διαγωνισμοί, οργανωμένα από την εύρεση έως την υποβολή.
+            Δημόσιοι διαγωνισμοί, οργανωμένοι από την εύρεση έως την υποβολή.
           </h1>
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
             Εντοπίστε σχετικές ευκαιρίες στο ΚΗΜΔΗΣ, παρακολουθήστε εξελίξεις και κρατήστε

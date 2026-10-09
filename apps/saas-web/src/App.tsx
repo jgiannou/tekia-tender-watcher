@@ -5,6 +5,9 @@ import { RequireAuth } from "@/auth/RequireAuth";
 import { CookieConsentBanner } from "@/components/CookieConsentBanner";
 import { AppShell } from "@/components/layout/AppShell";
 import { PageLoading } from "@/components/states";
+// Eager-load public marketing pages so crawlers see real content (not «Φόρτωση…»).
+import { LandingPage } from "@/pages/marketing/LandingPage";
+import { PricingPage } from "@/pages/marketing/PricingPage";
 
 const LoginPage = lazy(() =>
   import("@/pages/LoginPage").then((m) => ({ default: m.LoginPage })),
@@ -107,16 +110,6 @@ const LegalPublicPage = lazy(() =>
     default: m.LegalPublicPage,
   })),
 );
-const LandingPage = lazy(() =>
-  import("@/pages/marketing/LandingPage").then((m) => ({
-    default: m.LandingPage,
-  })),
-);
-const PricingPage = lazy(() =>
-  import("@/pages/marketing/PricingPage").then((m) => ({
-    default: m.PricingPage,
-  })),
-);
 const SubscriptionPage = lazy(() =>
   import("@/pages/SubscriptionPage").then((m) => ({
     default: m.SubscriptionPage,
@@ -175,7 +168,7 @@ export const App = () => (
             </Route>
           </Route>
         </Route>
-        <Route path="*" element={<Navigate to="/app" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
   </SessionProvider>

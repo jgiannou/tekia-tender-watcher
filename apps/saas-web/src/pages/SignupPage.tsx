@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AuthShell } from "@/components/auth/AuthShell";
+import { SeoHead } from "@/components/SeoHead";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,7 @@ import { currentLegalAcceptancePayload } from "@/legal";
 import { TRIAL_DAYS } from "@/marketing/pricing";
 import { authClient } from "@/lib/auth-client";
 import { saasApi } from "@/lib/api";
+import { MARKETING_SEO } from "@/lib/seo";
 
 export const SignupPage = () => {
   const navigate = useNavigate();
@@ -98,6 +100,8 @@ export const SignupPage = () => {
   };
 
   return (
+    <>
+    <SeoHead {...MARKETING_SEO.signup} />
     <AuthShell
       title="Δωρεάν δοκιμή 7 ημερών"
       description={
@@ -228,5 +232,6 @@ export const SignupPage = () => {
         </Button>
       </form>
     </AuthShell>
+    </>
   );
 };

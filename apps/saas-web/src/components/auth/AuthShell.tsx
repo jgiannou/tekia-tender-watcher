@@ -34,7 +34,7 @@ export const AuthShell = ({ title, description, children, footer }: AuthShellPro
           </Link>
 
           <h1 className="mt-10 max-w-sm text-2xl font-semibold tracking-tight text-foreground sm:text-3xl lg:mt-14">
-            Δημόσιοι διαγωνισμοί, πιο οργανωμένα.
+            Δημόσιοι διαγωνισμοί, πιο οργανωμένοι.
           </h1>
           <p className="mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">
             Εντοπίστε σχετικές ευκαιρίες, παρακολουθήστε την εξέλιξή τους και οργανώστε όλη

@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AuthShell } from "@/components/auth/AuthShell";
+import { SeoHead } from "@/components/SeoHead";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { authClient } from "@/lib/auth-client";
+import { MARKETING_SEO } from "@/lib/seo";
 
 export const LoginPage = () => {
   const navigate = useNavigate();
@@ -52,6 +54,8 @@ export const LoginPage = () => {
   };
 
   return (
+    <>
+    <SeoHead {...MARKETING_SEO.login} />
     <AuthShell
       title="Σύνδεση"
       description="Συνδεθείτε για να δείτε τις ευκαιρίες σας, τους διαγωνισμούς που παρακολουθείτε και τα έγγραφα της επιχείρησής σας."
@@ -104,5 +108,6 @@ export const LoginPage = () => {
         </Button>
       </form>
     </AuthShell>
+    </>
   );
 };
