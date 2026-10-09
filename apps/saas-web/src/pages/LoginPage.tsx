@@ -8,13 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
+import { setAnalyticsUserId, trackAnalyticsEvent } from "@/lib/analytics";
 import { authClient } from "@/lib/auth-client";
+import { readStashedParam } from "@/lib/safe-page-path";
 import { MARKETING_SEO } from "@/lib/seo";
 
 export const LoginPage = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const next = params.get("next")?.trim() || "/app";
+  const next = params.get("next")?.trim() || readStashedParam("next") || "/app";
   const { data: session, isPending, refetch } = authClient.useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -51,6 +53,8 @@ export const LoginPage = () => {
       if (session.data) {
         authClient.hydrateSession(session.data);
       }
+      setAnalyticsUserId(session.data.user.id);
+      trackAnalyticsEvent("login", { method: "email" });
 
       toast.success("Καλωσήρθατε");
       navigate(next.startsWith("/") ? next : "/app", { replace: true });

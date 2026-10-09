@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 import {
   saasApi,
   type KimdisSearchItem,
@@ -215,6 +216,11 @@ export const TenderDetailPage = () => {
     setBusy(true);
     try {
       await saasApi.followKimdisItem(activeOrganization.id, item);
+      trackAnalyticsEvent("tender_followed", {
+        content_type: item.recordType,
+        item_id: item.adam,
+        source: "tender",
+      });
       toast.success("Προστέθηκε στα Παρακολουθούμενα. Η παρακολούθηση είναι ενεργή.");
       await load();
     } catch (err) {

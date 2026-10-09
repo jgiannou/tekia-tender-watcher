@@ -11,6 +11,11 @@ import {
   type BillingInterval,
   type BillingStatusResponse,
 } from "@/lib/api";
+import {
+  rememberPendingCheckout,
+  trackAnalyticsEvent,
+  trackPurchaseFromReturn,
+} from "@/lib/analytics";
 import { humanSaasError } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
@@ -60,6 +65,7 @@ export const SubscriptionPage = () => {
     const checkout = params.get("checkout");
     const billing = params.get("billing");
     if (checkout === "success") {
+      trackPurchaseFromReturn();
       toast.success("Η πληρωμή ολοκληρώθηκε. Το πλάνο θα ενημερωθεί σε λίγο.");
       void load();
     } else if (checkout === "cancel") {
@@ -115,6 +121,16 @@ export const SubscriptionPage = () => {
         return;
       }
       if (result.url) {
+        const selected = catalog.find((entry) => entry.key === plan);
+        const amount = interval === "annual" ? selected?.annualEur : selected?.monthlyEur;
+        const checkoutParams = {
+          plan,
+          billing_interval: interval,
+          currency: "EUR",
+          ...(typeof amount === "number" ? { value: amount } : {}),
+        };
+        rememberPendingCheckout(checkoutParams);
+        trackAnalyticsEvent("begin_checkout", checkoutParams);
         window.location.href = result.url;
         return;
       }

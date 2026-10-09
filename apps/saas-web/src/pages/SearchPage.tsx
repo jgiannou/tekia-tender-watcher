@@ -5,6 +5,7 @@ import { useSessionContext } from "@/auth/SessionProvider";
 import { PdfAction } from "@/components/PdfAction";
 import { DateInput } from "@/components/ui/date-input";
 import { Pagination } from "@/components/Pagination";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 import { humanSaasError } from "@/lib/labels";
 
 /** Matches KIMDIS upstream page size used by the API client. */
@@ -308,6 +309,7 @@ export const SearchPage = () => {
         activeOrganization.id,
         buildWatchInput(saveName.trim(), skipSimilarCheck),
       );
+      trackAnalyticsEvent("watch_profile_created", { source: "SAVED_FROM_SEARCH" });
       toast.success("Η αποθηκευμένη αναζήτηση δημιουργήθηκε. Ξεκίνησε αρχική σάρωση.");
       setSaveOpen(false);
     } catch (err) {
@@ -323,6 +325,11 @@ export const SearchPage = () => {
     if (!activeOrganization) return;
     try {
       await saasApi.followKimdisItem(activeOrganization.id, item);
+      trackAnalyticsEvent("tender_followed", {
+        content_type: item.recordType,
+        item_id: item.adam,
+        source: "search",
+      });
       toast.success("Ο διαγωνισμός προστέθηκε στα Παρακολουθούμενα.", {
         action: {
           label: "Προβολή παρακολουθούμενων",

@@ -4,7 +4,10 @@ import { BrowserRouter } from "react-router-dom";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { App } from "@/App";
+import { installSensitiveUrlScrubber } from "@/lib/safe-page-path";
 import "./index.css";
+
+installSensitiveUrlScrubber();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

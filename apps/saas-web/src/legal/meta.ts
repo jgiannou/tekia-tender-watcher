@@ -26,7 +26,7 @@ export const LEGAL_PROVIDER = LEGAL_CONTROLLER;
 export const LEGAL_VERSIONS = {
   terms: "2026-10-05.2",
   privacy: "2026-10-05.2",
-  cookies: "2026-10-05.2",
+  cookies: "2026-10-09",
   dpa: "2026-10-05",
   dataSources: "2026-10-05",
   provider: "2026-10-05",

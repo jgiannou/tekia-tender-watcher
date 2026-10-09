@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DateInput } from "@/components/ui/date-input";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -363,6 +364,7 @@ export const SavedSearchesPage = () => {
         }
       } else {
         await saasApi.createWatchProfile(activeOrganization.id, payload);
+        trackAnalyticsEvent("watch_profile_created", { source: "MANUAL" });
         toast.success(
           profileScansBlocked
             ? "Η αποθηκευμένη αναζήτηση δημιουργήθηκε · η σάρωση θα ξεκινήσει όταν το επιτρέπει ο λογαριασμός"

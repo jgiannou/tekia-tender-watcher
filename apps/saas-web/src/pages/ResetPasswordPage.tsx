@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -6,11 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { authClient } from "@/lib/auth-client";
+import { readStashedParam } from "@/lib/safe-page-path";
 
 export const ResetPasswordPage = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const token = useMemo(() => params.get("token") ?? "", [params]);
+  const [token] = useState(
+    () => params.get("token")?.trim() || readStashedParam("token"),
+  );
   const error = params.get("error");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);

@@ -18,6 +18,7 @@ import {
   type SaasEntitlementsResponse,
   type WatchProfile,
 } from "@/lib/api";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 type OpportunitySort = "newest" | "oldest" | "score" | "deadline";
@@ -296,6 +297,11 @@ export const OpportunitiesPage = () => {
     if (!activeOrganization) return;
     try {
       await saasApi.followTender(activeOrganization.id, opportunity.tender.id);
+      trackAnalyticsEvent("tender_followed", {
+        content_type: "tender",
+        item_id: opportunity.tender.id,
+        source: "opportunities",
+      });
       toast.success("Ο διαγωνισμός προστέθηκε στα Παρακολουθούμενα.");
       await load();
     } catch (err) {

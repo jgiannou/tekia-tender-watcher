@@ -12,10 +12,13 @@ import {
 } from "@/components/ui/card";
 import { saasApi } from "@/lib/api";
 import { humanSaasError } from "@/lib/labels";
+import { readStashedParam } from "@/lib/safe-page-path";
 
 export const AcceptInvitePage = () => {
   const [params] = useSearchParams();
-  const token = params.get("token")?.trim() ?? "";
+  const [token] = useState(
+    () => params.get("token")?.trim() || readStashedParam("token"),
+  );
   const nextPath = token
     ? `/accept-invite?token=${encodeURIComponent(token)}`
     : "/accept-invite";

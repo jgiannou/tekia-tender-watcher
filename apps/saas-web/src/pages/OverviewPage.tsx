@@ -17,6 +17,7 @@ import {
   type Opportunity,
   type SaasOverview,
 } from "@/lib/api";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 import { attentionEventHref } from "@/lib/attention-routing";
 
 const OVERVIEW_OPPORTUNITY_PAGE_SIZE = 3;
@@ -130,6 +131,11 @@ export const OverviewPage = () => {
     if (!activeOrganization) return;
     try {
       await saasApi.followTender(activeOrganization.id, opportunity.tender.id);
+      trackAnalyticsEvent("tender_followed", {
+        content_type: "tender",
+        item_id: opportunity.tender.id,
+        source: "overview",
+      });
       toast.success("Ο διαγωνισμός προστέθηκε στα Παρακολουθούμενα.");
       await load();
     } catch (err) {

@@ -16,6 +16,7 @@ import {
   type OrganizationActivity,
   type WatchSuggestion,
 } from "@/lib/api";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 type SetupStep = "company" | "activities" | "interests" | "watch" | "done";
@@ -248,6 +249,7 @@ export const SetupPage = () => {
         });
       }
       setCreatedWatchName(name);
+      trackAnalyticsEvent("watch_profile_created", { source: "SETUP_RECOMMENDATION" });
       await saasApi.updateOnboarding(activeOrganization.id, "COMPLETED", "done");
       toast.success("Δημιουργήθηκε η αποθηκευμένη αναζήτηση");
       setStep("done");

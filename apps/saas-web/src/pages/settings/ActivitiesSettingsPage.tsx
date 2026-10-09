@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 import {
   saasApi,
   type OrganizationActivity,
@@ -114,6 +115,7 @@ export const ActivitiesSettingsPage = () => {
         cpvs,
         source: "SETUP_RECOMMENDATION",
       });
+      trackAnalyticsEvent("watch_profile_created", { source: "SETUP_RECOMMENDATION" });
       toast.success("Δημιουργήθηκε αποθηκευμένη αναζήτηση από τις προτάσεις ΚΑΔ.");
       window.location.href = "/app/saved-searches";
     } catch (err) {

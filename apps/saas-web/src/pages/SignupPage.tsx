@@ -10,14 +10,16 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { currentLegalAcceptancePayload } from "@/legal";
 import { TRIAL_DAYS } from "@/marketing/pricing";
+import { setAnalyticsUserId, trackAnalyticsEvent } from "@/lib/analytics";
 import { authClient } from "@/lib/auth-client";
 import { saasApi } from "@/lib/api";
+import { readStashedParam } from "@/lib/safe-page-path";
 import { MARKETING_SEO } from "@/lib/seo";
 
 export const SignupPage = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const next = params.get("next")?.trim() || "/app";
+  const next = params.get("next")?.trim() || readStashedParam("next") || "/app";
   const inviteFlow = next.startsWith("/accept-invite");
   const { data: session, isPending, refetch } = authClient.useSession();
   const [name, setName] = useState("");
@@ -57,6 +59,8 @@ export const SignupPage = () => {
       if (session.data) {
         authClient.hydrateSession(session.data);
       }
+      setAnalyticsUserId(session.data.user.id);
+      trackAnalyticsEvent("sign_up", { method: "email" });
 
       const legalVersions = currentLegalAcceptancePayload();
       let acceptanceSaved = false;
@@ -91,6 +95,7 @@ export const SignupPage = () => {
         }
         if (organization?.id) {
           await saasApi.setActiveOrganization(organization.id).catch(() => null);
+          trackAnalyticsEvent("organization_created", { source: "signup" });
         }
       }
 

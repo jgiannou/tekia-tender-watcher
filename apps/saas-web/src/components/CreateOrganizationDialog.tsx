@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 
 const MAX_OWNED_ORGANIZATIONS = 3;
 
@@ -56,6 +57,7 @@ export const CreateOrganizationDialog = ({
     setBusy(true);
     try {
       await createOrganization(trimmed);
+      trackAnalyticsEvent("organization_created", { source: "app" });
       toast.success(
         `Δημιουργήθηκε «${trimmed}». Συνεχίστε με τη ρύθμιση της εταιρείας.`,
       );

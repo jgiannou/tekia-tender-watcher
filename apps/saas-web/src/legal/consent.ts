@@ -5,6 +5,8 @@
  * Do NOT also paste the standalone gtag.js snippet into the HTML.
  */
 
+import { redactSensitiveUrl } from "@/lib/safe-page-path";
+
 export type ConsentCategory = "essential" | "analytics" | "marketing";
 
 export type ConsentState = {
@@ -167,6 +169,8 @@ const injectGoogleTagManager = (
     ad_user_data: consentValue(marketing),
     ad_personalization: consentValue(marketing),
   });
+  // Google reads window.location for page_view. Strip tokens before gtm.js.
+  redactSensitiveUrl();
   window.dataLayer?.push({
     "gtm.start": new Date().getTime(),
     event: "gtm.js",
