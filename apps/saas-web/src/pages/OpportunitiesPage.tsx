@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Eye } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
-import { IconAction } from "@/components/IconAction";
+import { PdfAction } from "@/components/PdfAction";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
@@ -584,15 +583,12 @@ export const OpportunitiesPage = () => {
                     ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <IconAction
-                      label="Προεπισκόπηση PDF"
+                    <PdfAction
                       onClick={() => {
                         void handleMarkSeen(opportunity);
                         setSelected(opportunity);
                       }}
-                    >
-                      <Eye />
-                    </IconAction>
+                    />
                     <Button size="sm" variant="outline" asChild>
                       <Link
                         to={tenderPath(opportunity)}

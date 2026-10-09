@@ -15,11 +15,13 @@ import {
 import {
   checkoutCancelUrl,
   checkoutSuccessUrl,
+  classifyStripeCheckoutError,
   getStripe,
   isStripeConfigured,
   portalReturnUrl,
   priceIdFor,
   resolvePlanFromPriceId,
+  stripeErrorMessage,
   type BillingInterval,
 } from "./stripe.js";
 import {
@@ -202,8 +204,7 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
       return c.json({ url: null, mode: "same" });
     }
 
-    let customerId = subscription?.stripeCustomerId ?? null;
-    if (!customerId) {
+    const createBillingCustomer = async (): Promise<string> => {
       const user = await prisma.user.findUnique({ where: { id: userId } });
       const org = await prisma.organization.findUnique({ where: { id: orgId } });
       const customer = await stripe.customers.create({
@@ -211,22 +212,72 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
         name: org?.name,
         metadata: { organizationId: orgId, product: "arc_tenders" },
       });
-      customerId = customer.id;
       subscription = await prisma.subscription.upsert({
         where: { organizationId: orgId },
         create: {
           organizationId: orgId,
-          stripeCustomerId: customerId,
+          stripeCustomerId: customer.id,
           status: "INCOMPLETE",
           planKey: PLAN_KEYS.trial,
         },
-        update: { stripeCustomerId: customerId },
+        update: {
+          stripeCustomerId: customer.id,
+          // Drop IDs from the other Stripe mode (test↔live) if any.
+          stripeSubscriptionId: null,
+        },
       });
-    }
+      return customer.id;
+    };
 
-    const basePrice = priceIdFor(body.plan, interval, "base");
-    const seatPrice =
-      body.plan === "pro" ? priceIdFor("pro", interval, "extra_seat") : null;
+    const ensureBillingCustomer = async (): Promise<string> => {
+      let customerId = subscription?.stripeCustomerId ?? null;
+      if (customerId) {
+        try {
+          const existing = await stripe.customers.retrieve(customerId);
+          if (!("deleted" in existing && existing.deleted)) {
+            return customerId;
+          }
+        } catch (error) {
+          const msg = stripeErrorMessage(error);
+          if (!/no such customer/i.test(msg)) throw error;
+          console.warn(
+            "stale stripe customer (test/live mismatch?); recreating:",
+            customerId,
+          );
+        }
+        await prisma.subscription.update({
+          where: { organizationId: orgId },
+          data: { stripeCustomerId: null, stripeSubscriptionId: null },
+        });
+        if (subscription) {
+          subscription = {
+            ...subscription,
+            stripeCustomerId: null,
+            stripeSubscriptionId: null,
+          };
+        }
+      }
+      return createBillingCustomer();
+    };
+
+    let customerId = await ensureBillingCustomer();
+
+    let basePrice: string;
+    let seatPrice: string | null;
+    try {
+      basePrice = priceIdFor(body.plan, interval, "base");
+      seatPrice =
+        body.plan === "pro" ? priceIdFor("pro", interval, "extra_seat") : null;
+    } catch (error) {
+      const classified = classifyStripeCheckoutError(error);
+      console.error("stripe price env invalid:", classified.detail);
+      throw serviceUnavailable(
+        classified.message === "checkout_failed"
+          ? "stripe_price_not_configured"
+          : classified.message,
+        classified.detail,
+      );
+    }
 
     // In-place seat/plan update when a live Stripe subscription already exists.
     if (subscription?.stripeSubscriptionId) {
@@ -304,7 +355,7 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
           return c.json({ url: null, mode: "updated", extraSeats });
         }
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = stripeErrorMessage(error);
         console.error("stripe subscription update failed:", msg);
         // Fall through to Checkout when update cannot complete (e.g. tax address).
       }
@@ -317,10 +368,10 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
       lineItems.push({ price: seatPrice, quantity: extraSeats });
     }
 
-    try {
-      const session = await stripe.checkout.sessions.create({
+    const createCheckoutSession = async (stripeCustomerId: string) =>
+      stripe.checkout.sessions.create({
         mode: "subscription",
-        customer: customerId,
+        customer: stripeCustomerId,
         line_items: lineItems,
         success_url: checkoutSuccessUrl(),
         cancel_url: checkoutCancelUrl(),
@@ -347,6 +398,25 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
           },
         },
       });
+
+    try {
+      let session;
+      try {
+        session = await createCheckoutSession(customerId);
+      } catch (error) {
+        const classified = classifyStripeCheckoutError(error);
+        if (!classified.retryWithNewCustomer) throw error;
+        console.warn(
+          "stripe checkout stale customer; recreating and retrying:",
+          classified.detail,
+        );
+        await prisma.subscription.update({
+          where: { organizationId: orgId },
+          data: { stripeCustomerId: null, stripeSubscriptionId: null },
+        });
+        customerId = await createBillingCustomer();
+        session = await createCheckoutSession(customerId);
+      }
       trackProductEventSafe(prisma, {
         type: "checkout_started",
         userId,
@@ -359,12 +429,9 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
       });
       return c.json({ url: session.url, mode: "checkout" });
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (/tax has not been activated|stripe tax/i.test(msg)) {
-        throw serviceUnavailable("stripe_tax_not_enabled");
-      }
-      console.error("stripe checkout failed:", msg);
-      throw serviceUnavailable("checkout_failed");
+      const classified = classifyStripeCheckoutError(error);
+      console.error("stripe checkout failed:", classified.detail);
+      throw serviceUnavailable(classified.message, classified.detail);
     }
   });
 

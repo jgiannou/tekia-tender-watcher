@@ -166,7 +166,11 @@ export const createSaasApp = (deps: SaasAppDeps) => {
   app.onError((error, c) => {
     if (error instanceof SaasError) {
       return c.json(
-        { error: error.code, message: error.message },
+        {
+          error: error.code,
+          message: error.message,
+          ...(error.detail ? { detail: error.detail } : {}),
+        },
         error.status as 400 | 401 | 403 | 404 | 409 | 502 | 503,
       );
     }

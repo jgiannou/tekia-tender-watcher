@@ -1,11 +1,18 @@
 export class SaasError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly detail?: string;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    detail?: string,
+  ) {
     super(message);
     this.status = status;
     this.code = code;
+    this.detail = detail;
   }
 }
 
@@ -24,8 +31,10 @@ export const badRequest = (message = "bad_request") =>
 export const conflict = (message = "conflict") =>
   new SaasError(409, "conflict", message);
 
-export const serviceUnavailable = (message = "service_unavailable") =>
-  new SaasError(503, "service_unavailable", message);
+export const serviceUnavailable = (
+  message = "service_unavailable",
+  detail?: string,
+) => new SaasError(503, "service_unavailable", message, detail);
 
 export const kimdisUpstreamError = (message: string) =>
   new SaasError(502, "kimdis_error", message);

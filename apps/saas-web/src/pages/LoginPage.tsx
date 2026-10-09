@@ -21,7 +21,13 @@ export const LoginPage = () => {
     event.preventDefault();
     setSubmitting(true);
     try {
-      const result = await authClient.signIn.email({ email, password });
+      // rememberMe: true → persistent cookie (Max-Age = session.expiresIn).
+      // Without it, Better Auth sets a session cookie that dies when the browser closes.
+      const result = await authClient.signIn.email({
+        email,
+        password,
+        rememberMe: true,
+      });
       if (result.error) throw new Error(result.error.message || "Αποτυχία σύνδεσης");
 
       // Better Auth refreshes the session atom on a 10ms timeout after sign-in.

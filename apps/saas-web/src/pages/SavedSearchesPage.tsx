@@ -22,6 +22,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -1055,30 +1056,28 @@ export const SavedSearchesPage = () => {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="date-from">Καταχώριση από</Label>
-                    <Input
+                    <DateInput
                       id="date-from"
-                      type="date"
                       value={editForm.dateFrom ?? ""}
-                      onChange={(e) =>
+                      onChange={(dateFrom) =>
                         setEditForm((prev) =>
-                          prev
-                            ? { ...prev, dateFrom: e.target.value || null }
-                            : prev,
+                          prev ? { ...prev, dateFrom: dateFrom || null } : prev,
                         )
                       }
+                      aria-label="Καταχώριση από"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="date-to">Καταχώριση έως</Label>
-                    <Input
+                    <DateInput
                       id="date-to"
-                      type="date"
                       value={editForm.dateTo ?? ""}
-                      onChange={(e) =>
+                      onChange={(dateTo) =>
                         setEditForm((prev) =>
-                          prev ? { ...prev, dateTo: e.target.value || null } : prev,
+                          prev ? { ...prev, dateTo: dateTo || null } : prev,
                         )
                       }
+                      aria-label="Καταχώριση έως"
                     />
                   </div>
                 </div>

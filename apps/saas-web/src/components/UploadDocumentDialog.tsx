@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { DateInput } from "@/components/ui/date-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -201,21 +202,21 @@ export const UploadDocumentDialog = ({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="issue-date">Ημερομηνία έκδοσης</Label>
-              <Input
+              <DateInput
                 id="issue-date"
-                type="date"
                 value={issueDate}
-                onChange={(e) => setIssueDate(e.target.value)}
+                onChange={setIssueDate}
+                aria-label="Ημερομηνία έκδοσης"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="expiry-date">Ημερομηνία λήξης</Label>
-              <Input
+              <DateInput
                 id="expiry-date"
-                type="date"
                 value={expiryDate}
                 disabled={noExpiry}
-                onChange={(e) => setExpiryDate(e.target.value)}
+                onChange={setExpiryDate}
+                aria-label="Ημερομηνία λήξης"
               />
             </div>
           </div>

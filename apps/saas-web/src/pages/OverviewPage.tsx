@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Eye, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { CreateOrganizationDialog } from "@/components/CreateOrganizationDialog";
-import { IconAction } from "@/components/IconAction";
+import { PdfAction } from "@/components/PdfAction";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
@@ -399,12 +399,9 @@ export const OverviewPage = () => {
                             </div>
                           ) : null}
                           <div className="flex flex-wrap items-center gap-2">
-                            <IconAction
-                              label="Προεπισκόπηση PDF"
+                            <PdfAction
                               onClick={() => setPdfPreview(opportunity)}
-                            >
-                              <Eye />
-                            </IconAction>
+                            />
                             <Button size="sm" variant="outline" asChild>
                               <Link to={tenderPath(opportunity)}>Άνοιγμα</Link>
                             </Button>

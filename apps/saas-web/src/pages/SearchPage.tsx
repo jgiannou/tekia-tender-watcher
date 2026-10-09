@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Eye } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
-import { IconAction } from "@/components/IconAction";
+import { PdfAction } from "@/components/PdfAction";
+import { DateInput } from "@/components/ui/date-input";
 import { Pagination } from "@/components/Pagination";
 import { humanSaasError } from "@/lib/labels";
 
@@ -492,32 +492,32 @@ export const SearchPage = () => {
             )}
             <div className="space-y-2">
               <Label>Καταχώριση από</Label>
-              <Input
-                type="date"
+              <DateInput
                 disabled={draft.allHistory}
                 value={draft.dateFrom}
-                onChange={(e) =>
+                onChange={(dateFrom) =>
                   setDraft((prev) => ({
                     ...prev,
                     allHistory: false,
-                    dateFrom: e.target.value,
+                    dateFrom,
                   }))
                 }
+                aria-label="Καταχώριση από"
               />
             </div>
             <div className="space-y-2">
               <Label>Καταχώριση έως</Label>
-              <Input
-                type="date"
+              <DateInput
                 disabled={draft.allHistory}
                 value={draft.dateTo}
-                onChange={(e) =>
+                onChange={(dateTo) =>
                   setDraft((prev) => ({
                     ...prev,
                     allHistory: false,
-                    dateTo: e.target.value,
+                    dateTo,
                   }))
                 }
+                aria-label="Καταχώριση έως"
               />
             </div>
             <div className="flex items-end pb-2 md:col-span-2 lg:col-span-3">
@@ -585,22 +585,22 @@ export const SearchPage = () => {
                 <>
                   <div className="space-y-2">
                     <Label>Καταληκτική από</Label>
-                    <Input
-                      type="date"
+                    <DateInput
                       value={draft.finalFrom}
-                      onChange={(e) =>
-                        setDraft((prev) => ({ ...prev, finalFrom: e.target.value }))
+                      onChange={(finalFrom) =>
+                        setDraft((prev) => ({ ...prev, finalFrom }))
                       }
+                      aria-label="Καταληκτική από"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Καταληκτική έως</Label>
-                    <Input
-                      type="date"
+                    <DateInput
                       value={draft.finalTo}
-                      onChange={(e) =>
-                        setDraft((prev) => ({ ...prev, finalTo: e.target.value }))
+                      onChange={(finalTo) =>
+                        setDraft((prev) => ({ ...prev, finalTo }))
                       }
+                      aria-label="Καταληκτική έως"
                     />
                   </div>
                 </>
@@ -732,12 +732,7 @@ export const SearchPage = () => {
                     ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <IconAction
-                      label="Προεπισκόπηση PDF"
-                      onClick={() => setSelected(item)}
-                    >
-                      <Eye />
-                    </IconAction>
+                    <PdfAction onClick={() => setSelected(item)} />
                     <Button size="sm" variant="outline" asChild>
                       <Link
                         to={`/app/tenders/${item.recordType}/${encodeURIComponent(item.adam)}`}

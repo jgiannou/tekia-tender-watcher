@@ -54,6 +54,17 @@ export const priceIdFor = (
   const key = priceEnvKey(plan, interval, kind);
   const id = String(env[key] || "").trim();
   if (!id) throw new Error(`${key} is not configured`);
+  // Stripe Checkout line_items[].price must be a Price ID (price_…), never a Product ID (prod_…).
+  if (id.startsWith("prod_")) {
+    throw new Error(
+      `${key} is a Product ID (${id}); set the Price ID (price_…) from Stripe → Product → Pricing`,
+    );
+  }
+  if (!id.startsWith("price_")) {
+    throw new Error(
+      `${key} must be a Stripe Price ID starting with price_ (got ${id.slice(0, 12)}…)`,
+    );
+  }
   return id;
 };
 
@@ -141,4 +152,52 @@ export const portalReturnUrl = (
     "",
   );
   return `${app}/app/subscription`;
+};
+
+export const stripeErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+/** Map Stripe Checkout / Tax failures to stable API message codes. */
+export const classifyStripeCheckoutError = (
+  error: unknown,
+): {
+  message:
+    | "stripe_tax_not_enabled"
+    | "stripe_price_mismatch"
+    | "stripe_customer_stale"
+    | "stripe_price_tax_behavior"
+    | "checkout_failed";
+  detail: string;
+  retryWithNewCustomer: boolean;
+} => {
+  const detail = stripeErrorMessage(error);
+  if (/no such price|is a Product ID|must be a Stripe Price ID/i.test(detail)) {
+    return {
+      message: "stripe_price_mismatch",
+      detail,
+      retryWithNewCustomer: false,
+    };
+  }
+  if (/no such customer/i.test(detail)) {
+    return {
+      message: "stripe_customer_stale",
+      detail,
+      retryWithNewCustomer: true,
+    };
+  }
+  if (/tax_behavior|tax behavior/i.test(detail)) {
+    return {
+      message: "stripe_price_tax_behavior",
+      detail,
+      retryWithNewCustomer: false,
+    };
+  }
+  if (/tax has not been activated/i.test(detail)) {
+    return {
+      message: "stripe_tax_not_enabled",
+      detail,
+      retryWithNewCustomer: false,
+    };
+  }
+  return { message: "checkout_failed", detail, retryWithNewCustomer: false };
 };

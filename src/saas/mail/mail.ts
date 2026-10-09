@@ -594,12 +594,32 @@ export const attentionEmailCopy = (input: AttentionEmailCopyInput) => {
       topMatches.length > 0
         ? renderDigestItemsHtml(topMatches, appUrl, locale)
         : `<p style="margin:0 0 16px;font-size:14px;line-height:1.55;color:${BRAND.ink};">${escapeHtml(input.title)}</p>`;
+    const fresh =
+      typeof input.newCount === "number" && Number.isFinite(input.newCount)
+        ? Math.max(0, input.newCount)
+        : count;
+    const isStatusSummary = fresh === 0;
 
     if (locale === "en") {
-      const subject = `ARC Tenders · ${count} new opportunities · ${dateLabel}`;
-      const bodyHtml = `
+      const subject = isStatusSummary
+        ? `ARC Tenders · Scan summary · ${dateLabel}`
+        : `ARC Tenders · ${fresh} new opportunities · ${dateLabel}`;
+      const bodyHtml = isStatusSummary
+        ? `
 <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:${BRAND.ink};">
-  We found <strong>${count}</strong> new public-procurement opportunities
+  No <strong>new</strong> matches in this scan
+  ${profile ? ` for saved search «${escapeHtml(profile)}»` : ""}.
+  Below is a short reminder of your <strong>${count}</strong> active opportunities.
+</p>
+${itemsHtml}
+<p style="margin:8px 0 18px;font-size:13px;line-height:1.55;color:${BRAND.muted};">
+  We send this status summary at your chosen digest hour so the mailbox stays active even on quiet days.
+</p>
+<p style="margin:0 0 10px;">${ctaButton(opportunitiesUrl, "Open opportunities")}</p>
+<p style="margin:0;font-size:12px;"><a href="${escapeHtml(inboxUrl)}" style="color:${BRAND.muted};text-decoration:none;">View all notifications</a></p>`
+        : `
+<p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:${BRAND.ink};">
+  We found <strong>${fresh}</strong> new public-procurement opportunities
   ${profile ? ` for saved search «${escapeHtml(profile)}»` : ""}.
 </p>
 ${itemsHtml}
@@ -613,9 +633,13 @@ ${itemsHtml}
         html: wrapEmailLayout({
           locale,
           appUrl,
-          preheader: `${count} new opportunities for your saved searches`,
-          eyebrow: "Saved search digest",
-          heading: `New opportunities · ${dateLabel}`,
+          preheader: isStatusSummary
+            ? `No new matches · ${count} active opportunities`
+            : `${fresh} new opportunities for your saved searches`,
+          eyebrow: isStatusSummary ? "Scan summary" : "Saved search digest",
+          heading: isStatusSummary
+            ? `Quiet scan · ${dateLabel}`
+            : `New opportunities · ${dateLabel}`,
           bodyHtml,
           companyName: company,
         }),
@@ -623,10 +647,25 @@ ${itemsHtml}
       };
     }
 
-    const subject = `√ Πρωτογενή αιτήματα ${dateLabel} · ${count} νέα`;
-    const bodyHtml = `
+    const subject = isStatusSummary
+      ? `√ Σύνοψη σάρωσης ${dateLabel} · καμία νέα`
+      : `√ Πρωτογενή αιτήματα ${dateLabel} · ${fresh} νέα`;
+    const bodyHtml = isStatusSummary
+      ? `
 <p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:${BRAND.ink};">
-  Σας αποστέλλουμε <strong>${count}</strong> νέα πρωτογενή αιτήματα / διαγωνισμούς
+  Δεν βρέθηκαν <strong>νέα</strong> πρωτογενή αιτήματα σε αυτή τη σάρωση
+  ${profile ? ` («${escapeHtml(profile)}»)` : ""}.
+  Παρακάτω υπενθύμιση των <strong>${count}</strong> ενεργών αντιστοιχιών σας.
+</p>
+${itemsHtml}
+<p style="margin:8px 0 18px;font-size:13px;line-height:1.55;color:${BRAND.muted};">
+  Στέλνουμε αυτή τη σύνοψη στην ώρα ειδοποιήσεων που έχετε επιλέξει, ώστε να υπάρχει σταθερό σήμα και τις ήσυχες ημέρες.
+</p>
+<p style="margin:0 0 10px;">${ctaButton(opportunitiesUrl, "Άνοιγμα ευκαιριών")}</p>
+<p style="margin:0;font-size:12px;"><a href="${escapeHtml(inboxUrl)}" style="color:${BRAND.muted};text-decoration:none;">Ειδοποιήσεις στο app</a></p>`
+      : `
+<p style="margin:0 0 18px;font-size:14px;line-height:1.55;color:${BRAND.ink};">
+  Σας αποστέλλουμε <strong>${fresh}</strong> νέα πρωτογενή αιτήματα / διαγωνισμούς
   βάσει των αποθηκευμένων αναζητήσεών σας${profile ? ` («${escapeHtml(profile)}»)` : ""}.
 </p>
 ${itemsHtml}
@@ -641,9 +680,13 @@ ${itemsHtml}
       html: wrapEmailLayout({
         locale,
         appUrl,
-        preheader: `${count} νέα αιτήματα από τις αποθηκευμένες αναζητήσεις σας`,
-        eyebrow: "Αποθηκευμένη αναζήτηση",
-        heading: `Πρωτογενή αιτήματα · ${dateLabel}`,
+        preheader: isStatusSummary
+          ? `Καμία νέα · ${count} ενεργές αντιστοιχίες`
+          : `${fresh} νέα αιτήματα από τις αποθηκευμένες αναζητήσεις σας`,
+        eyebrow: isStatusSummary ? "Σύνοψη σάρωσης" : "Αποθηκευμένη αναζήτηση",
+        heading: isStatusSummary
+          ? `Ήσυχη σάρωση · ${dateLabel}`
+          : `Πρωτογενή αιτήματα · ${dateLabel}`,
         bodyHtml,
         companyName: company,
       }),

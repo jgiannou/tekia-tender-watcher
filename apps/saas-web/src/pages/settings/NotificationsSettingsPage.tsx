@@ -171,8 +171,9 @@ export const NotificationsSettingsPage = () => {
         <CardTitle>Ειδοποιήσεις</CardTitle>
         <CardDescription>
           Λειτουργικά email οργανισμού (όχι marketing). Επιλέγετε ώρες Europe/Athens —
-          έως {maxHours} την ημέρα σύμφωνα με το πλάνο σας. Χωρίς νέα ευρήματα δεν
-          στέλνεται μήνυμα.
+          έως {maxHours} την ημέρα σύμφωνα με το πλάνο σας. Σε κάθε ώρα σάρωσης
+          λαμβάνετε digest με νέα ευρήματα, ή σύνοψη με τις ενεργές αντιστοιχίες αν
+          δεν υπάρχει κάτι νέο.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Building2, Eye, Landmark, Trash2 } from "lucide-react";
+import { ArrowLeft, Building2, Landmark, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { CompanyDocumentPicker } from "@/components/CompanyDocumentPicker";
 import { IconAction } from "@/components/IconAction";
+import { PdfAction } from "@/components/PdfAction";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { ScoreBadge } from "@/components/ScoreBadge";
@@ -692,9 +693,7 @@ export const TenderDetailPage = () => {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <IconAction label="Προεπισκόπηση PDF" onClick={() => setPdfOpen(true)}>
-            <Eye />
-          </IconAction>
+          <PdfAction onClick={() => setPdfOpen(true)} />
           {primaryAction ? (
             <Button disabled={busy} onClick={primaryAction.onClick}>
               {primaryAction.label}

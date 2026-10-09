@@ -933,11 +933,14 @@ const ensureOpportunityDigestAttention = async (
   const dedupeKey = opportunityDigestDedupeKey(input.profileId, input.scannedAt);
   const type = "OPPORTUNITY_DIGEST" as AttentionEventType;
   const fresh = Math.max(0, input.newCount);
-  const count = fresh > 0 ? fresh : input.matchCount;
   const title =
-    count === 1
-      ? `1 ευκαιρία από την αναζήτηση «${input.profileName}»`
-      : `${count} ευκαιρίες από την αναζήτηση «${input.profileName}»`;
+    fresh > 0
+      ? fresh === 1
+        ? `1 νέα ευκαιρία από την αναζήτηση «${input.profileName}»`
+        : `${fresh} νέες ευκαιρίες από την αναζήτηση «${input.profileName}»`
+      : input.matchCount === 1
+        ? `Καμία νέα · 1 ενεργή από «${input.profileName}»`
+        : `Καμία νέα · ${input.matchCount} ενεργές από «${input.profileName}»`;
   const metadata = {
     profileId: input.profileId,
     profileName: input.profileName,
@@ -1472,13 +1475,19 @@ export const runWatchProfileScan = async (
       });
     }
 
-    // DDA-style digest email: one message with many matches.
-    // Initial scan: digest of all matches. Later scans: digest of new matches only.
-    const digestSource =
-      isInitialScan
-        ? matchSummaries
-        : matchSummaries.filter((row) => newMatchIds.has(row.tenderId));
-    if (digestSource.length > 0) {
+    // DDA-style digest email once per profile per hour:
+    // - New matches → highlight those (newCount > 0)
+    // - No new matches but active ones remain → status summary with the same list
+    //   so customers still get a heartbeat email at their digest hour
+    // - Zero matches total → no email (nothing useful to summarize)
+    if (matchSummaries.length > 0) {
+      const newCount = isInitialScan
+        ? matchSummaries.length
+        : newMatchIds.size;
+      const digestSource =
+        newCount > 0 && !isInitialScan
+          ? matchSummaries.filter((row) => newMatchIds.has(row.tenderId))
+          : matchSummaries;
       const topMatches = [...digestSource]
         .sort((a, b) => b.score - a.score)
         .slice(0, 25)
@@ -1498,7 +1507,7 @@ export const runWatchProfileScan = async (
         profileId: profile.id,
         profileName: profile.name,
         matchCount: matchedTenderIds.size,
-        newCount: isInitialScan ? digestSource.length : newMatchIds.size,
+        newCount,
         scannedAt: now,
         topMatches,
       });
