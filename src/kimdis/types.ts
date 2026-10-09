@@ -36,6 +36,7 @@ export type KimdisRequestRecord = {
   noticeRefNo?: string[] | null;
   auctionRefNo?: string[] | null;
   contractRefNo?: string[] | null;
+  nutsCode?: { key?: string | null; value?: string | null } | null;
   cancelled?: boolean | null;
   contractTypes?: Array<{ contractType?: KimdisKeyValue | null }> | null;
 };

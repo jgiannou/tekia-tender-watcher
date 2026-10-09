@@ -9,6 +9,7 @@ import type { RecordType } from "../../kimdis/types.js";
 import type { KimdisClient } from "../../kimdis/client.js";
 import { formatDateOnly } from "../../kimdis/client.js";
 import { requireOrgMembership } from "../auth/org-context.js";
+import { normalizeRegionCodes } from "../geo/nuts.js";
 import { SaasError, badRequest, conflict, forbidden, notFound } from "../errors.js";
 import {
   assertCanActivateWatchProfile,
@@ -121,6 +122,8 @@ export type WatchProfileInput = {
   /** Inclusive KIMDIS publication window (YYYY-MM-DD). Both or neither. */
   dateFrom?: string | null;
   dateTo?: string | null;
+  regions?: string[];
+  includeUnclassifiedRegion?: boolean;
   source?: WatchProfileSource;
   skipSimilarCheck?: boolean;
 };
@@ -182,6 +185,8 @@ export type NormalizedWatchProfileCriteria = {
   procedureType: string | null;
   dateFrom: string | null;
   dateTo: string | null;
+  regions: string[];
+  includeUnclassifiedRegion: boolean;
 };
 
 /**
@@ -211,6 +216,8 @@ export const normalizeWatchProfileCriteria = (
     procedureType: input.procedureType?.trim() || null,
     dateFrom,
     dateTo,
+    regions: normalizeRegionCodes(input.regions),
+    includeUnclassifiedRegion: Boolean(input.includeUnclassifiedRegion),
   };
 };
 
@@ -228,6 +235,8 @@ const criteriaFingerprint = (criteria: NormalizedWatchProfileCriteria): string =
     recordTypes: sort(criteria.recordTypes),
     dateFrom: criteria.dateFrom,
     dateTo: criteria.dateTo,
+    regions: [...criteria.regions].sort(),
+    includeUnclassifiedRegion: criteria.includeUnclassifiedRegion,
   });
 };
 
@@ -248,6 +257,8 @@ const criteriaFromPersisted = (
     procedureType: profile.procedureType,
     dateFrom: profile.dateFrom,
     dateTo: profile.dateTo,
+    regions: asStringArray(profile.regions),
+    includeUnclassifiedRegion: profile.includeUnclassifiedRegion,
   });
 
 export const findSimilarWatchProfiles = async (

@@ -26,9 +26,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 import {
   saasApi,
+  type DiavgeiaLink,
   type KimdisSearchItem,
   type Opportunity,
   type OutreachDraft,
+  type ParticipationChecklist,
+  type PriceMemory,
   type TenderWorkflow,
   type TenderWorkspaceResponse,
   type VaultDocument,
@@ -133,6 +136,9 @@ export const TenderDetailPage = () => {
   const [submissionPickerOpen, setSubmissionPickerOpen] = useState(false);
 
   const [workspaceSection, setWorkspaceSection] = useState<string | null>(null);
+  const [checklist, setChecklist] = useState<ParticipationChecklist | null>(null);
+  const [priceMemory, setPriceMemory] = useState<PriceMemory | null>(null);
+  const [diavgeia, setDiavgeia] = useState<DiavgeiaLink | null>(null);
 
   const load = async () => {
     if (!activeOrganization || !recordType || !adam) {
@@ -185,9 +191,33 @@ export const TenderDetailPage = () => {
         } else {
           setWorkspace(null);
         }
+
+        const followingRow = Boolean(
+          workflowData.workflow.organizationTender?.following,
+        );
+        const [checklistRes, memoryRes, diavgeiaRes] = await Promise.all([
+          followingRow
+            ? saasApi
+                .getParticipationChecklist(activeOrganization.id, data.tender.id)
+                .catch(() => null)
+            : Promise.resolve(null),
+          followingRow
+            ? saasApi
+                .getPriceMemory(activeOrganization.id, data.tender.id)
+                .catch(() => null)
+            : Promise.resolve(null),
+          saasApi
+            .getDiavgeiaLink(activeOrganization.id, data.tender.id)
+            .catch(() => null),
+        ]);
+        setChecklist(checklistRes?.checklist ?? null);
+        setPriceMemory(memoryRes?.memory ?? null);
+        setDiavgeia(diavgeiaRes?.diavgeia ?? null);
       } catch {
         setWorkflow(null);
         setWorkspace(null);
+        setChecklist(null);
+        setPriceMemory(null);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης πράξης");
@@ -661,7 +691,19 @@ export const TenderDetailPage = () => {
             <Badge variant={item.recordType === "REQ" ? "secondary" : "default"}>
               {item.recordType}
             </Badge>
-            <span className="font-mono text-xs text-muted-foreground">{item.adam}</span>
+            <span className="font-mono text-xs text-muted-foreground">
+              ΑΔΑΜ {item.adam}
+            </span>
+            {diavgeia ? (
+              <a
+                href={diavgeia.url}
+                target="_blank"
+                rel="noreferrer"
+                className="font-mono text-xs text-primary underline-offset-2 hover:underline"
+              >
+                ΑΔΑ {diavgeia.ada}
+              </a>
+            ) : null}
             {following ? <Badge variant="success">Παρακολουθείται</Badge> : null}
             {workflow?.stageLabel && following ? (
               <Badge variant="outline">{workflow.stageLabel}</Badge>
@@ -746,6 +788,58 @@ export const TenderDetailPage = () => {
           ) : null}
         </div>
       </div>
+
+      {/* Living procurement thread */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Νήμα διαγωνισμού</CardTitle>
+          <CardDescription>
+            Πρωτογενές αίτημα → πρόσκληση → προθεσμία → κατακύρωση. Οι ενέργειες της εταιρείας
+            φαίνονται χωριστά στο ιστορικό.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ol className="grid gap-3 sm:grid-cols-4">
+            {(
+              [
+                {
+                  label: "Πρωτογενές αίτημα",
+                  done:
+                    item.recordType === "REQ" ||
+                    relatedProcs.length > 0 ||
+                    relatedAwards.length > 0,
+                },
+                {
+                  label: "Πρόσκληση",
+                  done: item.recordType === "PROC" || relatedProcs.length > 0,
+                },
+                {
+                  label: "Προθεσμία",
+                  done: Boolean(item.finalSubmissionDate),
+                },
+                {
+                  label: "Κατακύρωση",
+                  done: relatedAwards.length > 0,
+                },
+              ] as const
+            ).map((step, index) => (
+              <li
+                key={step.label}
+                className={`rounded-md border px-3 py-2 text-sm ${
+                  step.done
+                    ? "border-primary/40 bg-primary/5 font-medium"
+                    : "border-border/70 text-muted-foreground"
+                }`}
+              >
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  0{index + 1}
+                </span>
+                <div className="mt-1">{step.label}</div>
+              </li>
+            ))}
+          </ol>
+        </CardContent>
+      </Card>
 
       {/* New development — same persisted events as Monitoring / Attention */}
       {relatedProcs.length > 0 || relatedAwards.length > 0 ? (
@@ -859,6 +953,121 @@ export const TenderDetailPage = () => {
               ) : null}
             </CardContent>
           </Card>
+
+          {following && checklist ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Φάκελος συμμετοχής</CardTitle>
+                <CardDescription>
+                  Από το PDF της διακήρυξης · σύγκριση με το Company Vault. Όχι σύσταση bid /
+                  no-bid.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                {!checklist.readable ? (
+                  <div className="space-y-2">
+                    <p className="text-muted-foreground">
+                      {checklist.unreadMessage ?? "Δεν διαβάστηκε το PDF"}
+                    </p>
+                    {checklist.officialPdfUrl ? (
+                      <a
+                        href={checklist.officialPdfUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary underline-offset-2 hover:underline"
+                      >
+                        Επίσημο PDF
+                      </a>
+                    ) : null}
+                  </div>
+                ) : (
+                  <>
+                    <dl className="grid gap-2 sm:grid-cols-2">
+                      {checklist.fields.map((field) => (
+                        <div key={field.key} className="rounded-md border border-border/70 px-3 py-2">
+                          <dt className="text-xs text-muted-foreground">{field.label}</dt>
+                          <dd className="mt-1 font-medium">
+                            {field.status === "found"
+                              ? field.value
+                              : "Δεν εντοπίστηκε"}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <ul className="space-y-1.5">
+                      {checklist.documents.map((doc) => (
+                        <li
+                          key={doc.key}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2"
+                        >
+                          <span>{doc.label}</span>
+                          <Badge
+                            variant={
+                              doc.status === "in_vault"
+                                ? "success"
+                                : doc.status === "missing"
+                                  ? "warning"
+                                  : "outline"
+                            }
+                          >
+                            {doc.status === "in_vault"
+                              ? "Στο vault"
+                              : doc.status === "missing"
+                                ? "Λείπει"
+                                : "Δεν ζητείται"}
+                          </Badge>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {following && priceMemory ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Μνήμη τιμής</CardTitle>
+                <CardDescription>
+                  Τελευταίοι ανάδοχοι για ίδιο CPV και περιοχή
+                  {priceMemory.cpv ? ` · ${priceMemory.cpv}` : ""}
+                  {priceMemory.regionCode ? ` · ${priceMemory.regionCode}` : ""}.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                {priceMemory.note ? (
+                  <p className="text-muted-foreground">{priceMemory.note}</p>
+                ) : null}
+                {priceMemory.samples.length === 0 ? (
+                  <p className="text-muted-foreground">
+                    Δεν υπάρχουν ακόμη κατακυρώσεις για αυτό το ζεύγος.
+                  </p>
+                ) : (
+                  priceMemory.samples.map((sample) => (
+                    <div
+                      key={sample.referenceNumber}
+                      className="rounded-md border border-border/70 px-3 py-2"
+                    >
+                      <div className="font-medium">
+                        {sample.winnerName || "Άγνωστος ανάδοχος"}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span className="font-mono">{sample.referenceNumber}</span>
+                        <span>{formatDate(sample.signedDate)}</span>
+                        <span>{formatMoney(sample.awardAmount)}</span>
+                        {sample.ratio != null ? (
+                          <span>
+                            {Math.round(sample.ratio * 100)}% του προϋπολογισμού
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
 
           {/* History under next action */}
           <Card>

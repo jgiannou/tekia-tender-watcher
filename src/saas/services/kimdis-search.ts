@@ -69,7 +69,7 @@ export type KimdisSearchFilters = {
 
 export type KimdisSearchItem = {
   adam: string;
-  recordType: RecordType;
+  recordType: "REQ" | "PROC" | "AWRD" | "CONTRACT";
   title: string;
   contractingAuthority: string;
   /** Object-detail short descriptions from KIMDIS (SaaS match haystack). */
@@ -86,6 +86,12 @@ export type KimdisSearchItem = {
   publicKimdisUrl: string;
   officialPdfUrl: string;
   openState: KimdisOpenState;
+  nutsCode?: string | null;
+  contractEndsAt?: string | null;
+  awardAmount?: number | null;
+  winnerName?: string | null;
+  diavgeiaAda?: string | null;
+  parentAdams?: string[];
 };
 
 const collectDescription = (
@@ -250,6 +256,12 @@ const normalizeItem = (
     publicKimdisUrl: kimdis.publicUrl(record.referenceNumber),
     officialPdfUrl: kimdis.pdfUrl(recordType, record.referenceNumber),
     openState: computeOpenState(recordType, cancelled, finalSubmissionDate),
+    nutsCode: record.nutsCode?.key?.trim() || null,
+    parentAdams: [
+      ...(record.noticeRefNo ?? []),
+      ...(record.auctionRefNo ?? []),
+      ...(record.contractRefNo ?? []),
+    ].filter((value): value is string => Boolean(value)),
   };
 };
 
@@ -287,7 +299,12 @@ const sortItemsIfCompletePage = (
 /** Adapt a canonical Tender row to the search/detail item shape. */
 export const kimdisItemFromTender = (tender: Tender): KimdisSearchItem => ({
   adam: tender.referenceNumber,
-  recordType: (tender.recordType === "PROC" ? "PROC" : "REQ") as RecordType,
+  recordType:
+    tender.recordType === "PROC" ||
+    tender.recordType === "AWRD" ||
+    tender.recordType === "CONTRACT"
+      ? tender.recordType
+      : "REQ",
   title: tender.title ?? "",
   contractingAuthority: tender.contractingAuthority ?? "",
   description: "",
@@ -304,6 +321,11 @@ export const kimdisItemFromTender = (tender: Tender): KimdisSearchItem => ({
   cancelled: false,
   publicKimdisUrl: tender.publicKimdisUrl ?? "",
   officialPdfUrl: tender.officialPdfUrl ?? "",
+  nutsCode: tender.nutsCode,
+  contractEndsAt: tender.contractEndsAt?.toISOString() ?? null,
+  awardAmount: tender.awardAmount,
+  winnerName: tender.winnerName,
+  diavgeiaAda: tender.diavgeiaAda,
   openState: computeOpenState(
     tender.recordType === "PROC" ? "PROC" : "REQ",
     false,

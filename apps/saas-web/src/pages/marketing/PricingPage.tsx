@@ -26,8 +26,12 @@ const faqs = [
     a: "Ναι, μέσω της διαχείρισης χρέωσης. Η ακύρωση ισχύει στο τέλος της τρέχουσας περιόδου.",
   },
   {
-    q: "Τι συμβαίνει όταν λήξει η δοκιμή;",
-    a: `Μετά ${TRIAL_DAYS} ημέρες χρειάζεται ενεργό πλάνο Basic ή Pro για τις δυνατότητες συνδρομής. Η χειροκίνητη αναζήτηση ΚΗΜΔΗΣ παραμένει διαθέσιμη.`,
+    q: "Υπάρχει δωρεάν πλάνο;",
+    a: "Ναι. Το Δωρεάν πλάνο δεν λήγει και δεν απαιτεί κάρτα. Η δοκιμή Pro είναι χωριστή ενέργεια 7 ημερών.",
+  },
+  {
+    q: "Τι συμβαίνει όταν λήξει η δοκιμή Pro;",
+    a: `Μετά ${TRIAL_DAYS} ημέρες επανέρχεστε στο Δωρεάν πλάνο, εκτός αν επιλέξετε Basic ή Pro. Η χειροκίνητη αναζήτηση ΚΗΜΔΗΣ παραμένει διαθέσιμη.`,
   },
   {
     q: "Μπορώ να προσθέσω περισσότερους χρήστες;",
@@ -44,12 +48,13 @@ export const PricingPage = () => (
           Τιμές
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-          Basic και Pro — χωρίς τρίτο πλάνο
+          Δωρεάν, Basic και Pro — ίδια ταχύτητα εισαγωγής
         </h1>
         <p className="mt-3 text-sm text-muted-foreground sm:text-base">
-          Ξεκινήστε με δωρεάν δοκιμή {TRIAL_DAYS} ημερών. Basic από{" "}
+          Ξεκινήστε δωρεάν, χωρίς κάρτα. Basic από{" "}
           {priceWithTaxHint(MARKETING_PLANS.basic.priceMonthlyEur)} · Pro από{" "}
-          {priceWithTaxHint(MARKETING_PLANS.pro.priceMonthlyEur)}.
+          {priceWithTaxHint(MARKETING_PLANS.pro.priceMonthlyEur)}. Η δοκιμή Pro είναι{" "}
+          {TRIAL_DAYS} ημέρες.
         </p>
       </div>
 
@@ -64,10 +69,11 @@ export const PricingPage = () => (
       <section className="mt-14">
         <h2 className="text-xl font-semibold tracking-tight">Σύγκριση πλάνων</h2>
         <div className="mt-5 overflow-x-auto rounded-xl border border-border/70">
-          <table className="w-full min-w-[560px] text-left text-sm">
+          <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="bg-muted/40 text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Χαρακτηριστικό</th>
+                <th className="px-4 py-3 font-medium">Δωρεάν</th>
                 <th className="px-4 py-3 font-medium">Basic</th>
                 <th className="px-4 py-3 font-medium">Pro</th>
               </tr>
@@ -76,6 +82,7 @@ export const PricingPage = () => (
               {COMPARISON_ROWS.map((row) => (
                 <tr key={row.label} className="border-t border-border/60">
                   <td className="px-4 py-3 text-foreground">{row.label}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{row.free}</td>
                   <td className="px-4 py-3 text-muted-foreground">{row.basic}</td>
                   <td className="px-4 py-3 text-muted-foreground">{row.pro}</td>
                 </tr>

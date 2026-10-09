@@ -51,7 +51,8 @@ export const AuthShell = ({ title, description, children, footer }: AuthShellPro
           </ul>
 
           <p className="mt-6 text-sm text-muted-foreground">
-            Basic από {priceWithTaxHint(MARKETING_PLANS.basic.priceMonthlyEur)} · Pro από{" "}
+            Δωρεάν χωρίς κάρτα · Basic από{" "}
+            {priceWithTaxHint(MARKETING_PLANS.basic.priceMonthlyEur)} · Pro από{" "}
             {priceWithTaxHint(MARKETING_PLANS.pro.priceMonthlyEur)}
           </p>
           <Link

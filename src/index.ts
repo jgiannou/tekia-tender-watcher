@@ -97,12 +97,43 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
     const { runHourlyNotificationWave } = await import(
       "./saas/jobs/notification-waves.js"
     );
+    const { runSharedKimdisIngest } = await import(
+      "./saas/jobs/shared-ingest.js"
+    );
     const { app: saasApp } = createSaasApp({ prisma: getPrisma(), kimdis });
     app.route("/", saasApp);
     console.log("saas API: enabled (/api/auth/* , /api/saas/*)");
 
-    // Hourly Athens wave: each org runs only at its selected digest hours
-    // (capped by plan periodicScansPerDay). Pro also gets Deadline Radar.
+    // Shared KIMDIS ingest for every plan: new acts + followed threads.
+    // Target: in-app / push within 5 minutes of Open Data availability.
+    const sharedIngestExpression = "*/2 * * * *";
+    if (cron.validate(sharedIngestExpression)) {
+      cron.schedule(
+        sharedIngestExpression,
+        () => {
+          void runSharedKimdisIngest(getPrisma(), kimdis)
+            .then((summary) => {
+              console.log(
+                "[ingest] shared kimdis",
+                JSON.stringify(summary),
+              );
+            })
+            .catch((error) => {
+              console.error(
+                "shared kimdis ingest error:",
+                error instanceof Error ? error.message : error,
+              );
+            });
+        },
+        { timezone: "Europe/Athens" },
+      );
+      console.log(
+        `saas shared ingest: cron ${sharedIngestExpression} Europe/Athens`,
+      );
+    }
+
+    // Hourly Athens wave: digest email flush + Deadline Radar (Pro).
+    // Discovery itself is the shared ingest above, not per-org rescans.
     const hourlyWaveExpression = "5 * * * *";
     if (cron.validate(hourlyWaveExpression)) {
       cron.schedule(

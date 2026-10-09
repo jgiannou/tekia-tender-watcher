@@ -3,6 +3,7 @@ import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { requireOrgMembership } from "../auth/org-context.js";
 import { trackProductEventSafe } from "../ops/product-events.js";
 import { PLAN_KEYS, TRIAL_DURATION_MS } from "../plans/catalog.js";
+import { entitlementsForPlanKey } from "../plans/catalog.js";
 import { assertCanAddOrganizationMember } from "./entitlements.js";
 
 /** Max organizations a single user may create/own (anti trial-spam). Invites do not count. */
@@ -87,9 +88,9 @@ export const createOrganization = async (
     await tx.subscription.create({
       data: {
         organizationId: organization.id,
-        status: "TRIALING",
-        planKey: PLAN_KEYS.trial,
-        trialEndsAt: new Date(Date.now() + TRIAL_DURATION_MS),
+        status: "ACTIVE",
+        planKey: PLAN_KEYS.free,
+        trialEndsAt: null,
         extraSeats: 0,
       },
     });
@@ -104,10 +105,10 @@ export const createOrganization = async (
       metadata: { name: organization.name, slug: organization.slug },
     });
     trackProductEventSafe(prisma, {
-      type: "trial_started",
+      type: "free_started",
       userId: input.userId,
       organizationId: organization.id,
-      metadata: { planKey: PLAN_KEYS.trial },
+      metadata: { planKey: PLAN_KEYS.free },
     });
     return organization;
   });

@@ -70,6 +70,7 @@ const navSections: NavSection[] = [
       { to: "/app/search", label: "Αναζήτηση ΚΗΜΔΗΣ", icon: FileSearch },
       { to: "/app/opportunities", label: "Ευκαιρίες", icon: Radar },
       { to: "/app/monitoring", label: "Παρακολουθούμενα", icon: Binoculars },
+      { to: "/app/expiring-contracts", label: "Λήγουσες συμβάσεις", icon: FileText },
     ],
   },
   {
@@ -98,6 +99,7 @@ const prefetchRoute = (to: string) => {
     "/app": () => import("@/pages/OverviewPage"),
     "/app/search": () => import("@/pages/SearchPage"),
     "/app/opportunities": () => import("@/pages/OpportunitiesPage"),
+    "/app/expiring-contracts": () => import("@/pages/ExpiringContractsPage"),
     "/app/monitoring": () => import("@/pages/MonitoringPage"),
     "/app/submissions": () => import("@/pages/SubmissionsPage"),
     "/app/documents": () => import("@/pages/DocumentsPage"),

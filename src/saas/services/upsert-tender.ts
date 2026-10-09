@@ -25,6 +25,14 @@ export const upsertTenderFromKimdisItem = async (
       cpvs: item.cpvs,
       officialPdfUrl: item.officialPdfUrl,
       publicKimdisUrl: item.publicKimdisUrl,
+      nutsCode: item.nutsCode ?? null,
+      contractEndsAt: item.contractEndsAt ? new Date(item.contractEndsAt) : null,
+      awardAmount: item.awardAmount ?? null,
+      winnerName: item.winnerName ?? null,
+      diavgeiaAda: item.diavgeiaAda ?? null,
+      diavgeiaUrl: item.diavgeiaAda
+        ? `https://diavgeia.gov.gr/decision/view/${encodeURIComponent(item.diavgeiaAda)}`
+        : null,
       firstSeenAt: now,
       lastSeenAt: now,
     },
@@ -41,6 +49,18 @@ export const upsertTenderFromKimdisItem = async (
       cpvs: item.cpvs,
       officialPdfUrl: item.officialPdfUrl,
       publicKimdisUrl: item.publicKimdisUrl,
+      ...(item.nutsCode ? { nutsCode: item.nutsCode } : {}),
+      ...(item.contractEndsAt
+        ? { contractEndsAt: new Date(item.contractEndsAt) }
+        : {}),
+      ...(item.awardAmount != null ? { awardAmount: item.awardAmount } : {}),
+      ...(item.winnerName ? { winnerName: item.winnerName } : {}),
+      ...(item.diavgeiaAda
+        ? {
+            diavgeiaAda: item.diavgeiaAda,
+            diavgeiaUrl: `https://diavgeia.gov.gr/decision/view/${encodeURIComponent(item.diavgeiaAda)}`,
+          }
+        : {}),
       lastSeenAt: now,
     },
   });

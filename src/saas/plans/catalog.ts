@@ -1,25 +1,30 @@
 /**
  * Locked commercial catalog for ARC Tenders SaaS.
- * Only TWO public plans: Basic + Pro. No Business/Enterprise yet.
- * Pro extra seats are a recurring add-on, not a third plan.
+ * Public plans: Free + Basic + Pro. No Business/Enterprise yet.
+ * Pro extra seats are a recurring add-on, not a fourth plan.
  *
- * Basic: DIGEST email at user-chosen hours (max = periodicScansPerDay).
- * Pro: more slots + Deadline Radar. Always respect plan hour/scan caps.
+ * Discovery speed is the shared KIMDIS ingest (same for every plan).
+ * periodicScansPerDay caps digest email hours / legacy per-org waves.
+ * Free: 1 digest/day. Basic: DIGEST at chosen hours. Pro: IMMEDIATE + Deadline Radar.
  */
 
 export const PLAN_KEYS = {
   trial: "trial",
+  free: "free",
   basic: "basic",
   pro: "pro",
 } as const;
 
-export type PublicPlanKey = typeof PLAN_KEYS.basic | typeof PLAN_KEYS.pro;
+export type PublicPlanKey =
+  | typeof PLAN_KEYS.free
+  | typeof PLAN_KEYS.basic
+  | typeof PLAN_KEYS.pro;
 export type PlanKey = (typeof PLAN_KEYS)[keyof typeof PLAN_KEYS] | string;
 
 export type EmailMode = "DIGEST" | "IMMEDIATE";
 
 export type PlanEntitlements = {
-  plan: "TRIAL" | "BASIC" | "PRO";
+  plan: "TRIAL" | "FREE" | "BASIC" | "PRO";
   planKey: PlanKey;
   label: string;
   labelEl: string;
@@ -58,6 +63,10 @@ export type PlanEntitlements = {
   deadlineRadar: boolean;
   advancedWatchProfileFilters: boolean;
   prioritySupport: boolean;
+  participationChecklist: boolean;
+  expiringContractList: boolean;
+  priceMemory: boolean;
+  positioningEl: string;
 };
 
 /** Operational safeguard for Pro self-service seat purchases. */
@@ -100,6 +109,39 @@ export const BASIC_PLAN: PlanEntitlements = {
   deadlineRadar: false,
   advancedWatchProfileFilters: false,
   prioritySupport: false,
+  participationChecklist: true,
+  expiringContractList: true,
+  priceMemory: true,
+  positioningEl:
+    "Για επαγγελματίες και μικρές επιχειρήσεις που θέλουν να βρίσκουν και να παρακολουθούν επιλεγμένες δημόσιες ευκαιρίες.",
+};
+
+export const FREE_PLAN: PlanEntitlements = {
+  ...BASIC_PLAN,
+  plan: "FREE",
+  planKey: PLAN_KEYS.free,
+  label: "Free",
+  labelEl: "Δωρεάν",
+  positioning:
+    "Discover and follow a few Greek public tenders, with the same ingest speed as paid plans.",
+  positioningEl:
+    "Βρίσκεις και παρακολουθείς λίγους διαγωνισμούς, με την ίδια ταχύτητα εισαγωγής με τα επί πληρωμή πλάνα.",
+  priceMonthlyEur: 0,
+  priceYearlyEur: 0,
+  maxActiveWatchProfiles: 1,
+  maxActiveFollowedTenders: 5,
+  storageBytes: 0,
+  periodicScansPerDay: 1,
+  manualProfileScansPerDay: 5,
+  outreachWorkflow: false,
+  submissionWorkflow: false,
+  companyVault: false,
+  tenderWorkspace: false,
+  documentVersioning: false,
+  participationChecklist: false,
+  expiringContractList: false,
+  priceMemory: false,
+  emailMode: "DIGEST",
 };
 
 /**
@@ -140,20 +182,24 @@ export const PRO_PLAN: PlanEntitlements = {
   deadlineRadar: true,
   advancedWatchProfileFilters: true,
   prioritySupport: true,
+  participationChecklist: true,
+  expiringContractList: true,
+  priceMemory: true,
+  positioningEl:
+    "Για επιχειρήσεις που παρακολουθούν συστηματικά δημόσιες συμβάσεις και χρειάζονται μεγαλύτερη κάλυψη και ομάδα.",
 };
 
-/** Trial mirrors Basic coverage with tighter periodic cadence (1/day, 7 days). */
+/** 7-day Pro preview. Does not replace the non-expiring Free plan. */
 export const TRIAL_PLAN: PlanEntitlements = {
-  ...BASIC_PLAN,
+  ...PRO_PLAN,
   plan: "TRIAL",
   planKey: PLAN_KEYS.trial,
   label: "Trial",
-  labelEl: "Δοκιμή",
-  positioning: "7-day trial with Basic-level access and limited periodic scans.",
+  labelEl: "Δοκιμή Pro",
+  positioning: "7-day Pro preview. Does not replace the free plan.",
+  positioningEl: "7 ημέρες Pro. Δεν αντικαθιστά το δωρεάν πλάνο.",
   priceMonthlyEur: null,
   priceYearlyEur: null,
-  periodicScansPerDay: 1,
-  manualProfileScansPerDay: 10,
 };
 
 export const TRIAL_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -167,6 +213,7 @@ const LEGACY_PLAN_KEY_MAP: Record<string, PlanKey> = {
 export const normalizePlanKey = (planKey: string | null | undefined): PlanKey => {
   const raw = (planKey ?? PLAN_KEYS.trial).trim().toLowerCase();
   if (raw in LEGACY_PLAN_KEY_MAP) return LEGACY_PLAN_KEY_MAP[raw]!;
+  if (raw === PLAN_KEYS.free || raw === "free") return PLAN_KEYS.free;
   if (raw === PLAN_KEYS.basic || raw === "basic_499") return PLAN_KEYS.basic;
   if (raw === PLAN_KEYS.pro || raw === "pro_999") return PLAN_KEYS.pro;
   if (raw === PLAN_KEYS.trial) return PLAN_KEYS.trial;
@@ -176,6 +223,7 @@ export const normalizePlanKey = (planKey: string | null | undefined): PlanKey =>
 export const entitlementsForPlanKey = (planKey: string): PlanEntitlements => {
   const key = normalizePlanKey(planKey);
   if (key === PLAN_KEYS.pro) return { ...PRO_PLAN };
+  if (key === PLAN_KEYS.free) return { ...FREE_PLAN };
   if (key === PLAN_KEYS.basic) return { ...BASIC_PLAN };
   if (key === PLAN_KEYS.trial) return { ...TRIAL_PLAN };
   // Unknown paid keys default to Basic (safer / lower entitlements).
@@ -183,6 +231,7 @@ export const entitlementsForPlanKey = (planKey: string): PlanEntitlements => {
 };
 
 export const publicPlans = (): PlanEntitlements[] => [
+  { ...FREE_PLAN },
   { ...BASIC_PLAN },
   { ...PRO_PLAN },
 ];

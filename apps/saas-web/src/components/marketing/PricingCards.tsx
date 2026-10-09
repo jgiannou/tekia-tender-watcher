@@ -15,10 +15,15 @@ type PricingCardsProps = {
 };
 
 export const PricingCards = ({ mode, className }: PricingCardsProps) => {
-  const keys: MarketingPlanKey[] = ["basic", "pro"];
+  const keys: MarketingPlanKey[] = ["free", "basic", "pro"];
 
   return (
-    <div className={cn("grid gap-4 md:grid-cols-2 md:items-stretch", className)}>
+    <div
+      className={cn(
+        "grid gap-4 md:grid-cols-3 md:items-stretch",
+        className,
+      )}
+    >
       {keys.map((key) => {
         const plan = MARKETING_PLANS[key];
         const featured = key === "pro";
@@ -64,9 +69,13 @@ export const PricingCards = ({ mode, className }: PricingCardsProps) => {
             </ul>
             <Button asChild className="mt-6 w-full" variant={featured ? "default" : "outline"}>
               <Link to="/signup">
-                {mode === "teaser"
+                {key === "free"
                   ? "Ξεκινήστε δωρεάν"
-                  : `Δωρεάν δοκιμή ${TRIAL_DAYS} ημερών`}
+                  : mode === "teaser"
+                    ? "Ξεκινήστε δωρεάν"
+                    : key === "pro"
+                      ? `Δοκίμασε Pro ${TRIAL_DAYS} ημερών`
+                      : "Αναβάθμιση σε Basic"}
               </Link>
             </Button>
           </article>

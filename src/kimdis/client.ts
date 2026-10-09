@@ -146,6 +146,11 @@ export type KimdisClient = {
   ) => Promise<KimdisPage<KimdisNoticeRecord>>;
   searchRequests: (body: RequestSearchBody) => Promise<KimdisRequestRecord[]>;
   searchNotices: (body: NoticeSearchBody) => Promise<KimdisNoticeRecord[]>;
+  searchOpenDataPage: <T>(
+    path: string,
+    body: unknown,
+    page: number,
+  ) => Promise<KimdisPage<T>>;
   downloadAttachment: (recordType: "REQ" | "PROC", adam: string) => Promise<Buffer | null>;
   publicUrl: (adam: string) => string;
   pdfUrl: (recordType: "REQ" | "PROC", adam: string) => string;
@@ -193,6 +198,9 @@ export const createKimdisClient = (
         body,
         timeoutMs,
       ),
+
+    searchOpenDataPage: (path, body, page) =>
+      fetchSearchPage(normalizedBase, path, body, page, timeoutMs),
 
     downloadAttachment: async (recordType, adam) => {
       const path =

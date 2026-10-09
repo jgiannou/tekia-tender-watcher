@@ -71,10 +71,7 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
         label: plan.label,
         labelEl: plan.labelEl,
         positioning: plan.positioning,
-        positioningEl:
-          plan.planKey === PLAN_KEYS.basic
-            ? "Για επαγγελματίες και μικρές επιχειρήσεις που θέλουν να ανακαλύπτουν και να παρακολουθούν επιλεγμένες δημόσιες συμβάσεις."
-            : "Για επιχειρήσεις που παρακολουθούν συστηματικά δημόσιες συμβάσεις και χρειάζονται περισσότερη αυτοματοποίηση, κάλυψη και ομάδα.",
+        positioningEl: plan.positioningEl,
         monthlyEur: plan.priceMonthlyEur,
         annualEur: plan.priceYearlyEur,
         includedSeats: plan.includedSeats,
@@ -87,36 +84,53 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
         storageBytes: plan.storageBytes,
         emailMode: plan.emailMode,
         advancedWatchProfileFilters: plan.advancedWatchProfileFilters,
+        participationChecklist: plan.participationChecklist,
+        expiringContractList: plan.expiringContractList,
+        priceMemory: plan.priceMemory,
         featuresEl:
-          plan.planKey === PLAN_KEYS.basic
+          plan.planKey === PLAN_KEYS.free
             ? [
                 "1 χρήστης",
-                "έως 3 ενεργές αποθηκευμένες αναζητήσεις",
-                "έως 20 παρακολουθούμενοι διαγωνισμοί",
-                "250 MB αρχεία",
-                "Έως 2 σαρώσεις / ομαδοποιημένα email την ημέρα — επιλέγετε ώρες",
-                "Matching + score + λόγοι",
-                "Vault, καταγραφή ενδιαφέροντος & υποβολής",
+                "1 αποθηκευμένη αναζήτηση",
+                "5 παρακολουθήσεις",
+                "Ίδια ταχύτητα εισαγωγής ΚΗΜΔΗΣ (εντός 5 λεπτών)",
+                "1 ομαδικό email / ημέρα",
+                "Push και in-app ειδοποιήσεις",
+                "Φίλτρο περιφέρειας",
+                "Οθόνη νήματος διαγωνισμού",
               ]
-            : [
-                "3 χρήστες συμπεριλαμβάνονται",
-                "έξτρα θέσεις €2,49 / χρήστη / μήνα",
-                "έως 15 ενεργές αποθηκευμένες αναζητήσεις",
-                "έως 100 παρακολουθούμενοι διαγωνισμοί",
-                "2 GB αρχεία",
-                "Έως 6 σαρώσεις / ομαδοποιημένα email την ημέρα — επιλέγετε ώρες",
-                "Deadline radar — επερχόμενες προθεσμίες",
-                "Προχωρημένα φίλτρα αναζήτησης",
-                "Προτεραιότητα υποστήριξης",
-              ],
+            : plan.planKey === PLAN_KEYS.basic
+              ? [
+                  "1 χρήστης",
+                  "έως 3 ενεργές αποθηκευμένες αναζητήσεις",
+                  "έως 20 παρακολουθούμενοι διαγωνισμοί",
+                  "Ίδια ταχύτητα εισαγωγής ΚΗΜΔΗΣ",
+                  "250 MB αρχεία",
+                  "Digest email — επιλέγετε ώρες",
+                  "Φάκελος συμμετοχής από PDF",
+                  "Λήγουσες συμβάσεις + μνήμη τιμής",
+                  "Vault, καταγραφή ενδιαφέροντος & υποβολής",
+                ]
+              : [
+                  "3 χρήστες συμπεριλαμβάνονται",
+                  "έξτρα θέσεις €2,49 / χρήστη / μήνα",
+                  "έως 15 ενεργές αποθηκευμένες αναζητήσεις",
+                  "έως 100 παρακολουθούμενοι διαγωνισμοί",
+                  "Ίδια ταχύτητα εισαγωγής ΚΗΜΔΗΣ",
+                  "2 GB αρχεία",
+                  "Άμεσα email για νέες εξελίξεις",
+                  "Deadline radar — επερχόμενες προθεσμίες",
+                  "Προχωρημένα φίλτρα αναζήτησης",
+                  "Προτεραιότητα υποστήριξης",
+                ],
       })),
       trial: {
         days: 7,
-        periodicScansPerDay: 1,
         noteEl:
-          "Με την εγγραφή δοκιμάζετε δωρεάν για 7 ημέρες. Μετά την επιβεβαίωση email έχετε πρόσβαση στις βασικές δυνατότητες και 1 αυτόματη σάρωση την ημέρα.",
+          "Η εγγραφή ξεκινά στο δωρεάν πλάνο. Μπορείτε να δοκιμάσετε το Pro για 7 ημέρες χωριστά — δεν αντικαθιστά το Free.",
       },
       reference: {
+        freeMonthlyEur: 0,
         basicMonthlyEur: BASIC_PLAN.priceMonthlyEur,
         proMonthlyEur: PRO_PLAN.priceMonthlyEur,
       },

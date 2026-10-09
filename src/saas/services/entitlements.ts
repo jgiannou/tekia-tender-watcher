@@ -27,6 +27,13 @@ export type OrganizationEntitlements = {
   advancedWatchProfileFilters: boolean;
   emailMode: PlanEntitlements["emailMode"];
   deadlineRadar: boolean;
+  participationChecklist: boolean;
+  expiringContractList: boolean;
+  priceMemory: boolean;
+  companyVault: boolean;
+  outreachWorkflow: boolean;
+  submissionWorkflow: boolean;
+  tenderWorkspace: boolean;
 };
 
 /** Near-limit guidance threshold (not a hard block). */
@@ -58,6 +65,13 @@ export const getOrganizationEntitlements = async (
       advancedWatchProfileFilters: scanAccess.limits.advancedWatchProfileFilters,
       emailMode: scanAccess.limits.emailMode,
       deadlineRadar: plan.deadlineRadar,
+      participationChecklist: plan.participationChecklist,
+      expiringContractList: plan.expiringContractList,
+      priceMemory: plan.priceMemory,
+      companyVault: plan.companyVault,
+      outreachWorkflow: plan.outreachWorkflow,
+      submissionWorkflow: plan.submissionWorkflow,
+      tenderWorkspace: plan.tenderWorkspace,
     },
     plan,
     scanAccess,
@@ -133,7 +147,11 @@ export const getEntitlementsView = async (
         prioritySupport: plan.prioritySupport,
         emailMode: plan.emailMode,
         deadlineRadar: plan.deadlineRadar,
+        participationChecklist: plan.participationChecklist,
+        expiringContractList: plan.expiringContractList,
+        priceMemory: plan.priceMemory,
       },
+      positioningEl: plan.positioningEl,
     },
     catalog: publicPlans().map((entry) => ({
       key: entry.planKey,
@@ -141,6 +159,7 @@ export const getEntitlementsView = async (
       label: entry.label,
       labelEl: entry.labelEl,
       positioning: entry.positioning,
+      positioningEl: entry.positioningEl,
       priceMonthlyEur: entry.priceMonthlyEur,
       priceYearlyEur: entry.priceYearlyEur,
       includedSeats: entry.includedSeats,
@@ -225,4 +244,23 @@ export const assertCanAddOrganizationMember = async (
     throw conflict("seat_limit_reached");
   }
   return { members, seats: scanAccess.seats };
+};
+
+export const assertPlanFeature = async (
+  prisma: PrismaClient,
+  input: { userId: string; organizationId: string },
+  feature:
+    | "companyVault"
+    | "outreachWorkflow"
+    | "submissionWorkflow"
+    | "tenderWorkspace"
+    | "participationChecklist"
+    | "expiringContractList"
+    | "priceMemory",
+) => {
+  const { plan } = await getOrganizationEntitlements(prisma, input);
+  if (!plan[feature]) {
+    throw forbidden("plan_feature_locked");
+  }
+  return plan;
 };

@@ -4,36 +4,41 @@ Commercial SaaS only. Does **not** apply to the internal TEKIA Electron / SQLite
 
 ## Public plans (locked)
 
-| | Basic | Pro |
-|---|---|---|
-| Monthly | €4.99 | €9.99 |
-| Yearly (later) | €49 | €99 |
-| Included seats | 1 | 3 |
-| Extra seats | — | €2.49 / user / month (add-on, not a 3rd plan) |
-| Self-service seat cap | 1 | 20 |
-| Active saved searches | 3 | 15 (provisional) |
-| Active followed tenders | 20 | 100 (provisional) |
-| Storage | 250 MB | 2 GB (provisional) |
-| Periodic scans / day | 2 | 6 |
-| Email mode | DIGEST — related-act updates **1×/day** grouped | IMMEDIATE — related-act update emailed **right away** |
-| Advanced watch filters | no | yes (provisional) |
+| | Free | Basic | Pro |
+|---|---|---|---|
+| Monthly | €0 (no card, no expiry) | €4.99 | €9.99 |
+| Yearly (later) | — | €49 | €99 |
+| Included seats | 1 | 1 | 3 |
+| Extra seats | — | — | €2.49 / user / month |
+| Self-service seat cap | 1 | 1 | 20 |
+| Active saved searches | 1 | 3 | 15 |
+| Active followed tenders | 5 | 20 | 100 |
+| Storage | — | 250 MB | 2 GB |
+| Ingest speed | Shared (≤5 min) | Shared (≤5 min) | Shared (≤5 min) |
+| Email mode | 1 digest / day | DIGEST at chosen hours | IMMEDIATE |
+| Region filter | yes | yes | yes |
+| Thread screen | yes | yes | yes |
+| Vault / outreach / submission | no | yes | yes |
+| Participation checklist | no | yes | yes |
+| Expiring contracts | count only | list + follow | list + follow |
+| Price memory | no | yes | yes |
+| Deadline radar email | no | no | yes |
 
 Above 20 Pro seats: show  
 `Χρειάζεστε περισσότερους από 20 χρήστες; Επικοινωνήστε μαζί μας.`
 
 ## Trial
 
-7 days · Basic-level access · **1** periodic scan / day · requires verified email for profile scans.
+7 days · Pro-level access · separate «Δοκίμασε Pro» action · does **not** replace Free.
 
 ## Code / UI
 
 - Catalog: `src/saas/plans/catalog.ts`
+- Shared ingest: `src/saas/jobs/shared-ingest.ts`
 - Billing: `src/saas/billing/*` · UI `/app/subscription`
 - Scan / seat access: `src/saas/services/scan-access.ts`
-- Enforcement: `entitlements.ts`, `follow.ts`, `organizations.ts` (members)
-- Schema: `Subscription.extraSeats`, `planKey` ∈ `trial|basic|pro`
-- **Ops checklist (Stripe products, env, gates):** [ops-setup.md](./ops-setup.md)
+- Feature PRD: [PRD-saas-features.md](./PRD-saas-features.md)
 
 ## Note
 
-Pro feature numbers marked provisional were filled after the product message was truncated mid-Basic entitlements. Reconcile when the full Pro block arrives — do **not** add a Business/Enterprise plan.
+Discovery is the shared KIMDIS ingest for every plan. `periodicScansPerDay` caps digest email hours and legacy per-org waves — it is not the discovery latency.

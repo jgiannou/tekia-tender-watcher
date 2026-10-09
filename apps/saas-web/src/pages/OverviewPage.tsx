@@ -92,6 +92,9 @@ export const OverviewPage = () => {
   const [overview, setOverview] = useState<SaasOverview | null>(null);
   const [pdfPreview, setPdfPreview] = useState<Opportunity | null>(null);
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
+  const [ingestLabel, setIngestLabel] = useState<string | null>(null);
+  const [ingestFresh, setIngestFresh] = useState(true);
+  const [expiringCount, setExpiringCount] = useState<number | null>(null);
 
   const load = async (opts?: { silent?: boolean }) => {
     if (!activeOrganization) {
@@ -103,8 +106,15 @@ export const OverviewPage = () => {
     setError(null);
     try {
       const firstName = (user?.name || "").split(" ")[0] || null;
-      const data = await saasApi.loadOverview(activeOrganization.id, firstName);
+      const [data, ingest, expiring] = await Promise.all([
+        saasApi.loadOverview(activeOrganization.id, firstName),
+        saasApi.getIngestStatus(activeOrganization.id).catch(() => null),
+        saasApi.listExpiringContracts(activeOrganization.id).catch(() => null),
+      ]);
       setOverview(data);
+      setIngestLabel(ingest?.labelEl ?? null);
+      setIngestFresh(ingest?.fresh ?? true);
+      setExpiringCount(expiring?.count ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης");
     } finally {
@@ -156,7 +166,7 @@ export const OverviewPage = () => {
       <>
         <EmptyState
           title="Δημιουργήστε οργανισμό"
-          description="Μετά την εγγραφή δημιουργήστε οργανισμό για να ξεκινήσετε — ξεχωριστή εταιρεία με δωρεάν δοκιμή."
+          description="Μετά την εγγραφή δημιουργήστε οργανισμό για να ξεκινήσετε στο δωρεάν πλάνο."
           actionLabel="Δημιουργία οργανισμού"
           onAction={() => setCreateOrgOpen(true)}
         />
@@ -250,6 +260,28 @@ export const OverviewPage = () => {
                 : "αποθηκευμένες αναζητήσεις"}
               .
             </span>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {ingestLabel ? (
+        <p
+          className={`text-xs ${ingestFresh ? "text-muted-foreground" : "text-amber-700 dark:text-amber-400"}`}
+        >
+          {ingestLabel}
+          {!ingestFresh ? " · Τα αποτελέσματα μπορεί να μην είναι φρέσκα." : ""}
+        </p>
+      ) : null}
+
+      {expiringCount != null && expiringCount > 0 ? (
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+            <span>
+              {expiringCount} συμβάσεις λήγουν στον χώρο σου (3–9 μήνες).
+            </span>
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/app/expiring-contracts">Προβολή</Link>
+            </Button>
           </CardContent>
         </Card>
       ) : null}

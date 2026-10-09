@@ -3,6 +3,7 @@ import { Check, Loader2 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -76,6 +77,7 @@ export const SubscriptionPage = () => {
     }
   }, [params]);
 
+  const free = catalog.find((p) => p.key === "free");
   const basic = catalog.find((p) => p.key === "basic");
   const pro = catalog.find((p) => p.key === "pro");
   const seatCap = notes.proSelfServiceSeatCap ?? 20;
@@ -83,7 +85,8 @@ export const SubscriptionPage = () => {
 
   const currentLabel = useMemo(() => {
     if (!status) return "—";
-    if (status.planKey === "trial") return "Δοκιμή";
+    if (status.planKey === "trial") return "Δοκιμή Pro";
+    if (status.planKey === "free") return "Δωρεάν";
     if (status.planKey === "basic") return "Basic";
     if (status.planKey === "pro") return "Pro";
     return status.planKey;
@@ -274,6 +277,30 @@ export const SubscriptionPage = () => {
           ))}
         </div>
       </div>
+
+      {free ? (
+        <Card className="mb-4">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{free.labelEl || free.label}</CardTitle>
+            <CardDescription>{free.positioningEl || free.positioning}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="text-2xl font-semibold">€0</p>
+            <ul className="space-y-1.5 text-muted-foreground">
+              {(free.featuresEl ?? []).map((feature) => (
+                <li key={feature}>• {feature}</li>
+              ))}
+            </ul>
+            {status?.planKey === "free" ? (
+              <Badge variant="success">Τρέχον πλάνο</Badge>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Η εγγραφή ξεκινά εδώ. Δεν απαιτείται κάρτα.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
         {[basic, pro].map((plan) => {

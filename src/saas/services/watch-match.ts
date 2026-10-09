@@ -1,3 +1,4 @@
+import { evaluateRegionGate } from "../geo/nuts.js";
 import type { KimdisSearchItem } from "./kimdis-search.js";
 import type { RecordType } from "../../kimdis/types.js";
 import {
@@ -26,6 +27,9 @@ export type WatchProfileCriteria = {
   authority: string | null;
   contractType: string | null;
   procedureType: string | null;
+  /** Greek NUTS 2 codes. Empty = all of Greece. */
+  regions?: string[];
+  includeUnclassifiedRegion?: boolean;
   /** Org ΚΑΔ / activities — soft company-fit boost, not a hard filter. */
   companyActivities?: CompanyActivityHint[];
 };
@@ -378,6 +382,12 @@ export const scoreKimdisItemAgainstProfile = (
   if (!recordTypes.includes(item.recordType)) {
     return empty();
   }
+  const regionGate = evaluateRegionGate(
+    item.nutsCode,
+    criteria.regions ?? [],
+    criteria.includeUnclassifiedRegion ?? false,
+  );
+  if (regionGate !== "ok") return empty();
 
   const description = item.description?.trim() ?? "";
   const haystackRaw = `${item.title} ${item.contractingAuthority} ${description}`;
@@ -675,6 +685,8 @@ export const criteriaFromWatchProfile = (
     authority: string | null;
     contractType: string | null;
     procedureType: string | null;
+    regions?: unknown;
+    includeUnclassifiedRegion?: boolean | null;
   },
   options?: { companyActivities?: CompanyActivityHint[] },
 ): WatchProfileCriteria => {
@@ -696,6 +708,8 @@ export const criteriaFromWatchProfile = (
     authority: profile.authority,
     contractType: profile.contractType,
     procedureType: profile.procedureType,
+    regions: asStrings(profile.regions),
+    includeUnclassifiedRegion: Boolean(profile.includeUnclassifiedRegion),
     companyActivities: options?.companyActivities,
   };
 };

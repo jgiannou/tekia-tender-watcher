@@ -58,6 +58,11 @@ const SavedSearchesPage = lazy(() =>
     default: m.SavedSearchesPage,
   })),
 );
+const ExpiringContractsPage = lazy(() =>
+  import("@/pages/ExpiringContractsPage").then((m) => ({
+    default: m.ExpiringContractsPage,
+  })),
+);
 const SetupPage = lazy(() =>
   import("@/pages/SetupPage").then((m) => ({ default: m.SetupPage })),
 );
@@ -151,6 +156,7 @@ export const App = () => (
             <Route path="submissions" element={<SubmissionsPage />} />
             <Route path="documents" element={<DocumentsPage />} />
             <Route path="saved-searches" element={<SavedSearchesPage />} />
+            <Route path="expiring-contracts" element={<ExpiringContractsPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="subscription" element={<SubscriptionPage />} />
             <Route path="setup" element={<SetupPage />} />

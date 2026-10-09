@@ -133,9 +133,9 @@ export const ensureOrganizationSubscription = async (
   return prisma.subscription.create({
     data: {
       organizationId,
-      status: "TRIALING",
-      planKey: PLAN_KEYS.trial,
-      trialEndsAt: new Date(Date.now() + TRIAL_DURATION_MS),
+      status: "ACTIVE",
+      planKey: PLAN_KEYS.free,
+      trialEndsAt: null,
       extraSeats: 0,
     },
   });
@@ -245,19 +245,25 @@ export const resolveOrganizationScanAccess = async (
   }
 
   if (subscription.status === "TRIALING") {
+    await prisma.subscription.update({
+      where: { id: subscription.id },
+      data: { status: "ACTIVE", planKey: PLAN_KEYS.free },
+    });
+    const limits = limitsForPlanKey(PLAN_KEYS.free);
+    const plan = entitlementsForPlanKey(PLAN_KEYS.free);
     return {
       emailVerified: true,
-      status: "trial_expired",
-      planKey: PLAN_KEYS.trial,
-      plan: "INACTIVE",
+      status: "active",
+      planKey: PLAN_KEYS.free,
+      plan: plan.plan,
       trialEndsAt,
-      limits: { ...INACTIVE_LIMITS },
+      limits,
       usage,
-      seats: seatsFor(PLAN_KEYS.basic),
+      seats: seatsFor(PLAN_KEYS.free),
       canManualKimdisSearch: true,
-      canRunManualProfileScan: false,
-      canRunPeriodicScan: false,
-      blockCode: "trial_expired",
+      canRunManualProfileScan: usage.manual < limits.manualProfileScansPerDay,
+      canRunPeriodicScan: usage.periodic < limits.periodicScansPerDay,
+      blockCode: null,
     };
   }
 

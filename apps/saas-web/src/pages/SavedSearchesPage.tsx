@@ -39,6 +39,7 @@ import {
   type WatchProfileInput,
 } from "@/lib/api";
 import { humanSaasError } from "@/lib/labels";
+import { GREEK_NUTS2_REGIONS } from "@/lib/regions";
 
 const asStringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
@@ -171,6 +172,8 @@ const emptyForm = (): WatchProfileInput & { id?: string } => ({
   maxBudget: null,
   dateFrom: null,
   dateTo: null,
+  regions: [],
+  includeUnclassifiedRegion: false,
   enabled: true,
 });
 
@@ -196,6 +199,8 @@ const profileToForm = (profile: WatchProfile): WatchProfileInput & { id: string 
   maxBudget: profile.maxBudget ?? null,
   dateFrom: profile.dateFrom ?? null,
   dateTo: profile.dateTo ?? null,
+  regions: asStringArray(profile.regions),
+  includeUnclassifiedRegion: Boolean(profile.includeUnclassifiedRegion),
   enabled: profile.enabled,
 });
 
@@ -933,6 +938,67 @@ export const SavedSearchesPage = () => {
                 <div className="space-y-2">
                   <Label>CPVs</Label>
                   <Input value={cpvsText} onChange={(e) => setCpvsText(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Περιφέρειες</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Καμία επιλογή = όλη η Ελλάδα. Ταίριασμα μόνο από επίσημο πεδίο NUTS.
+                  </p>
+                  <div className="grid max-h-40 grid-cols-1 gap-1.5 overflow-y-auto rounded-md border border-border px-3 py-2 sm:grid-cols-2">
+                    {GREEK_NUTS2_REGIONS.map((region) => {
+                      const selected = (editForm.regions ?? []).includes(region.code);
+                      return (
+                        <label
+                          key={region.code}
+                          className="flex cursor-pointer items-center gap-2 text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5"
+                            checked={selected}
+                            onChange={() => {
+                              setEditForm((prev) => {
+                                if (!prev) return prev;
+                                const current = prev.regions ?? [];
+                                const next = selected
+                                  ? current.filter((code) => code !== region.code)
+                                  : [...current, region.code];
+                                return { ...prev, regions: next };
+                              });
+                            }}
+                            aria-label={region.label}
+                          />
+                          <span>{region.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {(editForm.regions ?? []).length > 0 ? (
+                    <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+                      <div>
+                        <Label className="text-sm">Χωρίς δηλωμένη περιοχή</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Συμπερίληψη πράξεων χωρίς επίσημο NUTS
+                          {typeof editForm.id === "string" &&
+                          (profiles.find((p) => p.id === editForm.id)
+                            ?.unclassifiedRegionCount ?? 0) > 0
+                            ? ` · ${profiles.find((p) => p.id === editForm.id)?.unclassifiedRegionCount} χωρίς περιοχή`
+                            : ""}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={Boolean(editForm.includeUnclassifiedRegion)}
+                        onCheckedChange={(checked) =>
+                          setEditForm((prev) =>
+                            prev
+                              ? { ...prev, includeUnclassifiedRegion: checked }
+                              : prev,
+                          )
+                        }
+                        aria-label="Συμπερίληψη χωρίς δηλωμένη περιοχή"
+                      />
+                    </div>
+                  ) : null}
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-2">

@@ -84,10 +84,19 @@ import {
   upsertPushDevice,
   sendTestPushToUser,
 } from "./services/push.js";
-import { getEntitlementsView } from "./services/entitlements.js";
+import {
+  assertPlanFeature,
+  getEntitlementsView,
+} from "./services/entitlements.js";
 import { registerBillingRoutes } from "./billing/routes.js";
 import { createOpsEnterHandler } from "./ops/enter.js";
 import { listOpportunities, markOpportunitySeen } from "./services/opportunities.js";
+import { getSharedIngestStatus } from "./jobs/shared-ingest.js";
+import { loadParticipationChecklist } from "./services/participation-checklist.js";
+import { loadExpiringContracts } from "./services/expiring-contracts.js";
+import { loadPriceMemory } from "./services/price-memory.js";
+import { resolveDiavgeiaForTender } from "./services/diavgeia.js";
+import { GREEK_NUTS2_REGIONS } from "./geo/nuts.js";
 import {
   createWatchProfile,
   deleteWatchProfile,
@@ -785,6 +794,46 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     return c.json(view);
   });
 
+  app.get("/api/saas/regions", requireSession, async (c) => {
+    return c.json({ regions: GREEK_NUTS2_REGIONS });
+  });
+
+  app.get("/api/saas/ingest/status", requireSession, async (c) => {
+    await requireOrgMembership(
+      deps.prisma,
+      c.get("userId"),
+      resolveOrgId(c),
+    );
+    const status = await getSharedIngestStatus(deps.prisma);
+    return c.json({
+      lastSuccessAt: status.lastSuccessAt,
+      lastError: status.lastError || null,
+      lastStartedAt: status.lastStartedAt,
+      fresh: status.fresh,
+      labelEl: status.lastSuccessAt
+        ? `Τελευταίος επιτυχής έλεγχος στις ${new Date(status.lastSuccessAt).toLocaleString("el-GR", { timeZone: "Europe/Athens" })}`
+        : "Δεν έχει ολοκληρωθεί ακόμη έλεγχος ΚΗΜΔΗΣ",
+    });
+  });
+
+  app.get("/api/saas/expiring-contracts", requireSession, async (c) => {
+    const organizationId = resolveOrgId(c)!;
+    const { entitlements } = await getEntitlementsView(deps.prisma, {
+      userId: c.get("userId"),
+      organizationId,
+    });
+    const list = entitlements.expiringContractList;
+    const result = await loadExpiringContracts(deps.prisma, {
+      organizationId,
+      list,
+    });
+    return c.json({
+      count: result.count,
+      items: result.items,
+      listAvailable: list,
+    });
+  });
+
   app.get("/api/saas/watch-profiles", requireSession, async (c) => {
     const profiles = await listWatchProfiles(deps.prisma, {
       userId: c.get("userId"),
@@ -800,6 +849,11 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       c.get("userId"),
       organizationId,
     );
+    await assertPlanFeature(
+      deps.prisma,
+      { userId: c.get("userId"), organizationId: orgId },
+      "companyVault",
+    );
     await ensureVaultFolders(deps.prisma, orgId);
     const folders = await listFolders(deps.prisma, {
       userId: c.get("userId"),
@@ -809,6 +863,12 @@ export const createSaasApp = (deps: SaasAppDeps) => {
   });
 
   app.post("/api/saas/vault/folders", requireSession, async (c) => {
+    const organizationId = resolveOrgId(c)!;
+    await assertPlanFeature(
+      deps.prisma,
+      { userId: c.get("userId"), organizationId },
+      "companyVault",
+    );
     const body = z
       .object({
         name: z.string().min(1),
@@ -871,6 +931,12 @@ export const createSaasApp = (deps: SaasAppDeps) => {
   );
 
   app.post("/api/saas/vault/documents/upload", requireSession, async (c) => {
+    const organizationId = resolveOrgId(c)!;
+    await assertPlanFeature(
+      deps.prisma,
+      { userId: c.get("userId"), organizationId },
+      "companyVault",
+    );
     const body = await c.req.parseBody();
     const file = body.file;
     if (!(file instanceof File)) throw badRequest("vault_file_required");
@@ -1023,6 +1089,8 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     procedureType: z.string().nullable().optional(),
     dateFrom: z.string().nullable().optional(),
     dateTo: z.string().nullable().optional(),
+    regions: z.array(z.string()).optional(),
+    includeUnclassifiedRegion: z.boolean().optional(),
     skipSimilarCheck: z.boolean().optional(),
     source: z.enum(["MANUAL", "SAVED_FROM_SEARCH", "SETUP_RECOMMENDATION"]).optional(),
   });
@@ -1276,6 +1344,63 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     },
   );
 
+  app.get(
+    "/api/saas/tenders/:tenderId/participation-checklist",
+    requireSession,
+    async (c) => {
+      const organizationId = resolveOrgId(c)!;
+      await assertPlanFeature(
+        deps.prisma,
+        { userId: c.get("userId"), organizationId },
+        "participationChecklist",
+      );
+      const checklist = await loadParticipationChecklist(
+        deps.prisma,
+        deps.kimdis,
+        {
+          organizationId,
+          tenderId: c.req.param("tenderId"),
+        },
+      );
+      return c.json({ checklist });
+    },
+  );
+
+  app.get(
+    "/api/saas/tenders/:tenderId/price-memory",
+    requireSession,
+    async (c) => {
+      const organizationId = resolveOrgId(c)!;
+      await assertPlanFeature(
+        deps.prisma,
+        { userId: c.get("userId"), organizationId },
+        "priceMemory",
+      );
+      const memory = await loadPriceMemory(
+        deps.prisma,
+        c.req.param("tenderId"),
+      );
+      return c.json({ memory });
+    },
+  );
+
+  app.get(
+    "/api/saas/tenders/:tenderId/diavgeia",
+    requireSession,
+    async (c) => {
+      await requireOrgMembership(
+        deps.prisma,
+        c.get("userId"),
+        resolveOrgId(c),
+      );
+      const link = await resolveDiavgeiaForTender(
+        deps.prisma,
+        c.req.param("tenderId"),
+      );
+      return c.json({ diavgeia: link });
+    },
+  );
+
   app.post("/api/saas/tenders/:tenderId/follow", requireSession, async (c) => {
     const organizationId = resolveOrgId(c);
     const row = await followTender(deps.prisma, {
@@ -1321,7 +1446,12 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     "/api/saas/tenders/:tenderId/outreach",
     requireSession,
     async (c) => {
-      const organizationId = resolveOrgId(c);
+      const organizationId = resolveOrgId(c)!;
+      await assertPlanFeature(
+        deps.prisma,
+        { userId: c.get("userId"), organizationId },
+        "outreachWorkflow",
+      );
       const body = z
         .object({
           sentAt: z.string().datetime().optional(),
@@ -1336,7 +1466,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
         .parse(await c.req.json().catch(() => ({})));
       const row = await recordOutreachSent(deps.prisma, {
         userId: c.get("userId"),
-        organizationId: organizationId!,
+        organizationId,
         tenderId: c.req.param("tenderId"),
         sentAt: body.sentAt ? new Date(body.sentAt) : undefined,
         method: body.method,
@@ -1447,7 +1577,12 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     "/api/saas/tenders/:tenderId/submissions",
     requireSession,
     async (c) => {
-      const organizationId = resolveOrgId(c);
+      const organizationId = resolveOrgId(c)!;
+      await assertPlanFeature(
+        deps.prisma,
+        { userId: c.get("userId"), organizationId },
+        "submissionWorkflow",
+      );
       const body = z
         .object({
           submittedAt: z.string().datetime().optional(),
@@ -1463,7 +1598,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
         .parse(await c.req.json());
       const result = await recordFormalSubmission(deps.prisma, {
         userId: c.get("userId"),
-        organizationId: organizationId!,
+        organizationId,
         tenderId: c.req.param("tenderId"),
         submittedAt: body.submittedAt ? new Date(body.submittedAt) : undefined,
         submissionMethod: body.submissionMethod,

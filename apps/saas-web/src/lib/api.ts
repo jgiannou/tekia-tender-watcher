@@ -169,6 +169,9 @@ export type WatchProfile = {
   procedureType?: string | null;
   dateFrom?: string | null;
   dateTo?: string | null;
+  regions?: unknown;
+  includeUnclassifiedRegion?: boolean;
+  unclassifiedRegionCount?: number;
   createdAt: string;
   updatedAt?: string;
 };
@@ -189,8 +192,67 @@ export type WatchProfileInput = {
   procedureType?: string | null;
   dateFrom?: string | null;
   dateTo?: string | null;
+  regions?: string[];
+  includeUnclassifiedRegion?: boolean;
   source?: "MANUAL" | "SAVED_FROM_SEARCH" | "SETUP_RECOMMENDATION";
   skipSimilarCheck?: boolean;
+};
+
+export type ParticipationChecklist = {
+  readable: boolean;
+  unreadMessage: string | null;
+  officialPdfUrl: string | null;
+  fields: Array<{
+    key: string;
+    label: string;
+    status: "found" | "not_found";
+    value: string | null;
+  }>;
+  documents: Array<{
+    key: string;
+    label: string;
+    status: "in_vault" | "missing" | "not_required";
+  }>;
+};
+
+export type PriceMemory = {
+  cpv: string | null;
+  regionCode: string | null;
+  samples: Array<{
+    referenceNumber: string;
+    title: string | null;
+    winnerName: string | null;
+    awardAmount: number | null;
+    budgetWithoutVat: number | null;
+    ratio: number | null;
+    signedDate: string | null;
+    publicKimdisUrl: string | null;
+  }>;
+  thin: boolean;
+  note: string | null;
+};
+
+export type ExpiringContractRow = {
+  tenderId: string;
+  referenceNumber: string;
+  title: string | null;
+  authority: string | null;
+  cpv: string | null;
+  endsAt: string;
+  publicKimdisUrl: string | null;
+};
+
+export type DiavgeiaLink = {
+  ada: string;
+  url: string;
+};
+
+export type IngestStatus = {
+  lastSuccessAt: string | null;
+  lastError: string | null;
+  lastStartedAt: string | null;
+  fresh: boolean;
+  labelEl: string;
 };
 
 export type OpportunityMatchMeta = {
@@ -337,6 +399,13 @@ export type SaasEntitlementsResponse = {
     advancedWatchProfileFilters: boolean;
     emailMode: "DIGEST" | "IMMEDIATE";
     deadlineRadar: boolean;
+    participationChecklist?: boolean;
+    expiringContractList?: boolean;
+    priceMemory?: boolean;
+    companyVault?: boolean;
+    outreachWorkflow?: boolean;
+    submissionWorkflow?: boolean;
+    tenderWorkspace?: boolean;
   };
   usage: {
     activeWatchProfiles: number;
@@ -1551,6 +1620,29 @@ export const saasApi = {
       `/api/saas/tenders/${tenderId}/workflow`,
       { organizationId },
     ),
+  getParticipationChecklist: (organizationId: string, tenderId: string) =>
+    request<{ checklist: ParticipationChecklist }>(
+      `/api/saas/tenders/${tenderId}/participation-checklist`,
+      { organizationId },
+    ),
+  getPriceMemory: (organizationId: string, tenderId: string) =>
+    request<{ memory: PriceMemory }>(
+      `/api/saas/tenders/${tenderId}/price-memory`,
+      { organizationId },
+    ),
+  getDiavgeiaLink: (organizationId: string, tenderId: string) =>
+    request<{ diavgeia: DiavgeiaLink | null }>(
+      `/api/saas/tenders/${tenderId}/diavgeia`,
+      { organizationId },
+    ),
+  listExpiringContracts: (organizationId: string) =>
+    request<{
+      count: number;
+      items: ExpiringContractRow[];
+      listAvailable: boolean;
+    }>("/api/saas/expiring-contracts", { organizationId }),
+  getIngestStatus: (organizationId: string) =>
+    request<IngestStatus>("/api/saas/ingest/status", { organizationId }),
   confirmRelatedAct: (organizationId: string, linkId: string) =>
     request<{ relatedActLink: { id: string; confidence: string } }>(
       `/api/saas/related-acts/${linkId}/confirm`,

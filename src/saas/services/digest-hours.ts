@@ -31,7 +31,7 @@ export const defaultDigestHoursForPlanKey = (planKey: string): string[] => {
   if (plan.planKey === PLAN_KEYS.pro) {
     return ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00"];
   }
-  if (plan.planKey === PLAN_KEYS.trial) {
+  if (plan.planKey === PLAN_KEYS.trial || plan.planKey === PLAN_KEYS.free) {
     return ["08:00"];
   }
   return ["08:00", "18:00"];

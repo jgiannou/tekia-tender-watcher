@@ -301,6 +301,12 @@ model WatchProfile {
   /// Optional KIMDIS publication window (YYYY-MM-DD). Null = rolling default lookback.
   dateFrom              String?
   dateTo                String?
+  /// Greek NUTS 2 codes (EL30, EL41, …). Empty = all of Greece.
+  regions               Json     @default("[]")
+  /// When regions are set, also keep acts with no official NUTS.
+  includeUnclassifiedRegion Boolean @default(false)
+  /// Acts skipped in the latest match cycle because NUTS was missing.
+  unclassifiedRegionCount   Int      @default(0)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -319,6 +325,7 @@ enum RecordType {
   REQ
   PROC
   AWRD
+  CONTRACT
   OTHER
 }
 
@@ -341,6 +348,13 @@ model Tender {
   pdfText                   String?
   officialPdfUrl            String?
   publicKimdisUrl           String?
+  /// Official KIMDIS nutsCode.key (NUTS 2 or 3). Never inferred from the title.
+  nutsCode                  String?
+  contractEndsAt            DateTime?
+  awardAmount               Float?
+  winnerName                String?
+  diavgeiaAda               String?
+  diavgeiaUrl               String?
   rawJson                   Json?
   sourceFingerprint         String?
   classificationVersion     Int?
@@ -361,6 +375,8 @@ model Tender {
   @@index([recordType])
   @@index([lastSeenAt])
   @@index([parentTenderId])
+  @@index([contractEndsAt])
+  @@index([nutsCode])
   @@map("tenders")
 }
 
