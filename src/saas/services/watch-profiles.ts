@@ -76,6 +76,7 @@ import {
   type KimdisSearchItem,
 } from "./kimdis-search.js";
 import { upsertTenderFromKimdisItem } from "./upsert-tender.js";
+import { normalizeActivities } from "./org-settings.js";
 import {
   criteriaFromWatchProfile,
   mergeMatchMeta,
@@ -86,6 +87,7 @@ import {
   type MatchProfileEntry,
   type OpportunityMatchMeta,
   type WatchMatchResult,
+  type WatchProfileCriteria,
 } from "./watch-match.js";
 
 /**
@@ -1056,6 +1058,7 @@ const linkOpportunityToProfile = async (
     name: input.profile.name,
     score: input.match.score,
     reasons: input.match.reasons,
+    breakdown: input.match.breakdown,
   };
 
   const tender = await prisma.tender.findUnique({ where: { id: tenderId } });
@@ -1274,9 +1277,9 @@ const reconcileStaleProfileMatches = async (
 const scanCanonicalTenders = async (
   prisma: PrismaClient,
   profile: WatchProfile,
+  criteria: WatchProfileCriteria,
   onMatch: (tenderId: string, match: WatchMatchResult) => Promise<void>,
 ): Promise<Set<string>> => {
-  const criteria = criteriaFromWatchProfile(profile);
   const dates = scanDateWindowForProfile(profile);
   const since = new Date(`${dates.dateFrom}T00:00:00.000Z`);
   const until = new Date(`${dates.dateTo}T23:59:59.999Z`);
@@ -1347,7 +1350,12 @@ export const runWatchProfileScan = async (
     },
   });
 
-  const criteria = criteriaFromWatchProfile(profile);
+  const settingsRow = await prisma.organizationSettings.findUnique({
+    where: { organizationId: profile.organizationId },
+    select: { activities: true },
+  });
+  const companyActivities = normalizeActivities(settingsRow?.activities);
+  const criteria = criteriaFromWatchProfile(profile, { companyActivities });
   const isInitialScan = !profile.initialScanCompletedAt;
   const emitPerMatchAttention = !isInitialScan;
   const matchedTenderIds = new Set<string>();
@@ -1372,6 +1380,7 @@ export const runWatchProfileScan = async (
     const seenAdam = await scanCanonicalTenders(
       prisma,
       profile,
+      criteria,
       async (tenderId, match) => {
         assertScanBudget(scanStartedMs, cancel);
         matchedTenderIds.add(tenderId);

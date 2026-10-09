@@ -137,7 +137,7 @@ export const normalizeCompanyProfile = (raw: unknown, fallbackName = ""): Compan
   };
 };
 
-const normalizeActivities = (raw: unknown): OrganizationActivity[] => {
+export const normalizeActivities = (raw: unknown): OrganizationActivity[] => {
   if (!Array.isArray(raw)) return [];
   const result: OrganizationActivity[] = [];
   for (const row of raw) {

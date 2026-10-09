@@ -346,13 +346,15 @@ export const OverviewPage = () => {
                         meta?.matchedProfiles?.[0]?.name ??
                         opportunity.watchProfile?.name ??
                         "—";
-                      const reasonFromMeta = meta?.matchedProfiles?.[0]?.reasons?.[0];
-                      const reasonFromScore = Array.isArray(opportunity.scoreReasons)
-                        ? opportunity.scoreReasons[0]
-                        : null;
-                      const primaryReason =
-                        reasonFromMeta ||
-                        (reasonFromScore != null ? String(reasonFromScore) : null);
+                      const reasonsFromMeta = meta?.matchedProfiles?.[0]?.reasons;
+                      const reasonsFromScore = Array.isArray(opportunity.scoreReasons)
+                        ? opportunity.scoreReasons.map(String)
+                        : [];
+                      const whyReasons =
+                        (reasonsFromMeta && reasonsFromMeta.length > 0
+                          ? reasonsFromMeta
+                          : reasonsFromScore
+                        ).slice(0, 3);
                       return (
                         <div
                           key={opportunity.id}
@@ -393,9 +395,14 @@ export const OverviewPage = () => {
                               </span>
                             ) : null}
                           </div>
-                          {primaryReason ? (
-                            <div className="break-words text-xs text-muted-foreground">
-                              {primaryReason}
+                          {whyReasons.length > 0 ? (
+                            <div className="space-y-0.5 break-words text-xs text-muted-foreground">
+                              <div className="font-medium text-foreground/80">
+                                Γιατί το βλέπετε
+                              </div>
+                              {whyReasons.map((reason) => (
+                                <div key={reason}>· {reason}</div>
+                              ))}
                             </div>
                           ) : null}
                           <div className="flex flex-wrap items-center gap-2">

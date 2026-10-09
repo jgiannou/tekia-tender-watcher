@@ -5,8 +5,14 @@ import {
   resolveProcedureTypeCode,
 } from "./kimdis-search.js";
 import { softenGreekInflection } from "../../filters/web-relevance.js";
+import { suggestWatchInterestsFromKads } from "../recommendations/kad-to-watch.js";
 
 export type MatchingMode = "STRICT" | "BALANCED" | "BROAD";
+
+export type CompanyActivityHint = {
+  code: string;
+  description?: string;
+};
 
 export type WatchProfileCriteria = {
   keywords: string[];
@@ -20,6 +26,18 @@ export type WatchProfileCriteria = {
   authority: string | null;
   contractType: string | null;
   procedureType: string | null;
+  /** Org ΚΑΔ / activities — soft company-fit boost, not a hard filter. */
+  companyActivities?: CompanyActivityHint[];
+};
+
+export type MatchScoreBreakdown = {
+  keywords: number;
+  cpvs: number;
+  company: number;
+  filters: number;
+  penalties: number;
+  signals: string[];
+  capped: boolean;
 };
 
 export type MatchProfileEntry = {
@@ -27,6 +45,7 @@ export type MatchProfileEntry = {
   name: string;
   score: number;
   reasons: string[];
+  breakdown?: MatchScoreBreakdown;
 };
 
 export type OpportunityMatchMeta = {
@@ -43,6 +62,7 @@ export type WatchMatchResult = {
   rejected: boolean;
   /** True when title/procedure signals a directed invite (not open competition). */
   targetedInvitation: boolean;
+  breakdown: MatchScoreBreakdown;
 };
 
 /** Recalled slightly so user keyword searches surface more real opportunities. */
@@ -52,7 +72,14 @@ const MODE_THRESHOLDS: Record<MatchingMode, number> = {
   BROAD: 25,
 };
 
-/** Points — calibrated so a single title hit is ~mid band, not 100%. */
+/**
+ * Points — calibrated for search intent, not "company bid fit".
+ *
+ * If the user searches only for «ιστοσελίδα» and it hits the title, that IS a
+ * strong match for their query (~48%). Extra CPV / company-ΚΑΔ signals boost
+ * further for ranking among good hits — they must not punish keyword-only
+ * profiles that already surface the right opportunities.
+ */
 const POINTS = {
   titleFirstCluster: 48,
   bodyFirstCluster: 35,
@@ -61,6 +88,10 @@ const POINTS = {
   maxExtraClusters: 2,
   cpvFirst: 38,
   cpvExtra: 8,
+  /** Soft boost when org ΚΑΔ suggests a CPV that appears on the tender. */
+  companyKadCpv: 14,
+  companyKadKeywordTitle: 10,
+  companyKadKeywordBody: 6,
   authority: 8,
   contractType: 5,
   procedureType: 5,
@@ -69,6 +100,16 @@ const POINTS = {
   targetedPenalty: 55,
   targetedScoreCap: 22,
 } as const;
+
+const emptyBreakdown = (): MatchScoreBreakdown => ({
+  keywords: 0,
+  cpvs: 0,
+  company: 0,
+  filters: 0,
+  penalties: 0,
+  signals: [],
+  capped: false,
+});
 
 /** Procedure codes that usually mean invited/closed — not open competition. */
 const TARGETED_PROCEDURE_CODES = new Set(["2", "6", "12"]);
@@ -237,6 +278,7 @@ export const scoreKimdisItemAgainstProfile = (
   const reasons: string[] = [];
   const matchedKeywords: string[] = [];
   const matchedCpvs: string[] = [];
+  const breakdown = emptyBreakdown();
   let score = 0;
 
   const empty = (
@@ -249,6 +291,7 @@ export const scoreKimdisItemAgainstProfile = (
     qualifies: false,
     rejected: true,
     targetedInvitation: false,
+    breakdown: emptyBreakdown(),
     ...overrides,
   });
 
@@ -281,6 +324,7 @@ export const scoreKimdisItemAgainstProfile = (
       return empty();
     }
     score += POINTS.authority;
+    breakdown.filters += POINTS.authority;
     reasons.push(`Αναθέτουσα: ${criteria.authority.trim()}`);
   }
 
@@ -293,6 +337,7 @@ export const scoreKimdisItemAgainstProfile = (
     }
     if (code || criteria.contractType.trim()) {
       score += POINTS.contractType;
+      breakdown.filters += POINTS.contractType;
       reasons.push(`Τύπος σύμβασης: ${item.contractTypeLabel ?? criteria.contractType}`);
     }
   }
@@ -306,6 +351,7 @@ export const scoreKimdisItemAgainstProfile = (
     }
     if (item.procedureType) {
       score += POINTS.procedureType;
+      breakdown.filters += POINTS.procedureType;
       reasons.push(`Διαδικασία: ${item.procedureType}`);
     }
   }
@@ -319,6 +365,7 @@ export const scoreKimdisItemAgainstProfile = (
   }
   if (budget != null && (criteria.minBudget != null || criteria.maxBudget != null)) {
     score += POINTS.budgetInRange;
+    breakdown.filters += POINTS.budgetInRange;
     reasons.push("Προϋπολογισμός εντός ορίων");
   }
 
@@ -326,6 +373,7 @@ export const scoreKimdisItemAgainstProfile = (
   // stack to 100% on a single topical hit.
   const scoredClusters = new Set<string>();
   let extraClusters = 0;
+  let keywordPoints = 0;
 
   for (const kw of criteria.keywords) {
     const needles = expandKeywordNeedles(kw);
@@ -342,7 +390,8 @@ export const scoreKimdisItemAgainstProfile = (
     const isFirst = scoredClusters.size === 1;
 
     if (isFirst) {
-      score += inTitle ? POINTS.titleFirstCluster : POINTS.bodyFirstCluster;
+      const pts = inTitle ? POINTS.titleFirstCluster : POINTS.bodyFirstCluster;
+      keywordPoints += pts;
       reasons.push(
         inTitle
           ? `λέξη-κλειδί «${kw.trim()}» στον τίτλο`
@@ -350,7 +399,8 @@ export const scoreKimdisItemAgainstProfile = (
       );
     } else if (extraClusters < POINTS.maxExtraClusters) {
       extraClusters += 1;
-      score += inTitle ? POINTS.titleExtraCluster : POINTS.bodyExtraCluster;
+      const pts = inTitle ? POINTS.titleExtraCluster : POINTS.bodyExtraCluster;
+      keywordPoints += pts;
       reasons.push(
         inTitle
           ? `επιπλέον θέμα «${kw.trim()}» στον τίτλο`
@@ -358,18 +408,75 @@ export const scoreKimdisItemAgainstProfile = (
       );
     }
   }
+  score += keywordPoints;
+  breakdown.keywords = keywordPoints;
 
+  let cpvPoints = 0;
   for (const cpv of criteria.cpvs) {
     if (!cpvMatches(cpv, item.cpvs)) continue;
     const first = matchedCpvs.length === 0;
     matchedCpvs.push(cpv.trim());
-    score += first ? POINTS.cpvFirst : POINTS.cpvExtra;
+    const pts = first ? POINTS.cpvFirst : POINTS.cpvExtra;
+    cpvPoints += pts;
     reasons.push(`CPV ${cpv.trim()}`);
+  }
+  score += cpvPoints;
+  breakdown.cpvs = cpvPoints;
+
+  // Company fit from org ΚΑΔ → suggested CPVs / keywords (soft boost only).
+  let companyPoints = 0;
+  const activities = criteria.companyActivities ?? [];
+  if (activities.length > 0) {
+    const companyHints = suggestWatchInterestsFromKads(activities);
+    const companyCpvHit = companyHints.cpvs.find((row) =>
+      cpvMatches(row.code, item.cpvs),
+    );
+    if (companyCpvHit) {
+      companyPoints += POINTS.companyKadCpv;
+      reasons.push(
+        `CPV συμβατό με δραστηριότητες (ΚΑΔ → ${companyCpvHit.code})`,
+      );
+    } else {
+      for (const hintKw of companyHints.keywords) {
+        const needles = expandKeywordNeedles(hintKw);
+        if (needles.length === 0) continue;
+        const clusterId = keywordClusterId(hintKw);
+        // Skip if already counted as a user-profile keyword cluster.
+        if (clusterId && scoredClusters.has(clusterId)) continue;
+        const inTitle = textIncludesAny(titleNorm, needles);
+        const inBody = !inTitle && textIncludesAny(haystack, needles);
+        if (!inTitle && !inBody) continue;
+        const pts = inTitle
+          ? POINTS.companyKadKeywordTitle
+          : POINTS.companyKadKeywordBody;
+        companyPoints += pts;
+        reasons.push(
+          inTitle
+            ? `θέμα εταιρείας «${hintKw}» στον τίτλο`
+            : `θέμα εταιρείας «${hintKw}» στο κείμενο`,
+        );
+        break;
+      }
+    }
+  }
+  score += companyPoints;
+  breakdown.company = companyPoints;
+
+  if (matchedKeywords.length > 0) breakdown.signals.push("keywords");
+  if (matchedCpvs.length > 0) breakdown.signals.push("cpv");
+  if (companyPoints > 0) breakdown.signals.push("company");
+
+  // Explainability only — never punish a correct keyword-only hit.
+  if (breakdown.signals.length >= 2) {
+    reasons.unshift(
+      `Ισχυρό match · ${breakdown.signals.join(" + ")}`,
+    );
   }
 
   const targeted = detectTargetedInvitation(item);
   if (targeted.targeted) {
     score -= POINTS.targetedPenalty;
+    breakdown.penalties += POINTS.targetedPenalty;
     if (targeted.reason) reasons.push(targeted.reason);
     score = Math.min(score, POINTS.targetedScoreCap);
   }
@@ -392,6 +499,7 @@ export const scoreKimdisItemAgainstProfile = (
         qualifies: false,
         rejected: true,
         targetedInvitation: true,
+        breakdown,
       });
     }
   }
@@ -412,22 +520,26 @@ export const scoreKimdisItemAgainstProfile = (
     qualifies,
     rejected: false,
     targetedInvitation: targeted.targeted,
+    breakdown,
   };
 };
 
-export const criteriaFromWatchProfile = (profile: {
-  keywords: unknown;
-  negativeKeywords: unknown;
-  cpvs: unknown;
-  minBudget: number | null;
-  maxBudget: number | null;
-  matchingMode: string;
-  scoreThreshold: number;
-  recordTypes: unknown;
-  authority: string | null;
-  contractType: string | null;
-  procedureType: string | null;
-}): WatchProfileCriteria => {
+export const criteriaFromWatchProfile = (
+  profile: {
+    keywords: unknown;
+    negativeKeywords: unknown;
+    cpvs: unknown;
+    minBudget: number | null;
+    maxBudget: number | null;
+    matchingMode: string;
+    scoreThreshold: number;
+    recordTypes: unknown;
+    authority: string | null;
+    contractType: string | null;
+    procedureType: string | null;
+  },
+  options?: { companyActivities?: CompanyActivityHint[] },
+): WatchProfileCriteria => {
   const asStrings = (value: unknown): string[] =>
     Array.isArray(value)
       ? value.map((v) => String(v).trim()).filter(Boolean)
@@ -446,6 +558,7 @@ export const criteriaFromWatchProfile = (profile: {
     authority: profile.authority,
     contractType: profile.contractType,
     procedureType: profile.procedureType,
+    companyActivities: options?.companyActivities,
   };
 };
 

@@ -124,7 +124,7 @@ describe("SaaS watch-match scoring", () => {
     );
   });
 
-  it("matches genitive title forms via stemming", () => {
+  it("treats a title keyword hit as a strong search match (~48%)", () => {
     const result = scoreKimdisItemAgainstProfile(
       balancedCriteria,
       baseItem({
@@ -134,6 +134,8 @@ describe("SaaS watch-match scoring", () => {
     expect(result.qualifies).toBe(true);
     expect(result.matchedKeywords).toContain("ιστοσελίδα");
     expect(result.score).toBe(48);
+    expect(result.breakdown.signals).toEqual(["keywords"]);
+    expect(result.breakdown.capped).toBe(false);
     expect(result.reasons.some((r) => r.includes("ιστοσελίδα"))).toBe(true);
   });
 
@@ -144,11 +146,11 @@ describe("SaaS watch-match scoring", () => {
     );
     expect(result.qualifies).toBe(true);
     expect(result.matchedKeywords).toEqual(["ιστοσελίδα"]);
-    expect(result.reasons[0]).toContain("ιστοσελίδα");
+    expect(result.reasons.some((r) => r.includes("ιστοσελίδα"))).toBe(true);
     expect(result.score).toBe(48);
   });
 
-  it("does not stack synonym keywords to 100%", () => {
+  it("does not stack synonym keywords; CPV boosts above keyword-only", () => {
     const criteria = criteriaFromWatchProfile({
       ...balancedCriteria,
       keywords: ["ιστοσελίδα", "website", "ιστότοπος"],
@@ -163,6 +165,7 @@ describe("SaaS watch-match scoring", () => {
     );
     expect(result.qualifies).toBe(true);
     expect(result.score).toBe(86); // 48 title cluster + 38 CPV
+    expect(result.breakdown.signals).toEqual(["keywords", "cpv"]);
     expect(result.score).toBeLessThan(100);
   });
 
@@ -177,6 +180,46 @@ describe("SaaS watch-match scoring", () => {
     expect(result.qualifies).toBe(true);
     expect(result.score).toBe(35);
     expect(result.reasons.some((r) => r.includes("στο κείμενο"))).toBe(true);
+  });
+
+  it("does not punish keyword-only multi-topic title hits", () => {
+    const criteria = criteriaFromWatchProfile({
+      ...balancedCriteria,
+      keywords: ["ιστοσελίδα", "cms", "portal"],
+    });
+    const result = scoreKimdisItemAgainstProfile(
+      criteria,
+      baseItem({
+        title: "Ιστοσελίδα portal CMS για δημόσια υπηρεσία",
+      }),
+    );
+    expect(result.qualifies).toBe(true);
+    expect(result.breakdown.signals).toEqual(["keywords"]);
+    expect(result.breakdown.capped).toBe(false);
+    // 48 + 10 + 10 extra clusters
+    expect(result.score).toBe(68);
+  });
+
+  it("boosts with company KAD CPV on top of a good keyword hit", () => {
+    const criteria = criteriaFromWatchProfile(
+      { ...balancedCriteria, keywords: ["ιστοσελίδα"], cpvs: [] },
+      {
+        companyActivities: [
+          { code: "62.01", description: "Δραστηριότητες προγραμματισμού" },
+        ],
+      },
+    );
+    const result = scoreKimdisItemAgainstProfile(
+      criteria,
+      baseItem({
+        title: "Συντήρηση ιστοσελίδας Δήμου",
+        cpvs: ["72413000-8"],
+      }),
+    );
+    expect(result.qualifies).toBe(true);
+    expect(result.breakdown.signals).toEqual(["keywords", "company"]);
+    expect(result.score).toBe(62); // 48 + 14 company CPV
+    expect(result.reasons.some((r) => r.includes("δραστηριότητες"))).toBe(true);
   });
 
   it("rejects directed invitation titles (Sparti-style) in BALANCED mode", () => {

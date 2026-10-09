@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { SeoHead } from "@/components/SeoHead";
+import { PageLoading } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,10 +15,17 @@ export const LoginPage = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const next = params.get("next")?.trim() || "/app";
-  const { refetch } = authClient.useSession();
+  const { data: session, isPending, refetch } = authClient.useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  if (isPending) {
+    return <PageLoading label="Έλεγχος συνεδρίας…" />;
+  }
+  if (session?.user) {
+    return <Navigate to={next.startsWith("/") ? next : "/app"} replace />;
+  }
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();

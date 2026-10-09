@@ -1,12 +1,14 @@
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { Bell, FolderSearch, Radar } from "lucide-react";
 import { PublicShell } from "@/components/marketing/PublicShell";
 import { PricingCards } from "@/components/marketing/PricingCards";
 import { JsonLd } from "@/components/JsonLd";
 import { SeoHead } from "@/components/SeoHead";
+import { PageLoading } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { ArcMark } from "@/components/brand/ArcMark";
 import { LEGAL_CONTROLLER } from "@/legal/meta";
+import { authClient } from "@/lib/auth-client";
 import { MARKETING_SEO } from "@/lib/seo";
 import {
   MARKETING_PLANS,
@@ -130,7 +132,19 @@ const ProductVisual = () => (
   </div>
 );
 
-export const LandingPage = () => (
+export const LandingPage = () => {
+  const { data: session, isPending } = authClient.useSession();
+
+  // Logged-in users opening the marketing root go straight into the app.
+  // Crawlers / logged-out visitors still see the public landing (SEO).
+  if (isPending) {
+    return <PageLoading label="Έλεγχος συνεδρίας…" />;
+  }
+  if (session?.user) {
+    return <Navigate to="/app" replace />;
+  }
+
+  return (
   <PublicShell featuresHref="#features" contactHref="#contact">
     <SeoHead {...MARKETING_SEO.home} />
     <JsonLd id="home-faq" data={faqJsonLd} />
@@ -300,4 +314,5 @@ export const LandingPage = () => (
       </section>
     </main>
   </PublicShell>
-);
+  );
+};

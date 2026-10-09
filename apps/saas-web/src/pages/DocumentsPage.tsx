@@ -13,6 +13,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useSessionContext } from "@/auth/SessionProvider";
+import { AuthenticatedPdfViewer } from "@/components/AuthenticatedPdfViewer";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { UploadDocumentDialog } from "@/components/UploadDocumentDialog";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
@@ -162,8 +163,30 @@ export const DocumentsPage = () => {
     }
   };
 
-  const handleDownload = (doc: VaultDocument) => {
-    window.open(saasApi.downloadVaultDocumentUrl(doc.id), "_blank", "noopener");
+  const handleDownload = async (doc: VaultDocument) => {
+    if (!activeOrganization) return;
+    try {
+      const response = await fetch(saasApi.downloadVaultDocumentUrl(doc.id), {
+        credentials: "include",
+        headers: { "X-Organization-Id": activeOrganization.id },
+      });
+      if (!response.ok) {
+        throw new Error("Αποτυχία λήψης αρχείου");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = doc.originalFilename || doc.name;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      toast.success("Η λήψη ξεκίνησε");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία λήψης αρχείου");
+    }
   };
 
   const handleRename = async (doc: VaultDocument) => {
@@ -506,13 +529,16 @@ export const DocumentsPage = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {fileKind(previewDoc) === "PDF" ? (
-                <iframe
-                  title={previewDoc.name}
-                  src={saasApi.downloadVaultDocumentUrl(previewDoc.id, {
+              {fileKind(previewDoc) === "PDF" && activeOrganization ? (
+                <AuthenticatedPdfViewer
+                  organizationId={activeOrganization.id}
+                  pdfPath={saasApi.downloadVaultDocumentUrl(previewDoc.id, {
                     inline: true,
                   })}
-                  className="h-[55vh] w-full rounded-md border border-border bg-background"
+                  title={previewDoc.name}
+                  downloadName={previewDoc.originalFilename || `${previewDoc.name}.pdf`}
+                  className="h-[55vh]"
+                  iframeClassName="h-full min-h-[50vh] w-full rounded-md border border-border bg-background"
                 />
               ) : (
                 <p className="text-sm text-muted-foreground">
@@ -520,7 +546,9 @@ export const DocumentsPage = () => {
                 </p>
               )}
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => handleDownload(previewDoc)}>Λήψη αρχείου</Button>
+                <Button onClick={() => void handleDownload(previewDoc)}>
+                  Λήψη αρχείου
+                </Button>
                 <Button variant="ghost" onClick={() => setPreviewDoc(null)}>
                   Κλείσιμο
                 </Button>
