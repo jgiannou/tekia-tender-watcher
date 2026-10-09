@@ -68,14 +68,22 @@ export const PricingCards = ({ mode, className }: PricingCardsProps) => {
               ))}
             </ul>
             <Button asChild className="mt-6 w-full" variant={featured ? "default" : "outline"}>
-              <Link to="/signup">
+              <Link
+                to={
+                  key === "pro"
+                    ? "/signup?next=/app/subscription"
+                    : key === "basic"
+                      ? "/signup?next=/app/subscription"
+                      : "/signup"
+                }
+              >
                 {key === "free"
                   ? "Ξεκινήστε δωρεάν"
                   : mode === "teaser"
                     ? "Ξεκινήστε δωρεάν"
                     : key === "pro"
-                      ? `Δοκίμασε Pro ${TRIAL_DAYS} ημερών`
-                      : "Αναβάθμιση σε Basic"}
+                      ? `Εγγραφή · Δοκίμασε Pro ${TRIAL_DAYS} ημερών`
+                      : "Εγγραφή · Basic"}
               </Link>
             </Button>
           </article>

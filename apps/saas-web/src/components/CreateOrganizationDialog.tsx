@@ -97,12 +97,13 @@ export const CreateOrganizationDialog = ({
         <ul className="space-y-2 rounded-md border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
           <li>
             • Ξεκινά με{" "}
-            <span className="text-foreground">δωρεάν δοκιμή 7 ημερών</span>
+            <span className="text-foreground">δωρεάν πλάνο (Free)</span>
+            {" "}χωρίς κάρτα — προαιρετική δοκιμή Pro 7 ημερών
           </li>
           <li>
             • Παρακολουθήσεις, έγγραφα και μέλη δεν μοιράζονται με άλλους οργανισμούς
           </li>
-          <li>• Η συνδρομή (Basic ή Pro) ισχύει ανά οργανισμό</li>
+          <li>• Η συνδρομή (Free / Basic / Pro) ισχύει ανά οργανισμό</li>
           <li>
             • Έως {MAX_OWNED_ORGANIZATIONS} οργανισμοί ανά λογαριασμό (
             {ownedCount}/{MAX_OWNED_ORGANIZATIONS})

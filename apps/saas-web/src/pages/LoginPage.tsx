@@ -78,7 +78,7 @@ export const LoginPage = () => {
             className="font-medium text-primary underline-offset-4 hover:underline"
             to="/signup"
           >
-            Δωρεάν δοκιμή 7 ημερών
+            Ξεκινήστε δωρεάν
           </Link>
         </p>
       }

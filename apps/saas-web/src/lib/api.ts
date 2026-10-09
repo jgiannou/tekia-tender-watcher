@@ -358,6 +358,9 @@ export type BillingCatalogPlan = {
   storageBytes: number;
   emailMode: "DIGEST" | "IMMEDIATE";
   advancedWatchProfileFilters: boolean;
+  participationChecklist?: boolean;
+  expiringContractList?: boolean;
+  priceMemory?: boolean;
   featuresEl?: string[];
 };
 
@@ -385,6 +388,7 @@ export type BillingStatusResponse = {
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   hasStripeSubscription?: boolean;
+  canStartProTrial?: boolean;
 };
 
 export type SaasEntitlementsResponse = {
@@ -1291,6 +1295,16 @@ export const saasApi = {
         body: JSON.stringify(body),
       },
     ),
+  startProTrial: (organizationId: string) =>
+    request<{
+      ok: true;
+      already: boolean;
+      trialEndsAt: string | null;
+      planKey: string;
+    }>("/api/saas/billing/start-pro-trial", {
+      method: "POST",
+      organizationId,
+    }),
   billingPortal: (organizationId: string, flow?: "cancel") =>
     request<{ url: string | null; alreadyCanceling?: boolean }>(
       "/api/saas/billing/portal",

@@ -20,7 +20,7 @@ export const collectOpsStats = async (prisma: PrismaClient) => {
       prisma.user.count({ where: { emailVerified: false } }),
     ]);
 
-  const byPlan = { trial: 0, basic: 0, pro: 0 };
+  const byPlan = { free: 0, trial: 0, basic: 0, pro: 0 };
   const byBillingStatus = {
     trialing: 0,
     active: 0,

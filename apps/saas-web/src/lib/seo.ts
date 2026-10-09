@@ -32,7 +32,7 @@ export const MARKETING_SEO = {
   pricing: {
     title: "Τιμές | ARC Tenders",
     description:
-      "Πλάνα Basic και Pro για παρακολούθηση δημόσιων διαγωνισμών στο ΚΗΜΔΗΣ. Δωρεάν δοκιμή 7 ημερών.",
+      "Πλάνα Free, Basic και Pro για παρακολούθηση δημόσιων διαγωνισμών στο ΚΗΜΔΗΣ. Ξεκινήστε δωρεάν χωρίς κάρτα.",
     path: "/pricing",
   },
   login: {
@@ -43,7 +43,7 @@ export const MARKETING_SEO = {
   signup: {
     title: "Εγγραφή | ARC Tenders",
     description:
-      "Ξεκινήστε δωρεάν δοκιμή 7 ημερών στο ARC Tenders — αυτόματες αναζητήσεις ΚΗΜΔΗΣ και οργανωμένη ροή διαγωνισμών.",
+      "Ξεκινήστε δωρεάν στο ARC Tenders χωρίς κάρτα — αυτόματες αναζητήσεις ΚΗΜΔΗΣ και οργανωμένη ροή διαγωνισμών.",
     path: "/signup",
   },
 } as const satisfies Record<string, SeoConfig>;

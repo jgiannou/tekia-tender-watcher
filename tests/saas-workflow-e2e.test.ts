@@ -5,11 +5,13 @@ import type {
   KimdisRequestRecord,
 } from "../src/kimdis/types.js";
 import { monitorFollowedThreads } from "../src/saas/jobs/monitor-followed-threads.js";
+import { PLAN_KEYS } from "../src/saas/plans/catalog.js";
 import {
   authedJson,
   createSaasTestApp,
   getSaasTestPrisma,
   resetSaasDatabase,
+  setOrgPlan,
   signUpAndGetCookie,
 } from "./helpers/saas-test.js";
 
@@ -71,6 +73,7 @@ describe("SaaS procurement workflow end to end", () => {
       { cookie, body: { name: "E2E Co" } },
     );
     const organizationId = orgRes.json.organization.id;
+    await setOrgPlan(prisma, organizationId, PLAN_KEYS.basic);
 
     // 1 — find the REQ through KIMDIS search
     const search = await authedJson<{ items: Array<{ adam: string }> }>(

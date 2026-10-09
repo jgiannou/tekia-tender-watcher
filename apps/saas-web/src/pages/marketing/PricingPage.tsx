@@ -108,14 +108,13 @@ export const PricingPage = () => (
       </section>
 
       <section className="mt-14 rounded-2xl border border-border/70 bg-card/40 px-6 py-8 text-center">
-        <h2 className="text-xl font-semibold">
-          Δωρεάν δοκιμή {TRIAL_DAYS} ημερών
-        </h2>
+        <h2 className="text-xl font-semibold">Ξεκινήστε δωρεάν — χωρίς κάρτα</h2>
         <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">
-          Δημιουργήστε λογαριασμό και οργανισμό· επιλέξτε Basic ή Pro όταν είστε έτοιμοι.
+          Δημιουργήστε λογαριασμό στο Free. Δοκιμή Pro {TRIAL_DAYS} ημερών ή Basic/Pro όταν
+          είστε έτοιμοι.
         </p>
         <Button asChild className="mt-5" size="lg">
-          <Link to="/signup">Δωρεάν δοκιμή {TRIAL_DAYS} ημερών</Link>
+          <Link to="/signup">Ξεκινήστε δωρεάν</Link>
         </Button>
       </section>
     </main>

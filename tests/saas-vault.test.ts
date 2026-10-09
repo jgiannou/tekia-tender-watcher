@@ -14,9 +14,11 @@ import {
   createSaasTestApp,
   getSaasTestPrisma,
   resetSaasDatabase,
+  setOrgPlan,
   signUpAndGetCookie,
   authedJson,
 } from "./helpers/saas-test.js";
+import { PLAN_KEYS } from "../src/saas/plans/catalog.js";
 import os from "node:os";
 import path from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -56,6 +58,7 @@ describe("SaaS company vault", () => {
       { cookie: user.cookie, body: { name: "Vault Org" } },
     );
     expect(org.status).toBe(201);
+    await setOrgPlan(prisma, org.json.organization.id, PLAN_KEYS.basic);
 
     const foldersRes = await authedJson<{ folders: { slug: string; isSystem: boolean }[] }>(
       app,
@@ -90,6 +93,8 @@ describe("SaaS company vault", () => {
       "/api/saas/organizations",
       { cookie: b.cookie, body: { name: "Org B" } },
     );
+    await setOrgPlan(prisma, orgA.json.organization.id, PLAN_KEYS.basic);
+    await setOrgPlan(prisma, orgB.json.organization.id, PLAN_KEYS.basic);
 
     const foldersA = await authedJson<{ folders: { id: string }[] }>(
       app,
@@ -125,6 +130,7 @@ describe("SaaS company vault", () => {
       { cookie: user.cookie, body: { name: "Upload Org" } },
     );
     const organizationId = org.json.organization.id;
+    await setOrgPlan(prisma, organizationId, PLAN_KEYS.basic);
     const folders = await authedJson<{ folders: { id: string }[] }>(
       app,
       "/api/saas/vault/folders",
@@ -208,6 +214,7 @@ describe("SaaS company vault", () => {
       { cookie: user.cookie, body: { name: "Version Org" } },
     );
     const organizationId = org.json.organization.id;
+    await setOrgPlan(prisma, organizationId, PLAN_KEYS.basic);
     const folders = await authedJson<{ folders: { id: string }[] }>(
       app,
       "/api/saas/vault/folders",
@@ -255,6 +262,7 @@ describe("SaaS company vault", () => {
       { cookie: user.cookie, body: { name: "WS Org" } },
     );
     const organizationId = org.json.organization.id;
+    await setOrgPlan(prisma, organizationId, PLAN_KEYS.basic);
     const folders = await authedJson<{ folders: { id: string }[] }>(
       app,
       "/api/saas/vault/folders",
@@ -377,6 +385,8 @@ describe("SaaS company vault", () => {
       "/api/saas/organizations",
       { cookie: b.cookie, body: { name: "DL Org B" } },
     );
+    await setOrgPlan(prisma, orgA.json.organization.id, PLAN_KEYS.basic);
+    await setOrgPlan(prisma, orgB.json.organization.id, PLAN_KEYS.basic);
     const folders = await authedJson<{ folders: { id: string }[] }>(
       app,
       "/api/saas/vault/folders",

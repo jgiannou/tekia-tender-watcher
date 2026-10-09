@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { currentLegalAcceptancePayload } from "@/legal";
-import { TRIAL_DAYS } from "@/marketing/pricing";
 import { setAnalyticsUserId, trackAnalyticsEvent } from "@/lib/analytics";
 import { authClient } from "@/lib/auth-client";
 import { saasApi } from "@/lib/api";
@@ -116,11 +115,11 @@ export const SignupPage = () => {
     <>
     <SeoHead {...MARKETING_SEO.signup} />
     <AuthShell
-      title="Δωρεάν δοκιμή 7 ημερών"
+      title="Ξεκινήστε δωρεάν"
       description={
         inviteFlow
           ? "Ολοκληρώστε την εγγραφή για να αποδεχτείτε την πρόσκληση ομάδας."
-          : `Ξεκινήστε με ${TRIAL_DAYS} ημέρες δωρεάν. Δημιουργήστε οργανισμό και επιλέξτε Basic ή Pro όταν είστε έτοιμοι.`
+          : "Χωρίς κάρτα. Δημιουργήστε οργανισμό στο Free πλάνο· μπορείτε να δοκιμάσετε το Pro για 7 ημέρες ή να επιλέξετε Basic όταν είστε έτοιμοι."
       }
       footer={
         <p className="text-center text-sm text-muted-foreground">

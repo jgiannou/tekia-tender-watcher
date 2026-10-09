@@ -63,11 +63,11 @@ export const App = () => {
   const [query, setQuery] = useState("");
   const [drill, setDrill] = useState<DrillState | null>(null);
   const [savedNote, setSavedNote] = useState<string | null>(null);
-  const [sandboxPlan, setSandboxPlan] = useState<"trial" | "basic" | "pro">("pro");
+  const [sandboxPlan, setSandboxPlan] = useState<"free" | "trial" | "basic" | "pro">("pro");
   const [sandboxRole, setSandboxRole] = useState<"owner" | "admin" | "member">("owner");
   const [sandboxBusy, setSandboxBusy] = useState(false);
   const [grantEmail, setGrantEmail] = useState("");
-  const [grantPlanKey, setGrantPlanKey] = useState<"trial" | "basic" | "pro">("pro");
+  const [grantPlanKey, setGrantPlanKey] = useState<"free" | "trial" | "basic" | "pro">("pro");
   const [grantPassword, setGrantPassword] = useState("");
   const [grantBusy, setGrantBusy] = useState(false);
 
@@ -77,7 +77,13 @@ export const App = () => {
 
   const planMax = useMemo(() => {
     if (!stats) return 1;
-    return Math.max(1, stats.byPlan.trial, stats.byPlan.basic, stats.byPlan.pro);
+    return Math.max(
+      1,
+      stats.byPlan.free ?? 0,
+      stats.byPlan.trial,
+      stats.byPlan.basic,
+      stats.byPlan.pro,
+    );
   }, [stats]);
 
   const handleSave = () => {
@@ -365,8 +371,11 @@ export const App = () => {
             <select
               id="sandboxPlan"
               value={sandboxPlan}
-              onChange={(e) => setSandboxPlan(e.target.value as "trial" | "basic" | "pro")}
+              onChange={(e) =>
+                setSandboxPlan(e.target.value as "free" | "trial" | "basic" | "pro")
+              }
             >
+              <option value="free">Free</option>
               <option value="trial">Trial</option>
               <option value="basic">Basic</option>
               <option value="pro">Pro</option>
@@ -408,8 +417,11 @@ export const App = () => {
             <select
               id="grantPlan"
               value={grantPlanKey}
-              onChange={(e) => setGrantPlanKey(e.target.value as "trial" | "basic" | "pro")}
+              onChange={(e) =>
+                setGrantPlanKey(e.target.value as "free" | "trial" | "basic" | "pro")
+              }
             >
+              <option value="free">free</option>
               <option value="trial">trial</option>
               <option value="basic">basic</option>
               <option value="pro">pro</option>
@@ -602,6 +614,7 @@ export const App = () => {
               <div className="plan-bars">
                 {(
                   [
+                    ["free", stats?.byPlan.free ?? 0],
                     ["trial", stats?.byPlan.trial ?? 0],
                     ["basic", stats?.byPlan.basic ?? 0],
                     ["pro", stats?.byPlan.pro ?? 0],

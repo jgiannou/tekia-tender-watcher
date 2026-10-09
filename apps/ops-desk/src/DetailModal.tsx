@@ -72,7 +72,7 @@ const prettyBody = (raw: string | undefined) => {
   }
 };
 
-type OpsPlanId = "trial" | "basic" | "pro";
+type OpsPlanId = "free" | "trial" | "basic" | "pro";
 
 export const DetailModal = ({ open, config, onClose }: Props) => {
   const [q, setQ] = useState("");
@@ -243,7 +243,7 @@ export const DetailModal = ({ open, config, onClose }: Props) => {
           "Force plan without Stripe"
         )}
       </span>
-      {(["trial", "basic", "pro"] as const).map((plan) => (
+      {(["free", "trial", "basic", "pro"] as const).map((plan) => (
         <button
           key={plan}
           type="button"

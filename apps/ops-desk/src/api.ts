@@ -14,6 +14,7 @@ export type OpsStats = {
   orgsLast7d?: number;
   unverifiedUsers?: number;
   byPlan: {
+    free?: number;
     trial: number;
     basic: number;
     pro: number;
@@ -453,7 +454,7 @@ export const issueUserPassword = async (
 export const createSandbox = async (
   cfg: ConnectionConfig,
   body: {
-    planKey?: "trial" | "basic" | "pro";
+    planKey?: "free" | "trial" | "basic" | "pro";
     role?: "owner" | "admin" | "member";
     orgName?: string;
   },
@@ -474,7 +475,7 @@ export const createSandbox = async (
 export const patchOrganizationPlan = async (
   cfg: ConnectionConfig,
   id: string,
-  body: { planKey: "trial" | "basic" | "pro" },
+  body: { planKey: "free" | "trial" | "basic" | "pro" },
 ) =>
   parseJson<Record<string, unknown>>(
     await opsRequest(cfg, `/admin/ops/organizations/${id}`, {
@@ -578,7 +579,7 @@ export const grantPlan = async (
   cfg: ConnectionConfig,
   input: {
     email: string;
-    planKey: "trial" | "basic" | "pro";
+    planKey: "free" | "trial" | "basic" | "pro";
     organizationId?: string;
     password?: string;
   },

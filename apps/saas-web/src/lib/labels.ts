@@ -88,6 +88,15 @@ export const humanSaasError = (message: string): string => {
   if (message.includes("trial_expired")) {
     return "Η δοκιμαστική περίοδος έληξε. Αναβαθμίστε το πλάνο για περιοδικές σαρώσεις.";
   }
+  if (message.includes("pro_trial_already_used")) {
+    return "Η δοκιμή Pro έχει ήδη χρησιμοποιηθεί για αυτόν τον οργανισμό. Επιλέξτε Basic ή Pro.";
+  }
+  if (message.includes("trial_only_from_free")) {
+    return "Η δοκιμή Pro είναι διαθέσιμη μόνο από το δωρεάν πλάνο.";
+  }
+  if (message.includes("paid_plan_active")) {
+    return "Υπάρχει ήδη ενεργή συνδρομή πληρωμής για αυτόν τον οργανισμό.";
+  }
   if (message.includes("periodic_scan_quota_exceeded")) {
     return "Έχετε εξαντλήσει τις περιοδικές σαρώσεις για σήμερα.";
   }

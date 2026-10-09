@@ -55,7 +55,7 @@ export const PublicShell = ({
               Σύνδεση
             </NavLink>
             <Button asChild size="sm">
-              <Link to="/signup">Δωρεάν δοκιμή</Link>
+              <Link to="/signup">Ξεκινήστε δωρεάν</Link>
             </Button>
           </nav>
 
@@ -95,7 +95,7 @@ export const PublicShell = ({
               </Link>
               <Button asChild className="w-full">
                 <Link to="/signup" onClick={() => setOpen(false)}>
-                  Δωρεάν δοκιμή
+                  Ξεκινήστε δωρεάν
                 </Link>
               </Button>
             </nav>

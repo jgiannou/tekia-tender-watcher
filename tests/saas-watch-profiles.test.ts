@@ -11,11 +11,13 @@ import {
   runWatchProfileScan,
   waitForWatchProfileScans,
 } from "../src/saas/services/watch-profiles.js";
+import { PLAN_KEYS } from "../src/saas/plans/catalog.js";
 import {
   authedJson,
   createSaasTestApp,
   getSaasTestPrisma,
   resetSaasDatabase,
+  setOrgPlan,
   signUpAndGetCookie,
 } from "./helpers/saas-test.js";
 
@@ -106,6 +108,8 @@ describe("saas watch profiles", () => {
       "/api/saas/organizations",
       { method: "POST", cookie, body: { name: "Watch Org" } },
     );
+    // Multi-profile / advanced-filter scenarios need Basic+.
+    await setOrgPlan(prisma, org.json.organization.id, PLAN_KEYS.basic);
     return { app, cookie, organizationId: org.json.organization.id };
   };
 

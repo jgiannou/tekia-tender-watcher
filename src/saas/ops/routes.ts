@@ -16,7 +16,7 @@ import {
   rotateUserCredentialPassword,
 } from "./session.js";
 
-const planKeySchema = z.enum(["trial", "basic", "pro"]);
+const planKeySchema = z.enum(["free", "trial", "basic", "pro"]);
 
 const clampLimit = (raw: string | undefined) =>
   Math.min(Math.max(Number(raw) || 50, 1), 200);
@@ -43,7 +43,7 @@ const subscriptionView = (
     extraSeats: number;
   } | null,
 ) => ({
-  plan: sub?.planKey ?? "trial",
+  plan: sub?.planKey ?? "free",
   billingStatus: sub?.status?.toLowerCase() ?? "incomplete",
   trialEndsAt: sub?.trialEndsAt?.toISOString() ?? null,
   stripeCustomerId: sub?.stripeCustomerId ?? null,

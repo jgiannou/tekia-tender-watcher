@@ -79,33 +79,41 @@ const notifyUrgentDeadlines = async (prisma: PrismaClient) => {
     },
   });
 
+  if (rows.length === 0) return;
+
+  const dedupeKeys = rows.map(
+    (row) => `DEADLINE_APPROACHING:${row.id}:${dateKey}`,
+  );
+  const existing = await prisma.organizationAttentionEvent.findMany({
+    where: { dedupeKey: { in: dedupeKeys } },
+    select: { dedupeKey: true },
+  });
+  const seen = new Set(existing.map((row) => row.dedupeKey));
+
   for (const row of rows) {
     const dedupeKey = `DEADLINE_APPROACHING:${row.id}:${dateKey}`;
-    const existing = await prisma.organizationAttentionEvent.findUnique({
-      where: {
-        organizationId_dedupeKey: {
+    if (seen.has(dedupeKey)) continue;
+    try {
+      const created = await prisma.organizationAttentionEvent.create({
+        data: {
           organizationId: row.organizationId,
+          organizationTenderId: row.id,
+          type: "DEADLINE_APPROACHING",
+          title: `Προθεσμία εντός 48 ωρών · ${row.tender.referenceNumber}`,
           dedupeKey,
+          metadata: {
+            referenceNumber: row.tender.referenceNumber,
+            finalSubmissionDate:
+              row.tender.finalSubmissionDate?.toISOString() ?? null,
+            urgent: true,
+          },
         },
-      },
-      select: { id: true },
-    });
-    if (existing) continue;
-    const created = await prisma.organizationAttentionEvent.create({
-      data: {
-        organizationId: row.organizationId,
-        organizationTenderId: row.id,
-        type: "DEADLINE_APPROACHING",
-        title: `Προθεσμία εντός 48 ωρών · ${row.tender.referenceNumber}`,
-        dedupeKey,
-        metadata: {
-          referenceNumber: row.tender.referenceNumber,
-          finalSubmissionDate: row.tender.finalSubmissionDate?.toISOString() ?? null,
-          urgent: true,
-        },
-      },
-    });
-    queueAttentionPush(prisma, created.id);
+      });
+      seen.add(dedupeKey);
+      queueAttentionPush(prisma, created.id);
+    } catch {
+      // Concurrent ingest cycles may race on the unique dedupe key.
+    }
   }
 };
 
@@ -117,6 +125,13 @@ const matchNewActs = async (
     where: { enabled: true },
   });
   const unclassified = new Map<string, number>();
+  // Reset counters each cycle so stale "χωρίς περιοχή" numbers do not linger.
+  if (profiles.length > 0) {
+    await prisma.watchProfile.updateMany({
+      where: { id: { in: profiles.map((profile) => profile.id) } },
+      data: { unclassifiedRegionCount: 0 },
+    });
+  }
 
   for (const item of items) {
     if (item.recordType !== "REQ" && item.recordType !== "PROC") continue;

@@ -97,6 +97,30 @@ export const SubscriptionPage = () => {
     return interval === "annual" ? plan.annualEur : plan.monthlyEur;
   };
 
+  const handleStartProTrial = async () => {
+    if (!activeOrganization) return;
+    if (user?.emailVerified === false) {
+      toast.error("Επιβεβαιώστε το email σας πριν τη δοκιμή Pro.");
+      return;
+    }
+    setBusyKey("trial");
+    try {
+      const result = await saasApi.startProTrial(activeOrganization.id);
+      if (result.already) {
+        toast.message("Η δοκιμή Pro είναι ήδη ενεργή.");
+      } else {
+        toast.success("Ξεκίνησε η δοκιμή Pro για 7 ημέρες.");
+      }
+      await load();
+    } catch (error) {
+      toast.error(
+        humanSaasError(error instanceof Error ? error.message : "Αποτυχία δοκιμής Pro"),
+      );
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const handleCheckout = async (plan: "basic" | "pro") => {
     if (!activeOrganization) return;
     if (user?.emailVerified === false) {
@@ -196,8 +220,9 @@ export const SubscriptionPage = () => {
           </p>
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Συνδρομή</h1>
           <p className="text-sm text-white/90 md:text-base">
-            Basic για επιλεγμένη παρακολούθηση. Pro για συστηματική κάλυψη, περισσότερες
-            σαρώσεις και ομάδα.
+            Ξεκινάτε στο Free. Basic για επιλεγμένη παρακολούθηση. Pro για συστηματική
+            κάλυψη, περισσότερες σαρώσεις και ομάδα — ή δοκιμάστε Pro για 7 ημέρες χωρίς
+            κάρτα.
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-semibold">
@@ -317,11 +342,15 @@ export const SubscriptionPage = () => {
             !status?.hasStripeSubscription &&
             !status?.stripeSubscriptionId;
           const canActOnCurrentPro = seatsDirty || needsStripeCheckout;
+          const canTryPro =
+            plan.key === "pro" && Boolean(status?.canStartProTrial);
+          const onProTrial = status?.planKey === "trial";
           const proButtonDisabled =
             Boolean(busyKey) ||
-            status?.configured === false ||
             user?.emailVerified === false ||
-            (isCurrent && !canActOnCurrentPro);
+            (canTryPro
+              ? false
+              : status?.configured === false || (isCurrent && !canActOnCurrentPro));
           const basicButtonDisabled =
             Boolean(busyKey) ||
             isCurrent ||
@@ -401,10 +430,20 @@ export const SubscriptionPage = () => {
                   </div>
                 ) : null}
 
-                <div className="mt-auto pt-2">
+                <div className="mt-auto space-y-2 pt-2">
+                  {canTryPro ? (
+                    <Button
+                      className="w-full"
+                      variant="default"
+                      disabled={Boolean(busyKey) || user?.emailVerified === false}
+                      onClick={() => void handleStartProTrial()}
+                    >
+                      {busyKey === "trial" ? "Ενεργοποίηση…" : "Δοκίμασε Pro 7 ημερών"}
+                    </Button>
+                  ) : null}
                   <Button
                     className="w-full"
-                    variant={highlight ? "default" : "outline"}
+                    variant={canTryPro ? "outline" : highlight ? "default" : "outline"}
                     disabled={
                       plan.key === "pro" ? proButtonDisabled : basicButtonDisabled
                     }
@@ -420,9 +459,13 @@ export const SubscriptionPage = () => {
                           ? extraSeats > 0
                             ? `Αγορά Pro + ${extraSeats} θέσεις`
                             : "Ολοκλήρωση αγοράς Pro"
-                          : isCurrent
-                            ? "Τρέχον πλάνο"
-                            : `Επιλογή ${plan.labelEl}`}
+                          : plan.key === "pro" && onProTrial
+                            ? "Αγορά Pro"
+                            : isCurrent
+                              ? "Τρέχον πλάνο"
+                              : canTryPro
+                                ? "Αγορά Pro χωρίς δοκιμή"
+                                : `Επιλογή ${plan.labelEl}`}
                   </Button>
                 </div>
               </CardContent>
@@ -433,11 +476,11 @@ export const SubscriptionPage = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Δοκιμή 7 ημερών</CardTitle>
+          <CardTitle className="text-base">Free + δοκιμή Pro</CardTitle>
           <CardDescription>
-            Με την εγγραφή δοκιμάζετε δωρεάν για 7 ημέρες. Μετά την επιβεβαίωση email έχετε
-            πρόσβαση στις βασικές δυνατότητες και 1 αυτόματη σάρωση την ημέρα στις
-            αποθηκευμένες αναζητήσεις σας.
+            Η εγγραφή ξεκινά στο Free (χωρίς κάρτα, χωρίς λήξη). Χωριστά μπορείτε να
+            δοκιμάσετε το Pro για 7 ημέρες — δεν αντικαθιστά το Free. Μετά τη λήξη
+            επιστρέφετε στο Free ή επιλέγετε Basic/Pro.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">

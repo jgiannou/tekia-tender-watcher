@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import type { KimdisClient } from "../../src/kimdis/client.js";
 import { createSaasApp } from "../../src/saas/app.js";
+import { PLAN_KEYS, type PlanKey } from "../../src/saas/plans/catalog.js";
 import { waitForWatchProfileScans } from "../../src/saas/services/watch-profiles.js";
 import type { SaasConfig } from "../../src/saas/config.js";
 
@@ -81,6 +82,28 @@ export const createSaasTestApp = (
     prisma,
     config: saasTestConfig(),
     ...extras,
+  });
+};
+
+/** New orgs start on Free. Paid-feature tests must upgrade explicitly. */
+export const setOrgPlan = async (
+  prisma: PrismaClient,
+  organizationId: string,
+  planKey: PlanKey = PLAN_KEYS.basic,
+) => {
+  const status = planKey === PLAN_KEYS.trial ? "TRIALING" : "ACTIVE";
+  const trialEndsAt =
+    planKey === PLAN_KEYS.trial
+      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      : null;
+  await prisma.subscription.update({
+    where: { organizationId },
+    data: {
+      planKey,
+      status,
+      trialEndsAt,
+      cancelAtPeriodEnd: false,
+    },
   });
 };
 

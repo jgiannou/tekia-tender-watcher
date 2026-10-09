@@ -121,6 +121,7 @@ const titleForPath = (pathname: string): string => {
   if (pathname.startsWith("/app/submissions")) return "Υποβολές";
   if (pathname.startsWith("/app/documents")) return "Έγγραφα";
   if (pathname.startsWith("/app/saved-searches")) return "Αποθηκευμένες Αναζητήσεις";
+  if (pathname.startsWith("/app/expiring-contracts")) return "Λήγουσες συμβάσεις";
   if (pathname.startsWith("/app/notifications")) return "Ειδοποιήσεις";
   if (pathname.startsWith("/app/subscription")) return "Συνδρομή";
   return "Επισκόπηση";

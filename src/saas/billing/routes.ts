@@ -30,6 +30,10 @@ import {
   syncSubscriptionFromStripe,
 } from "./sync.js";
 import { trackProductEventSafe } from "../ops/product-events.js";
+import {
+  canStartProTrial,
+  startProTrial,
+} from "../services/pro-trial.js";
 
 type BillingVariables = {
   userId: string;
@@ -159,7 +163,7 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
     return c.json({
       configured: isStripeConfigured(),
       canManageBilling: canManage,
-      planKey: subscription?.planKey ?? PLAN_KEYS.trial,
+      planKey: subscription?.planKey ?? PLAN_KEYS.free,
       status: subscription?.status ?? "INCOMPLETE",
       extraSeats: subscription?.extraSeats ?? 0,
       trialEndsAt: subscription?.trialEndsAt?.toISOString() ?? null,
@@ -168,7 +172,18 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
       stripeCustomerId: subscription?.stripeCustomerId ?? null,
       stripeSubscriptionId: subscription?.stripeSubscriptionId ?? null,
       hasStripeSubscription: Boolean(subscription?.stripeSubscriptionId),
+      canStartProTrial: subscription
+        ? canStartProTrial(subscription)
+        : true,
     });
+  });
+
+  app.post("/api/saas/billing/start-pro-trial", requireSession, async (c) => {
+    const result = await startProTrial(prisma, {
+      userId: c.get("userId"),
+      organizationId: resolveOrgId(c),
+    });
+    return c.json(result);
   });
 
   app.post("/api/saas/billing/checkout", requireSession, async (c) => {

@@ -6,13 +6,14 @@ import { saasApi } from "@/lib/api";
 import {
   MARKETING_PLANS,
   PRICING_TAX_LABEL,
+  TRIAL_DAYS,
 } from "@/marketing/pricing";
 import { cn } from "@/lib/utils";
 
-type TrialState = {
-  status: "trial" | "trial_expired";
-  trialEndsAt: string | null;
-};
+type BannerState =
+  | { kind: "trial"; trialEndsAt: string | null }
+  | { kind: "trial_expired"; trialEndsAt: string | null }
+  | { kind: "free"; canStartProTrial: boolean };
 
 const formatPrice = (amount: number) =>
   amount.toLocaleString("el-GR", {
@@ -33,29 +34,48 @@ const daysLeftLabel = (trialEndsAt: string | null): string | null => {
 export const TrialBanner = () => {
   const { activeOrganization } = useSessionContext();
   const location = useLocation();
-  const [trial, setTrial] = useState<TrialState | null>(null);
+  const [banner, setBanner] = useState<BannerState | null>(null);
 
   useEffect(() => {
     if (!activeOrganization) {
-      setTrial(null);
+      setBanner(null);
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
-        const data = await saasApi.getEntitlements(activeOrganization.id);
-        const status = data.scanAccess?.status;
+        const [entitlements, billing] = await Promise.all([
+          saasApi.getEntitlements(activeOrganization.id),
+          saasApi.billingStatus(activeOrganization.id).catch(() => null),
+        ]);
         if (cancelled) return;
-        if (status === "trial" || status === "trial_expired") {
-          setTrial({
-            status,
-            trialEndsAt: data.scanAccess.trialEndsAt ?? null,
+        const status = entitlements.scanAccess?.status;
+        const planKey =
+          billing?.planKey ?? entitlements.scanAccess?.planKey ?? null;
+        if (status === "trial") {
+          setBanner({
+            kind: "trial",
+            trialEndsAt: entitlements.scanAccess.trialEndsAt ?? null,
           });
           return;
         }
-        setTrial(null);
+        if (status === "trial_expired") {
+          setBanner({
+            kind: "trial_expired",
+            trialEndsAt: entitlements.scanAccess.trialEndsAt ?? null,
+          });
+          return;
+        }
+        if (planKey === "free") {
+          setBanner({
+            kind: "free",
+            canStartProTrial: Boolean(billing?.canStartProTrial),
+          });
+          return;
+        }
+        setBanner(null);
       } catch {
-        if (!cancelled) setTrial(null);
+        if (!cancelled) setBanner(null);
       }
     })();
     return () => {
@@ -63,15 +83,45 @@ export const TrialBanner = () => {
     };
   }, [activeOrganization?.id]);
 
-  if (!trial) return null;
+  if (!banner) return null;
   if (location.pathname.startsWith("/app/subscription")) return null;
 
   const basicPrice = formatPrice(MARKETING_PLANS.basic.priceMonthlyEur);
-  const remaining = daysLeftLabel(trial.trialEndsAt);
-  const expired = trial.status === "trial_expired";
+
+  if (banner.kind === "free") {
+    return (
+      <div
+        className="mb-4 flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="min-w-0 space-y-1">
+          <p className="text-sm font-medium">Είστε στο δωρεάν πλάνο</p>
+          <p className="text-sm text-muted-foreground">
+            Ίδια ταχύτητα εισαγωγής ΚΗΜΔΗΣ.{" "}
+            {banner.canStartProTrial
+              ? `Δοκιμάστε το Pro για ${TRIAL_DAYS} ημέρες χωρίς κάρτα, ή Basic από `
+              : "Basic από "}
+            <span className="font-semibold text-foreground">
+              €{basicPrice}/μήνα
+            </span>{" "}
+            {PRICING_TAX_LABEL}.
+          </p>
+        </div>
+        <Button asChild size="sm" className="shrink-0">
+          <Link to="/app/subscription" aria-label="Μετάβαση στις συνδρομές">
+            {banner.canStartProTrial ? "Δοκίμασε Pro / συνδρομές" : "Δείτε συνδρομές"}
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  const remaining = daysLeftLabel(banner.trialEndsAt);
+  const expired = banner.kind === "trial_expired";
   const endsLabel =
-    trial.trialEndsAt && !expired
-      ? new Date(trial.trialEndsAt).toLocaleDateString("el-GR")
+    banner.trialEndsAt && !expired
+      ? new Date(banner.trialEndsAt).toLocaleDateString("el-GR")
       : null;
 
   return (
@@ -88,19 +138,19 @@ export const TrialBanner = () => {
       <div className="min-w-0 space-y-1">
         <p className="text-sm font-medium">
           {expired
-            ? "Η δοκιμαστική περίοδος έληξε"
-            : "Είστε σε δοκιμαστική περίοδο"}
+            ? "Η δοκιμή Pro έληξε"
+            : "Είστε σε δοκιμή Pro"}
         </p>
         <p className="text-sm text-muted-foreground">
           {expired
-            ? "Ενεργοποιήστε συνδρομή για να συνεχίσετε σαρώσεις και ειδοποιήσεις."
+            ? "Επιστρέφετε στο Free. Ενεργοποιήστε Basic ή Pro για vault, checklist και περισσότερες αναζητήσεις."
             : [
                 remaining,
                 endsLabel ? `έως ${endsLabel}` : null,
               ]
                 .filter(Boolean)
-                .join(" · ") || "Περιορισμένες δυνατότητες δοκιμής."}{" "}
-          Ξεκινήστε από Basic με μόλις{" "}
+                .join(" · ") || "Pro preview."}{" "}
+          Basic από{" "}
           <span className="font-semibold text-foreground">
             €{basicPrice}/μήνα
           </span>{" "}
@@ -113,10 +163,7 @@ export const TrialBanner = () => {
         className="shrink-0"
         variant={expired ? "destructive" : "default"}
       >
-        <Link
-          to="/app/subscription"
-          aria-label="Μετάβαση στις συνδρομές"
-        >
+        <Link to="/app/subscription" aria-label="Μετάβαση στις συνδρομές">
           Δείτε συνδρομές
         </Link>
       </Button>

@@ -272,7 +272,7 @@ export const LandingPage = () => {
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Button asChild size="lg">
-              <Link to="/signup">Δωρεάν δοκιμή {TRIAL_DAYS} ημερών</Link>
+              <Link to="/signup">Ξεκινήστε δωρεάν</Link>
             </Button>
             <Button asChild size="lg" variant="outline">
               <Link to="/pricing">Δείτε τα πλάνα</Link>
