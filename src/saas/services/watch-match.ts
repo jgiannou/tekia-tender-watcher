@@ -108,6 +108,24 @@ const POINTS = {
   earlyReq: 8,
   /** Slack-style early REQ + title keyword (without TEKIA web-only gate). */
   earlyReqTitleKeyword: 8,
+  /**
+   * Title describes a buy (works, supplies, services, studies) rather than
+   * only naming the topic. Sector-neutral verbs, not a product list.
+   */
+  actionableWork: 8,
+  /**
+   * Soft size rank among equal text matches. Wide bands, capped, so a large
+   * contract rises without an industry-specific sweet spot and without
+   * outranking a precise keyword or CPV hit.
+   */
+  budgetScaleLow: 4,
+  budgetScaleMid: 8,
+  budgetScaleHigh: 12,
+  /**
+   * Credit certificates and budget commitments are internal acts, not a call
+   * for offers. Same pattern in every trade. Still shown, ranked lower.
+   */
+  fundingActPenalty: 20,
   /** Directed / closed invitations are not actionable for an uninvited firm. */
   targetedPenalty: 55,
   targetedScoreCap: 22,
@@ -280,6 +298,53 @@ export const detectTargetedInvitation = (
   }
 
   return { targeted: false, reason: null };
+};
+
+/**
+ * Internal budget acts (πίστωση / δέσμευση / ανάληψη υποχρέωσης).
+ * Patterns run on matchNorm text. They are not trade-specific.
+ */
+const FUNDING_ACT_PATTERNS: readonly RegExp[] = [
+  /βεβαιωσ\p{L}{0,4}\s+(?:υπαρξ\p{L}{0,4}\s+)?πιστωσ\p{L}{0,4}/u,
+  /πολυετ\p{L}{0,4}\s+δεσμευσ\p{L}{0,4}/u,
+  /εκδοσ\p{L}{0,4}\s+δεσμευσ\p{L}{0,4}/u,
+  /δεσμευσ\p{L}{0,4}\s+πιστωσ\p{L}{0,4}/u,
+  /πιστωσ\p{L}{0,4}\s+δεσμευσ\p{L}{0,4}/u,
+  /αναληψ\p{L}{0,4}\s+υποχρεωσ\p{L}{0,4}/u,
+  /αναληψ\p{L}{0,4}\s+δεσμευσ\p{L}{0,4}/u,
+  /διαθεσ\p{L}{0,4}\s+πιστωσ\p{L}{0,4}/u,
+  /εγκρισ\p{L}{0,4}\s+(?:διαθεσ\p{L}{0,4}\s+)?πιστωσ\p{L}{0,4}/u,
+];
+
+/** Procurement verbs shared by works, supplies, services and studies. */
+const ACTIONABLE_WORK =
+  /παροχ\p{L}{0,4}\s+υπηρεσι|προμηθει|κατασκευ|συντηρησ|επισκευ|αναβαθμ|εγκαταστ|μισθωσ|αναπτυξ|ανακαινισ|εκτελεσ|εκπονησ|μελετ|καθαρισμ/u;
+
+const FUNDING_ACT_REASON =
+  "Εσωτερική πράξη πίστωσης ή δέσμευσης, όχι ανάθεση εργασίας";
+const ACTIONABLE_WORK_REASON =
+  "Ο τίτλος περιγράφει συγκεκριμένη εργασία ή προμήθεια";
+
+const detectFundingAct = (titleNorm: string): boolean =>
+  FUNDING_ACT_PATTERNS.some((pattern) => pattern.test(titleNorm));
+
+const detectActionableWork = (titleNorm: string): boolean =>
+  ACTIONABLE_WORK.test(titleNorm);
+
+const budgetScalePoints = (budget: number | null | undefined): number => {
+  if (budget == null || !Number.isFinite(budget) || budget < 2000) return 0;
+  if (budget < 6000) return POINTS.budgetScaleLow;
+  if (budget < 20000) return POINTS.budgetScaleMid;
+  return POINTS.budgetScaleHigh;
+};
+
+const budgetScaleReason = (points: number): string | null => {
+  if (points >= POINTS.budgetScaleHigh) return "Υψηλό οικονομικό αντικείμενο";
+  if (points >= POINTS.budgetScaleMid) {
+    return "Μεσαίο προς υψηλό οικονομικό αντικείμενο";
+  }
+  if (points >= POINTS.budgetScaleLow) return "Οικονομικό αντικείμενο άνω των 2.000 €";
+  return null;
 };
 
 export const scoreKimdisItemAgainstProfile = (
@@ -490,6 +555,20 @@ export const scoreKimdisItemAgainstProfile = (
   breakdown.company = companyPoints;
 
   const targeted = detectTargetedInvitation(item);
+  const fundingAct = detectFundingAct(titleNorm);
+  // A credit certificate that quotes the project name is still paperwork.
+  const actionableWork = !fundingAct && detectActionableWork(titleNorm);
+
+  if (actionableWork) {
+    score += POINTS.actionableWork;
+    breakdown.filters += POINTS.actionableWork;
+  }
+
+  const scale = budgetScalePoints(budget);
+  if (scale > 0) {
+    score += scale;
+    breakdown.filters += scale;
+  }
 
   // Slack-style stage boosts — soft ranking only, never a web gate.
   const hasCoreMatch = matchedKeywords.length > 0 || matchedCpvs.length > 0;
@@ -514,13 +593,24 @@ export const scoreKimdisItemAgainstProfile = (
   if (matchedKeywords.length > 0) breakdown.signals.push("keywords");
   if (matchedCpvs.length > 0) breakdown.signals.push("cpv");
   if (companyPoints > 0) breakdown.signals.push("company");
+  if (actionableWork) breakdown.signals.push("work");
 
   // Explainability only — never punish a correct keyword-only hit.
-  if (breakdown.signals.filter((s) => s !== "early").length >= 2) {
-    reasons.unshift(
-      `Ισχυρό match · ${breakdown.signals.filter((s) => s !== "early").join(" + ")}`,
-    );
+  // Funding acts are not "strong" even when a CPV happens to match.
+  const positiveSignals = breakdown.signals.filter((signal) => signal !== "early");
+  if (!fundingAct && positiveSignals.length >= 2) {
+    reasons.unshift(`Ισχυρό match · ${positiveSignals.join(" + ")}`);
   }
+
+  if (fundingAct) {
+    score -= POINTS.fundingActPenalty;
+    breakdown.penalties += POINTS.fundingActPenalty;
+  }
+
+  const scaleReason = budgetScaleReason(scale);
+  if (scaleReason) reasons.unshift(scaleReason);
+  if (fundingAct) reasons.unshift(FUNDING_ACT_REASON);
+  else if (actionableWork) reasons.unshift(ACTIONABLE_WORK_REASON);
 
   if (targeted.targeted) {
     score -= POINTS.targetedPenalty;
