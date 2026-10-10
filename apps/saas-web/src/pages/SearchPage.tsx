@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
+import { CpvCombobox } from "@/components/CpvCombobox";
 import { PdfAction } from "@/components/PdfAction";
 import { DateInput } from "@/components/ui/date-input";
 import { Pagination } from "@/components/Pagination";
@@ -224,6 +225,9 @@ export const SearchPage = () => {
   const [similarProfiles, setSimilarProfiles] = useState<
     Array<{ id: string; name: string }>
   >([]);
+  const [cpvSuggestions, setCpvSuggestions] = useState<
+    Array<{ code: string; label: string }>
+  >([]);
 
   useEffect(() => {
     setDraft(urlState);
@@ -232,6 +236,10 @@ export const SearchPage = () => {
   useEffect(() => {
     if (!activeOrganization) return;
     void saasApi.kimdisMeta(activeOrganization.id).then(setMeta).catch(() => null);
+    void saasApi
+      .watchSuggestions(activeOrganization.id)
+      .then((result) => setCpvSuggestions(result.suggestions.cpvs ?? []))
+      .catch(() => setCpvSuggestions([]));
   }, [activeOrganization?.id]);
 
   useEffect(() => {
@@ -443,11 +451,14 @@ export const SearchPage = () => {
 
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-2">
-              <Label>CPV</Label>
-              <Input
+              <Label htmlFor="search-cpv">CPV</Label>
+              <CpvCombobox
+                id="search-cpv"
                 value={draft.cpv}
-                onChange={(e) => setDraft((prev) => ({ ...prev, cpv: e.target.value }))}
+                onChange={(cpv) => setDraft((prev) => ({ ...prev, cpv }))}
+                suggestions={cpvSuggestions}
                 placeholder="########-#"
+                aria-label="CPV"
               />
             </div>
             <div className="space-y-2">

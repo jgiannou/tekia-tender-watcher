@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Calendar } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
@@ -41,13 +42,26 @@ type DateInputProps = Omit<
 };
 
 /**
- * Text date field with Greek day/month/year display.
- * Native `type="date"` follows the OS locale (often MM/DD/YYYY on US machines).
+ * Text date field with Greek day/month/year display, plus a calendar button
+ * that opens the native OS date picker.
  */
 export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
-  ({ value, onChange, className, onBlur, disabled, ...props }, ref) => {
+  (
+    {
+      value,
+      onChange,
+      className,
+      onBlur,
+      disabled,
+      id,
+      "aria-label": ariaLabel,
+      ...props
+    },
+    ref,
+  ) => {
     const [text, setText] = React.useState(() => isoToGreekDate(value));
     const [invalid, setInvalid] = React.useState(false);
+    const nativeRef = React.useRef<HTMLInputElement>(null);
 
     React.useEffect(() => {
       setText(isoToGreekDate(value));
@@ -90,21 +104,77 @@ export const DateInput = React.forwardRef<HTMLInputElement, DateInputProps>(
       onBlur?.(event);
     };
 
+    const handleOpenPicker = () => {
+      if (disabled) return;
+      const native = nativeRef.current;
+      if (!native) return;
+      try {
+        if (typeof native.showPicker === "function") {
+          native.showPicker();
+          return;
+        }
+      } catch {
+        // Some browsers restrict showPicker outside trusted gestures.
+      }
+      native.focus();
+      native.click();
+    };
+
+    const handleNativeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const iso = event.target.value;
+      setInvalid(false);
+      setText(isoToGreekDate(iso));
+      onChange(iso);
+    };
+
+    const pickerLabel =
+      typeof ariaLabel === "string" && ariaLabel.trim()
+        ? `Ημερολόγιο: ${ariaLabel}`
+        : "Άνοιγμα ημερολογίου";
+
     return (
-      <Input
-        ref={ref}
-        type="text"
-        inputMode="numeric"
-        placeholder="ηη/μμ/εεεε"
-        autoComplete="off"
-        disabled={disabled}
-        value={text}
-        onChange={handleChange}
-        onBlur={handleBlur}
-        aria-invalid={invalid || undefined}
-        className={cn(invalid && "border-destructive focus-visible:ring-destructive", className)}
-        {...props}
-      />
+      <div className="relative">
+        <Input
+          ref={ref}
+          id={id}
+          type="text"
+          inputMode="numeric"
+          placeholder="ηη/μμ/εεεε"
+          autoComplete="off"
+          disabled={disabled}
+          value={text}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          aria-invalid={invalid || undefined}
+          aria-label={ariaLabel}
+          className={cn(
+            "pr-9",
+            invalid && "border-destructive focus-visible:ring-destructive",
+            className,
+          )}
+          {...props}
+        />
+        <input
+          ref={nativeRef}
+          type="date"
+          tabIndex={-1}
+          disabled={disabled}
+          value={value || ""}
+          onChange={handleNativeChange}
+          aria-hidden="true"
+          className="pointer-events-none absolute h-px w-px opacity-0"
+        />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={handleOpenPicker}
+          aria-label={pickerLabel}
+          title="Επιλογή από ημερολόγιο"
+          className="absolute inset-y-0 right-0 z-10 flex w-9 items-center justify-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Calendar className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
     );
   },
 );
