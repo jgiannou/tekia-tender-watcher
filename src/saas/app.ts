@@ -105,7 +105,11 @@ import {
   getTedAdapterStatus,
   searchTedNotices,
 } from "./sources/ted-adapter.js";
-import { followTedNotice } from "./services/ted-notices.js";
+import {
+  followTedNotice,
+  openTedNotice,
+  resolveTedRecordForDetail,
+} from "./services/ted-notices.js";
 import { GREEK_NUTS2_REGIONS } from "./geo/nuts.js";
 import {
   createWatchProfile,
@@ -709,9 +713,6 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     "/api/saas/kimdis/records/:recordType/:adam",
     requireSession,
     async (c) => {
-      if (!deps.kimdis) {
-        throw serviceUnavailable("KIMDIS search is not configured");
-      }
       await requireOrgMembership(
         deps.prisma,
         c.get("userId"),
@@ -719,6 +720,23 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       );
       const recordType = z.enum(["REQ", "PROC"]).parse(c.req.param("recordType"));
       const adam = decodeURIComponent(c.req.param("adam"));
+
+      // TED notices use the same detail route shape as KIMDIS PROC pages.
+      if (adam.startsWith("TED:")) {
+        const resolved = await resolveTedRecordForDetail(deps.prisma, adam);
+        if (!resolved) throw notFound("ted_record_not_found");
+        return c.json({
+          item: resolved.item,
+          tender: {
+            id: resolved.tenderId,
+            referenceNumber: resolved.referenceNumber,
+          },
+        });
+      }
+
+      if (!deps.kimdis) {
+        throw serviceUnavailable("KIMDIS search is not configured");
+      }
       const item = await getKimdisRecordByAdam(
         deps.kimdis,
         { recordType, adam },
@@ -1464,38 +1482,59 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     return c.json(result);
   });
 
+  const tedNoticeBodySchema = z.object({
+    publicationNumber: z.string().min(1),
+    title: z.string().nullable().optional(),
+    buyerName: z.string().nullable().optional(),
+    publicationDate: z.string().nullable().optional(),
+    noticeType: z.string().nullable().optional(),
+    cpvs: z.array(z.string()).optional(),
+    deadline: z.string().nullable().optional(),
+    url: z.string().url(),
+    pdfUrl: z.string().url().nullable().optional(),
+  });
+
+  const parseTedNoticeBody = (body: unknown) => {
+    const notice = tedNoticeBodySchema.safeParse(
+      body && typeof body === "object" && "notice" in body
+        ? (body as { notice: unknown }).notice
+        : body,
+    );
+    if (!notice.success) throw badRequest("invalid_ted_notice");
+    return {
+      ...notice.data,
+      title: notice.data.title ?? null,
+      buyerName: notice.data.buyerName ?? null,
+      publicationDate: notice.data.publicationDate ?? null,
+      noticeType: notice.data.noticeType ?? null,
+      cpvs: notice.data.cpvs ?? [],
+      deadline: notice.data.deadline ?? null,
+      pdfUrl: notice.data.pdfUrl ?? null,
+      provenance: "ted" as const,
+    };
+  };
+
+  app.post("/api/saas/sources/ted/open", requireSession, async (c) => {
+    await requireOrgMembership(
+      deps.prisma,
+      c.get("userId"),
+      resolveOrgId(c),
+    );
+    const body = await c.req.json().catch(() => null);
+    const notice = parseTedNoticeBody(body);
+    const row = await openTedNotice(deps.prisma, notice);
+    return c.json(row);
+  });
+
   app.post("/api/saas/sources/ted/follow", requireSession, async (c) => {
     const organizationId = resolveOrgId(c)!;
     await requireOrgMembership(deps.prisma, c.get("userId"), organizationId);
     const body = await c.req.json().catch(() => null);
-    const notice = z
-      .object({
-        publicationNumber: z.string().min(1),
-        title: z.string().nullable().optional(),
-        buyerName: z.string().nullable().optional(),
-        publicationDate: z.string().nullable().optional(),
-        noticeType: z.string().nullable().optional(),
-        cpvs: z.array(z.string()).optional(),
-        deadline: z.string().nullable().optional(),
-        url: z.string().url(),
-        pdfUrl: z.string().url().nullable().optional(),
-      })
-      .safeParse(body?.notice ?? body);
-    if (!notice.success) throw badRequest("invalid_ted_notice");
+    const notice = parseTedNoticeBody(body);
     const row = await followTedNotice(deps.prisma, {
       userId: c.get("userId"),
       organizationId,
-      notice: {
-        ...notice.data,
-        title: notice.data.title ?? null,
-        buyerName: notice.data.buyerName ?? null,
-        publicationDate: notice.data.publicationDate ?? null,
-        noticeType: notice.data.noticeType ?? null,
-        cpvs: notice.data.cpvs ?? [],
-        deadline: notice.data.deadline ?? null,
-        pdfUrl: notice.data.pdfUrl ?? null,
-        provenance: "ted",
-      },
+      notice,
     });
     return c.json(row);
   });

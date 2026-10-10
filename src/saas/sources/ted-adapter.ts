@@ -44,12 +44,13 @@ const DEFAULT_FIELDS = [
 ] as const;
 
 export const getTedAdapterStatus = (): TedAdapterStatus => {
-  const enabled = process.env.TED_ENABLED === "true";
+  // Public Search API needs no credentials — on by default; set TED_ENABLED=false to disable.
+  const enabled = process.env.TED_ENABLED !== "false";
   const apiBaseUrl = String(process.env.TED_API_BASE_URL || DEFAULT_BASE).trim();
   if (!enabled) {
     return {
       enabled: false,
-      blocker: "ted_disabled_set_TED_ENABLED_true",
+      blocker: "ted_disabled",
       apiBaseUrl,
       authRequired: false,
     };
@@ -161,7 +162,9 @@ export const buildTedExpertQuery = (input: {
 
   const buyer = escapeExpertToken(input.buyerName ?? "");
   if (buyer.length >= 2) {
-    parts.push(`buyer-name~${buyer}`);
+    // Multi-word buyer names must be quoted or TED returns HTTP 400.
+    const buyerClause = /\s/.test(buyer) ? `buyer-name~"${buyer}"` : `buyer-name~${buyer}`;
+    parts.push(buyerClause);
   }
 
   const from = toTedDateToken(input.dateFrom);

@@ -307,6 +307,30 @@ export const SearchPage = () => {
     }
   };
 
+  const tedDetailPath = (notice: TedNoticeRow) =>
+    `/app/tenders/PROC/${encodeURIComponent(`TED:${notice.publicationNumber}`)}`;
+
+  const handleOpenTed = async (notice: TedNoticeRow) => {
+    if (!activeOrganization) return;
+    setTedBusy(true);
+    try {
+      await saasApi.openTedNotice(activeOrganization.id, notice);
+      trackAnalyticsEvent("button_click", {
+        button_name: "ted_open",
+        content_type: "TED",
+        item_id: notice.publicationNumber,
+        source: "ted_search",
+      });
+      void navigate(tedDetailPath(notice));
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Αποτυχία ανοίγματος πράξης TED",
+      );
+    } finally {
+      setTedBusy(false);
+    }
+  };
+
   const handleFollowTed = async (notice: TedNoticeRow) => {
     if (!activeOrganization) return;
     setTedBusy(true);
@@ -318,9 +342,7 @@ export const SearchPage = () => {
         item_id: notice.publicationNumber,
         source: "ted_search",
       });
-      void navigate(
-        `/app/tenders/PROC/${encodeURIComponent(`TED:${notice.publicationNumber}`)}`,
-      );
+      void navigate(tedDetailPath(notice));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Αποτυχία παρακολούθησης TED");
     } finally {
@@ -552,12 +574,12 @@ export const SearchPage = () => {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="ted-authority">Αναθέτουσα αρχή</Label>
+                <Label htmlFor="ted-authority">Αναθέτουσα αρχή / φορέας</Label>
                 <Input
                   id="ted-authority"
                   value={tedAuthority}
                   onChange={(e) => setTedAuthority(e.target.value)}
-                  placeholder="π.χ. Δήμος"
+                  placeholder="π.χ. ΔΗΜΟΣ ΑΘΗΝΑΙΩΝ"
                   aria-label="Αναθέτουσα αρχή TED"
                 />
               </div>
@@ -634,9 +656,15 @@ export const SearchPage = () => {
                       TED:{notice.publicationNumber}
                     </span>
                   </div>
-                  <h3 className="mt-1 text-sm font-semibold leading-snug">
+                  <button
+                    type="button"
+                    className="mt-1 w-full text-left text-sm font-semibold leading-snug hover:underline"
+                    onClick={() => void handleOpenTed(notice)}
+                    disabled={tedBusy}
+                    aria-label={`Άνοιγμα ${notice.title || notice.publicationNumber}`}
+                  >
                     {notice.title || "—"}
-                  </h3>
+                  </button>
                   <p className="text-xs text-muted-foreground">
                     {notice.buyerName || "—"}
                     {notice.publicationDate
@@ -647,13 +675,21 @@ export const SearchPage = () => {
                     <Button
                       size="sm"
                       disabled={tedBusy}
+                      onClick={() => void handleOpenTed(notice)}
+                    >
+                      Άνοιγμα
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={tedBusy}
                       onClick={() => void handleFollowTed(notice)}
                     >
                       Παρακολούθηση
                     </Button>
-                    <Button size="sm" variant="outline" asChild>
+                    <Button size="sm" variant="ghost" asChild>
                       <a href={notice.url} target="_blank" rel="noreferrer">
-                        Επίσημη δημοσίευση
+                        Στο TED
                       </a>
                     </Button>
                   </div>

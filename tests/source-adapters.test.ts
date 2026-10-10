@@ -32,8 +32,8 @@ afterEach(() => {
 });
 
 describe("TED adapter", () => {
-  it("does not require an API key when enabled", () => {
-    process.env.TED_ENABLED = "true";
+  it("does not require an API key and is on by default", () => {
+    delete process.env.TED_ENABLED;
     delete process.env.TED_API_KEY;
     const status = getTedAdapterStatus();
     expect(status.enabled).toBe(true);
@@ -41,8 +41,8 @@ describe("TED adapter", () => {
     expect(status.blocker).toBeNull();
   });
 
-  it("stays disabled without TED_ENABLED", async () => {
-    delete process.env.TED_ENABLED;
+  it("can be disabled with TED_ENABLED=false", async () => {
+    process.env.TED_ENABLED = "false";
     delete process.env.TED_API_KEY;
     const status = getTedAdapterStatus();
     expect(status.enabled).toBe(false);
@@ -78,6 +78,12 @@ describe("TED adapter", () => {
     ).toBe(
       "buyer-country=GRC AND notice-title~φόρτιση AND classification-cpv=31681500* AND buyer-name~Δήμος AND publication-date>=20260101 AND publication-date<=20261010",
     );
+    expect(
+      buildTedExpertQuery({
+        buyerName: "ΔΗΜΟΣ ΠΑΤΡΕΩΝ",
+        dateFrom: "2025-01-01",
+      }),
+    ).toContain('buyer-name~"ΔΗΜΟΣ ΠΑΤΡΕΩΝ"');
   });
 
   it("POSTs to the Search API when enabled (mocked fetch)", async () => {
