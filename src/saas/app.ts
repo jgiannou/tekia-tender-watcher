@@ -1490,8 +1490,18 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     noticeType: z.string().nullable().optional(),
     cpvs: z.array(z.string()).optional(),
     deadline: z.string().nullable().optional(),
+    estimatedValue: z.number().finite().nullable().optional(),
+    currency: z.string().nullable().optional(),
+    nutsCode: z.string().nullable().optional(),
+    placeCity: z.string().nullable().optional(),
+    contractNature: z.string().nullable().optional(),
+    buyerCity: z.string().nullable().optional(),
+    buyerCountry: z.string().nullable().optional(),
+    noticeSubtype: z.string().nullable().optional(),
     url: z.string().url(),
-    pdfUrl: z.string().url().nullable().optional(),
+    pdfUrl: z
+      .union([z.string().url(), z.literal(""), z.null()])
+      .optional(),
   });
 
   const parseTedNoticeBody = (body: unknown) => {
@@ -1501,15 +1511,28 @@ export const createSaasApp = (deps: SaasAppDeps) => {
         : body,
     );
     if (!notice.success) throw badRequest("invalid_ted_notice");
+    const pdfUrl =
+      notice.data.pdfUrl && notice.data.pdfUrl.length > 0
+        ? notice.data.pdfUrl
+        : null;
     return {
-      ...notice.data,
+      publicationNumber: notice.data.publicationNumber,
       title: notice.data.title ?? null,
       buyerName: notice.data.buyerName ?? null,
       publicationDate: notice.data.publicationDate ?? null,
       noticeType: notice.data.noticeType ?? null,
       cpvs: notice.data.cpvs ?? [],
       deadline: notice.data.deadline ?? null,
-      pdfUrl: notice.data.pdfUrl ?? null,
+      estimatedValue: notice.data.estimatedValue ?? null,
+      currency: notice.data.currency ?? null,
+      nutsCode: notice.data.nutsCode ?? null,
+      placeCity: notice.data.placeCity ?? null,
+      contractNature: notice.data.contractNature ?? null,
+      buyerCity: notice.data.buyerCity ?? null,
+      buyerCountry: notice.data.buyerCountry ?? null,
+      noticeSubtype: notice.data.noticeSubtype ?? null,
+      url: notice.data.url,
+      pdfUrl,
       provenance: "ted" as const,
     };
   };

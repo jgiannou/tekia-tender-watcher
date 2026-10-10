@@ -8,6 +8,45 @@ import { kimdisItemFromTender } from "./kimdis-search.js";
 import { buildProvenance, tedReferencePrefix } from "./source-provenance.js";
 import { followTender } from "./follow.js";
 
+const mergeTedNotice = (
+  base: TedNoticeRef,
+  live: TedNoticeRef | null,
+): TedNoticeRef => {
+  if (!live) return base;
+  return {
+    ...base,
+    ...live,
+    title: live.title ?? base.title,
+    buyerName: live.buyerName ?? base.buyerName,
+    publicationDate: live.publicationDate ?? base.publicationDate,
+    noticeType: live.noticeType ?? base.noticeType,
+    cpvs: live.cpvs.length ? live.cpvs : base.cpvs,
+    deadline: live.deadline ?? base.deadline,
+    estimatedValue: live.estimatedValue ?? base.estimatedValue,
+    currency: live.currency ?? base.currency,
+    nutsCode: live.nutsCode ?? base.nutsCode,
+    placeCity: live.placeCity ?? base.placeCity,
+    contractNature: live.contractNature ?? base.contractNature,
+    buyerCity: live.buyerCity ?? base.buyerCity,
+    buyerCountry: live.buyerCountry ?? base.buyerCountry,
+    noticeSubtype: live.noticeSubtype ?? base.noticeSubtype,
+    url: live.url || base.url,
+    pdfUrl: live.pdfUrl ?? base.pdfUrl,
+    provenance: "ted",
+  };
+};
+
+/** Re-fetch from TED when the client payload lacks estimated value. */
+export const enrichTedNotice = async (
+  notice: TedNoticeRef,
+): Promise<TedNoticeRef> => {
+  if (notice.estimatedValue != null && notice.cpvs.length > 0) {
+    return notice;
+  }
+  const live = await fetchTedNoticeByPublicationNumber(notice.publicationNumber);
+  return mergeTedNotice(notice, live);
+};
+
 /** Stable local key so TED notices never collide with KIMDIS ADAMs. */
 export const tedReferenceNumber = (publicationNumber: string): string =>
   `${tedReferencePrefix}${publicationNumber.trim()}`;
@@ -53,9 +92,11 @@ export const upsertTenderFromTedNotice = async (
       contractingAuthority: notice.buyerName,
       submissionDate,
       finalSubmissionDate,
+      budgetWithoutVat: notice.estimatedValue,
       cpvs: notice.cpvs,
       officialPdfUrl: notice.pdfUrl,
       publicKimdisUrl: notice.url,
+      nutsCode: notice.nutsCode,
       stage: notice.noticeType,
       sourceFingerprint: `ted:${notice.publicationNumber}`,
       rawJson: { notice, provenance } as object,
@@ -67,9 +108,11 @@ export const upsertTenderFromTedNotice = async (
       contractingAuthority: notice.buyerName,
       submissionDate,
       finalSubmissionDate,
+      budgetWithoutVat: notice.estimatedValue,
       cpvs: notice.cpvs,
       officialPdfUrl: notice.pdfUrl,
       publicKimdisUrl: notice.url,
+      nutsCode: notice.nutsCode,
       stage: notice.noticeType,
       sourceFingerprint: `ted:${notice.publicationNumber}`,
       rawJson: { notice, provenance } as object,
@@ -86,7 +129,8 @@ export const followTedNotice = async (
     notice: TedNoticeRef;
   },
 ) => {
-  const tender = await upsertTenderFromTedNotice(prisma, input.notice);
+  const notice = await enrichTedNotice(input.notice);
+  const tender = await upsertTenderFromTedNotice(prisma, notice);
   const organizationTender = await followTender(prisma, {
     userId: input.userId,
     organizationId: input.organizationId,
@@ -100,7 +144,8 @@ export const openTedNotice = async (
   prisma: PrismaClient,
   notice: TedNoticeRef,
 ) => {
-  const tender = await upsertTenderFromTedNotice(prisma, notice);
+  const enriched = await enrichTedNotice(notice);
+  const tender = await upsertTenderFromTedNotice(prisma, enriched);
   return {
     tender: { id: tender.id, referenceNumber: tender.referenceNumber },
     item: kimdisItemFromTender(tender),

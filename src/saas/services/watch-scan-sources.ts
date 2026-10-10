@@ -7,6 +7,7 @@ import {
 import {
   getTedAdapterStatus,
   searchTedNotices,
+  tedContractNatureLabel,
   type TedNoticeRef,
 } from "../sources/ted-adapter.js";
 import { upsertTenderFromDiavgeiaDecision } from "./diavgeia-notices.js";
@@ -54,17 +55,17 @@ export const kimdisItemFromTedNotice = (notice: TedNoticeRef): KimdisSearchItem 
   contractingAuthority: notice.buyerName ?? "",
   description: notice.noticeType ?? "",
   cpvs: notice.cpvs,
-  budgetWithoutVat: null,
+  budgetWithoutVat: notice.estimatedValue,
   budgetWithVat: null,
   submissionDate: notice.publicationDate,
   signedDate: null,
   finalSubmissionDate: notice.deadline,
   procedureType: notice.noticeType,
-  contractTypeLabel: null,
+  contractTypeLabel: tedContractNatureLabel(notice.contractNature),
   cancelled: false,
   publicKimdisUrl: notice.url,
   officialPdfUrl: notice.pdfUrl ?? "",
-  nutsCode: null,
+  nutsCode: notice.nutsCode,
   contractEndsAt: null,
   awardAmount: null,
   winnerName: null,

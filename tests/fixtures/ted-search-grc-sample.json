@@ -13,13 +13,27 @@
       },
       "publication-date": "2026-01-02+01:00",
       "notice-type": "cn-social",
+      "notice-subtype": "16",
       "classification-cpv": [
         "31681500",
         "48000000",
         "31681500",
         "48000000"
       ],
-      "deadline-receipt-tender-date-lot": null,
+      "deadline-receipt-tender-date-lot": ["2026-03-15+02:00"],
+      "estimated-value-proc": "250000",
+      "estimated-value-cur-proc": "EUR",
+      "estimated-value-lot": ["250000"],
+      "estimated-value-cur-lot": ["EUR"],
+      "total-value": 250000,
+      "total-value-cur": ["EUR"],
+      "place-of-performance": ["EL531", "GRC"],
+      "place-of-performance-subdiv-proc": ["EL531"],
+      "place-of-performance-city-proc": ["ΓΡΕΒΕΝΑ"],
+      "place-of-performance-country-proc": ["GRC"],
+      "contract-nature-main-proc": "services",
+      "organisation-city-buyer": ["ΓΡΕΒΕΝΑ"],
+      "organisation-country-buyer": ["GRC"],
       "links": {
         "html": {
           "ELL": "https://ted.europa.eu/el/notice/-/detail/77-2026"
@@ -47,6 +61,10 @@
         "90512000"
       ],
       "deadline-receipt-tender-date-lot": null,
+      "estimated-value-proc": "1800000.5",
+      "estimated-value-cur-proc": "EUR",
+      "place-of-performance": ["EL222", "GRC"],
+      "contract-nature-main-proc": "services",
       "links": {
         "html": {
           "ELL": "https://ted.europa.eu/el/notice/-/detail/1474-2026"

@@ -8,6 +8,10 @@ import type {
   RecordType,
 } from "../../kimdis/types.js";
 import { SaasError, badRequest, kimdisUpstreamError } from "../errors.js";
+import {
+  tedContractNatureLabel,
+  type TedNoticeRef,
+} from "../sources/ted-adapter.js";
 
 export const KIMDIS_CONTRACT_TYPES: Record<string, string> = {
   "9": "Υπηρεσίες",
@@ -297,41 +301,53 @@ const sortItemsIfCompletePage = (
 };
 
 /** Adapt a canonical Tender row to the search/detail item shape. */
-export const kimdisItemFromTender = (tender: Tender): KimdisSearchItem => ({
-  adam: tender.referenceNumber,
-  recordType:
-    tender.recordType === "PROC" ||
-    tender.recordType === "AWRD" ||
-    tender.recordType === "CONTRACT"
-      ? tender.recordType
-      : "REQ",
-  title: tender.title ?? "",
-  contractingAuthority: tender.contractingAuthority ?? "",
-  description: "",
-  cpvs: Array.isArray(tender.cpvs)
-    ? tender.cpvs.map((cpv) => String(cpv))
-    : [],
-  budgetWithoutVat: tender.budgetWithoutVat,
-  budgetWithVat: tender.budgetWithVat,
-  submissionDate: tender.submissionDate?.toISOString() ?? null,
-  signedDate: tender.signedDate?.toISOString() ?? null,
-  finalSubmissionDate: tender.finalSubmissionDate?.toISOString() ?? null,
-  procedureType: null,
-  contractTypeLabel: null,
-  cancelled: false,
-  publicKimdisUrl: tender.publicKimdisUrl ?? "",
-  officialPdfUrl: tender.officialPdfUrl ?? "",
-  nutsCode: tender.nutsCode,
-  contractEndsAt: tender.contractEndsAt?.toISOString() ?? null,
-  awardAmount: tender.awardAmount,
-  winnerName: tender.winnerName,
-  diavgeiaAda: tender.diavgeiaAda,
-  openState: computeOpenState(
-    tender.recordType === "PROC" ? "PROC" : "REQ",
-    false,
-    tender.finalSubmissionDate?.toISOString() ?? null,
-  ),
-});
+const tedNoticeFromTenderRaw = (tender: Tender): TedNoticeRef | null => {
+  if (!tender.referenceNumber.startsWith("TED:")) return null;
+  const raw = tender.rawJson;
+  if (!raw || typeof raw !== "object") return null;
+  const notice = (raw as { notice?: unknown }).notice;
+  if (!notice || typeof notice !== "object") return null;
+  return notice as TedNoticeRef;
+};
+
+export const kimdisItemFromTender = (tender: Tender): KimdisSearchItem => {
+  const ted = tedNoticeFromTenderRaw(tender);
+  return {
+    adam: tender.referenceNumber,
+    recordType:
+      tender.recordType === "PROC" ||
+      tender.recordType === "AWRD" ||
+      tender.recordType === "CONTRACT"
+        ? tender.recordType
+        : "REQ",
+    title: tender.title ?? "",
+    contractingAuthority: tender.contractingAuthority ?? "",
+    description: ted?.noticeType ?? "",
+    cpvs: Array.isArray(tender.cpvs)
+      ? tender.cpvs.map((cpv) => String(cpv))
+      : [],
+    budgetWithoutVat: tender.budgetWithoutVat,
+    budgetWithVat: tender.budgetWithVat,
+    submissionDate: tender.submissionDate?.toISOString() ?? null,
+    signedDate: tender.signedDate?.toISOString() ?? null,
+    finalSubmissionDate: tender.finalSubmissionDate?.toISOString() ?? null,
+    procedureType: ted?.noticeType ?? null,
+    contractTypeLabel: tedContractNatureLabel(ted?.contractNature) ?? null,
+    cancelled: false,
+    publicKimdisUrl: tender.publicKimdisUrl ?? "",
+    officialPdfUrl: tender.officialPdfUrl ?? "",
+    nutsCode: tender.nutsCode,
+    contractEndsAt: tender.contractEndsAt?.toISOString() ?? null,
+    awardAmount: tender.awardAmount,
+    winnerName: tender.winnerName,
+    diavgeiaAda: tender.diavgeiaAda,
+    openState: computeOpenState(
+      tender.recordType === "PROC" ? "PROC" : "REQ",
+      false,
+      tender.finalSubmissionDate?.toISOString() ?? null,
+    ),
+  };
+};
 
 const pickExactAdam = (
   items: KimdisSearchItem[],

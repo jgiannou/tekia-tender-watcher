@@ -1714,6 +1714,14 @@ export const saasApi = {
         noticeType?: string | null;
         cpvs?: string[];
         deadline?: string | null;
+        estimatedValue?: number | null;
+        currency?: string | null;
+        nutsCode?: string | null;
+        placeCity?: string | null;
+        contractNature?: string | null;
+        buyerCity?: string | null;
+        buyerCountry?: string | null;
+        noticeSubtype?: string | null;
         url: string;
         pdfUrl?: string | null;
         provenance: "ted";
@@ -1732,6 +1740,14 @@ export const saasApi = {
       noticeType?: string | null;
       cpvs?: string[];
       deadline?: string | null;
+      estimatedValue?: number | null;
+      currency?: string | null;
+      nutsCode?: string | null;
+      placeCity?: string | null;
+      contractNature?: string | null;
+      buyerCity?: string | null;
+      buyerCountry?: string | null;
+      noticeSubtype?: string | null;
       url: string;
       pdfUrl?: string | null;
     },
@@ -1754,6 +1770,14 @@ export const saasApi = {
       noticeType?: string | null;
       cpvs?: string[];
       deadline?: string | null;
+      estimatedValue?: number | null;
+      currency?: string | null;
+      nutsCode?: string | null;
+      placeCity?: string | null;
+      contractNature?: string | null;
+      buyerCity?: string | null;
+      buyerCountry?: string | null;
+      noticeSubtype?: string | null;
       url: string;
       pdfUrl?: string | null;
     },
