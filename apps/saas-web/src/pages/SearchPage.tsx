@@ -240,12 +240,16 @@ export const SearchPage = () => {
   >([]);
   const [registryTab, setRegistryTab] = useState<"kimdis" | "ted">("kimdis");
   const [tedEnabled, setTedEnabled] = useState(false);
-  const [tedBlocker, setTedBlocker] = useState<string | null>(null);
   const [tedQuery, setTedQuery] = useState("");
+  const [tedCpv, setTedCpv] = useState("");
+  const [tedAuthority, setTedAuthority] = useState("");
+  const [tedDateFrom, setTedDateFrom] = useState(() => defaultRecentDates().dateFrom);
+  const [tedDateTo, setTedDateTo] = useState(() => defaultRecentDates().dateTo);
   const [tedLoading, setTedLoading] = useState(false);
   const [tedError, setTedError] = useState<string | null>(null);
   const [tedNotices, setTedNotices] = useState<TedNoticeRow[]>([]);
   const [tedBusy, setTedBusy] = useState(false);
+  const [tedTotal, setTedTotal] = useState<number | null>(null);
 
   useEffect(() => {
     setDraft(urlState);
@@ -262,11 +266,9 @@ export const SearchPage = () => {
       .getSourcesStatus(activeOrganization.id)
       .then((status) => {
         setTedEnabled(status.ted.enabled);
-        setTedBlocker(status.ted.blocker);
       })
       .catch(() => {
         setTedEnabled(false);
-        setTedBlocker("sources_status_unavailable");
       });
   }, [activeOrganization?.id]);
 
@@ -277,21 +279,29 @@ export const SearchPage = () => {
     try {
       const result = await saasApi.searchTedNotices(activeOrganization.id, {
         q: tedQuery.trim() || undefined,
+        cpv: tedCpv.trim() || undefined,
+        authority: tedAuthority.trim() || undefined,
+        dateFrom: tedDateFrom || undefined,
+        dateTo: tedDateTo || undefined,
         limit: 20,
       });
       if (result.blocker) {
         setTedError(
-          result.blocker.includes("TED_ENABLED") || result.blocker.includes("ted_disabled")
-            ? "Το TED δεν είναι ενεργοποιημένο στον server (TED_ENABLED=true)."
-            : `Το TED δεν είναι διαθέσιμο αυτή τη στιγμή (${result.blocker}).`,
+          result.blocker.includes("ted_disabled") ||
+            result.blocker.includes("TED_ENABLED")
+            ? "Η αναζήτηση TED δεν είναι διαθέσιμη προς το παρόν. Δοκιμάστε αργότερα ή χρησιμοποιήστε το ΚΗΜΔΗΣ."
+            : "Η αναζήτηση TED απέτυχε προσωρινά. Δοκιμάστε ξανά σε λίγο.",
         );
         setTedNotices([]);
+        setTedTotal(null);
         return;
       }
       setTedNotices(result.notices);
+      setTedTotal(result.totalNoticeCount);
     } catch (err) {
       setTedError(err instanceof Error ? err.message : "Αποτυχία αναζήτησης TED");
       setTedNotices([]);
+      setTedTotal(null);
     } finally {
       setTedLoading(false);
     }
@@ -506,39 +516,110 @@ export const SearchPage = () => {
               Αναζήτηση TED <SourceBadge system="ted" />
             </CardTitle>
             <CardDescription>
-              Επίσημο Search API χωρίς API key. Απαιτείται `TED_ENABLED=true` στον server.
+              Ευρωπαϊκές προκηρύξεις για την Ελλάδα από το TED. Τα αποτελέσματα δεν
+              προστίθενται αυτόματα στις Ευκαιρίες — χρησιμοποιήστε Παρακολούθηση ή
+              αποθηκευμένη αναζήτηση με πηγή TED.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {!tedEnabled ? (
               <p className="text-sm text-amber-700 dark:text-amber-400">
-                Το TED δεν είναι διαθέσιμο αυτή τη στιγμή
-                {tedBlocker ? ` (${tedBlocker})` : ""}. Ενεργοποιήστε
-                `TED_ENABLED=true` και επανεκκινήστε το API.
+                Η αναζήτηση TED δεν είναι διαθέσιμη προς το παρόν. Μπορείτε να
+                συνεχίσετε με το ΚΗΜΔΗΣ.
               </p>
             ) : null}
-            <div className="flex flex-wrap gap-2">
+            <div className="space-y-2">
+              <Label htmlFor="ted-title">Λέξεις στον τίτλο</Label>
               <Input
+                id="ted-title"
                 value={tedQuery}
                 onChange={(e) => setTedQuery(e.target.value)}
-                placeholder="Λέξεις στον τίτλο (π.χ. φόρτιση)"
-                className="min-w-[220px] flex-1"
+                placeholder="π.χ. φόρτιση, απορρίμματα"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") void handleTedSearch();
                 }}
-                aria-label="Αναζήτηση TED"
+                aria-label="Λέξεις στον τίτλο TED"
               />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="ted-cpv">CPV</Label>
+                <CpvCombobox
+                  id="ted-cpv"
+                  value={tedCpv}
+                  onChange={setTedCpv}
+                  suggestions={cpvSuggestions}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ted-authority">Αναθέτουσα αρχή</Label>
+                <Input
+                  id="ted-authority"
+                  value={tedAuthority}
+                  onChange={(e) => setTedAuthority(e.target.value)}
+                  placeholder="π.χ. Δήμος"
+                  aria-label="Αναθέτουσα αρχή TED"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ted-date-from">Ημερομηνία από</Label>
+                <DateInput
+                  id="ted-date-from"
+                  value={tedDateFrom}
+                  onChange={setTedDateFrom}
+                  aria-label="Ημερομηνία δημοσίευσης από"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ted-date-to">Ημερομηνία έως</Label>
+                <DateInput
+                  id="ted-date-to"
+                  value={tedDateTo}
+                  onChange={setTedDateTo}
+                  aria-label="Ημερομηνία δημοσίευσης έως"
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
               <Button
                 disabled={!tedEnabled || tedLoading}
                 onClick={() => void handleTedSearch()}
               >
                 {tedLoading ? "Αναζήτηση…" : "Αναζήτηση"}
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={tedLoading}
+                onClick={() => {
+                  const recent = defaultRecentDates();
+                  setTedQuery("");
+                  setTedCpv("");
+                  setTedAuthority("");
+                  setTedDateFrom(recent.dateFrom);
+                  setTedDateTo(recent.dateTo);
+                  setTedNotices([]);
+                  setTedTotal(null);
+                  setTedError(null);
+                }}
+              >
+                Καθαρισμός
+              </Button>
             </div>
             {tedError ? <ErrorState description={tedError} /> : null}
-            {tedNotices.length === 0 && !tedLoading && !tedError && tedEnabled ? (
+            {tedEnabled && !tedLoading && !tedError && tedNotices.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Εκτελέστε αναζήτηση για δημοσιεύσεις TED (Ελλάδα).
+                Συμπληρώστε κριτήρια και πατήστε Αναζήτηση.
+              </p>
+            ) : null}
+            {tedTotal != null && tedNotices.length > 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {tedTotal === 1
+                  ? "1 αποτέλεσμα"
+                  : `${tedTotal.toLocaleString("el-GR")} αποτελέσματα`}
+                {tedNotices.length < tedTotal
+                  ? ` · εμφανίζονται ${tedNotices.length}`
+                  : ""}
               </p>
             ) : null}
             <div className="space-y-3">

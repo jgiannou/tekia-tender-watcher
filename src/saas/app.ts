@@ -1445,6 +1445,9 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     );
     const q = String(c.req.query("q") || "").trim();
     const cpvRaw = String(c.req.query("cpv") || "").trim();
+    const authority = String(c.req.query("authority") || "").trim();
+    const dateFrom = String(c.req.query("dateFrom") || "").trim() || null;
+    const dateTo = String(c.req.query("dateTo") || "").trim() || null;
     const page = Number(c.req.query("page") || "1");
     const limit = Number(c.req.query("limit") || "10");
     const result = await searchTedNotices({
@@ -1452,6 +1455,9 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       cpv: cpvRaw
         ? cpvRaw.split(/[,\s]+/).map((row) => row.trim()).filter(Boolean)
         : undefined,
+      buyerName: authority || null,
+      dateFrom,
+      dateTo,
       page: Number.isFinite(page) ? page : 1,
       limit: Number.isFinite(limit) ? limit : 10,
     });

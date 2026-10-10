@@ -115,10 +115,23 @@ const asDeadline = (value: unknown): string | null => {
 const escapeExpertToken = (raw: string): string =>
   raw.replace(/["\\]/g, " ").trim();
 
+/** TED expert dates use YYYYMMDD. */
+export const toTedDateToken = (value: string | null | undefined): string | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}${iso[2]}${iso[3]}`;
+  const digits = trimmed.replace(/\D/g, "");
+  return digits.length === 8 ? digits : null;
+};
+
 export const buildTedExpertQuery = (input: {
   keywords?: string[];
   cpv?: string[];
   buyerCountry?: string;
+  buyerName?: string | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
 }): string => {
   const parts: string[] = [];
   const country = (input.buyerCountry || "GRC").trim().toUpperCase();
@@ -145,6 +158,16 @@ export const buildTedExpertQuery = (input: {
       `(${cpvs.map((code) => `classification-cpv=${code}*`).join(" OR ")})`,
     );
   }
+
+  const buyer = escapeExpertToken(input.buyerName ?? "");
+  if (buyer.length >= 2) {
+    parts.push(`buyer-name~${buyer}`);
+  }
+
+  const from = toTedDateToken(input.dateFrom);
+  const to = toTedDateToken(input.dateTo);
+  if (from) parts.push(`publication-date>=${from}`);
+  if (to) parts.push(`publication-date<=${to}`);
 
   return parts.join(" AND ") || "buyer-country=GRC";
 };
@@ -200,6 +223,9 @@ export const searchTedNotices = async (
     keywords?: string[];
     cpv?: string[];
     buyerCountry?: string;
+    buyerName?: string | null;
+    dateFrom?: string | null;
+    dateTo?: string | null;
     limit?: number;
     page?: number;
     query?: string;
@@ -224,6 +250,9 @@ export const searchTedNotices = async (
       keywords: input.keywords,
       cpv: input.cpv,
       buyerCountry: input.buyerCountry,
+      buyerName: input.buyerName,
+      dateFrom: input.dateFrom,
+      dateTo: input.dateTo,
     });
 
   const url = `${status.apiBaseUrl.replace(/\/+$/, "")}${SEARCH_PATH}`;
