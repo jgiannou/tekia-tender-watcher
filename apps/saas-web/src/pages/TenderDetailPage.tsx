@@ -759,7 +759,23 @@ export const TenderDetailPage = () => {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <PdfAction onClick={() => setPdfOpen(true)} />
+          {item.adam.startsWith("TED:") || item.adam.startsWith("DIAVGEIA:") ? (
+            item.officialPdfUrl || item.publicKimdisUrl ? (
+              <Button variant="outline" size="sm" asChild>
+                <a
+                  href={item.officialPdfUrl || item.publicKimdisUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {item.adam.startsWith("TED:")
+                    ? "Επίσημο έγγραφο TED"
+                    : "Επίσημο έγγραφο Διαύγειας"}
+                </a>
+              </Button>
+            ) : null
+          ) : (
+            <PdfAction onClick={() => setPdfOpen(true)} />
+          )}
           {primaryAction ? (
             <Button disabled={busy} onClick={primaryAction.onClick}>
               {primaryAction.label}

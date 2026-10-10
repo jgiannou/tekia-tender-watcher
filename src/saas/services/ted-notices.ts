@@ -1,5 +1,10 @@
 import type { PrismaClient, RecordType } from "@prisma/client";
-import type { TedNoticeRef } from "../sources/ted-adapter.js";
+import {
+  searchTedNotices,
+  type TedNoticeRef,
+} from "../sources/ted-adapter.js";
+import type { KimdisSearchItem } from "./kimdis-search.js";
+import { kimdisItemFromTender } from "./kimdis-search.js";
 import { buildProvenance, tedReferencePrefix } from "./source-provenance.js";
 import { followTender } from "./follow.js";
 
@@ -88,6 +93,71 @@ export const followTedNotice = async (
     tenderId: tender.id,
   });
   return { tender, organizationTender };
+};
+
+/** Persist TED notice for in-app detail without starting follow. */
+export const openTedNotice = async (
+  prisma: PrismaClient,
+  notice: TedNoticeRef,
+) => {
+  const tender = await upsertTenderFromTedNotice(prisma, notice);
+  return {
+    tender: { id: tender.id, referenceNumber: tender.referenceNumber },
+    item: kimdisItemFromTender(tender),
+  };
+};
+
+export const fetchTedNoticeByPublicationNumber = async (
+  publicationNumber: string,
+): Promise<TedNoticeRef | null> => {
+  const clean = publicationNumber.trim();
+  if (!clean) return null;
+  const result = await searchTedNotices({
+    query: `publication-number=${clean}`,
+    limit: 5,
+    page: 1,
+  });
+  if (result.blocker) return null;
+  return (
+    result.notices.find((row) => row.publicationNumber === clean) ??
+    result.notices[0] ??
+    null
+  );
+};
+
+/**
+ * Load TED tender for detail pages: local DB first, then live TED fetch + upsert.
+ */
+export const resolveTedRecordForDetail = async (
+  prisma: PrismaClient,
+  referenceOrPublication: string,
+): Promise<{ item: KimdisSearchItem; tenderId: string; referenceNumber: string } | null> => {
+  const raw = referenceOrPublication.trim();
+  const referenceNumber = raw.startsWith(tedReferencePrefix)
+    ? raw
+    : tedReferenceNumber(raw);
+  const publicationNumber = publicationNumberFromTedReference(referenceNumber);
+  if (!publicationNumber) return null;
+
+  const local = await prisma.tender.findUnique({
+    where: { referenceNumber },
+  });
+  if (local) {
+    return {
+      item: kimdisItemFromTender(local),
+      tenderId: local.id,
+      referenceNumber: local.referenceNumber,
+    };
+  }
+
+  const notice = await fetchTedNoticeByPublicationNumber(publicationNumber);
+  if (!notice) return null;
+  const opened = await openTedNotice(prisma, notice);
+  return {
+    item: opened.item,
+    tenderId: opened.tender.id,
+    referenceNumber: opened.tender.referenceNumber,
+  };
 };
 
 export const tedNoticeSnapshot = (notice: TedNoticeRef) =>

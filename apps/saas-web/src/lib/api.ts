@@ -1722,6 +1722,28 @@ export const saasApi = {
       blocker: string | null;
     }>(`/api/saas/sources/ted/search${suffix}`, { organizationId });
   },
+  openTedNotice: (
+    organizationId: string,
+    notice: {
+      publicationNumber: string;
+      title?: string | null;
+      buyerName?: string | null;
+      publicationDate?: string | null;
+      noticeType?: string | null;
+      cpvs?: string[];
+      deadline?: string | null;
+      url: string;
+      pdfUrl?: string | null;
+    },
+  ) =>
+    request<{
+      tender: { id: string; referenceNumber: string };
+      item: KimdisSearchItem;
+    }>("/api/saas/sources/ted/open", {
+      method: "POST",
+      organizationId,
+      body: JSON.stringify({ notice }),
+    }),
   followTedNotice: (
     organizationId: string,
     notice: {

@@ -60,7 +60,7 @@ describe("watch scan sources", () => {
   });
 
   it("records ted_disabled when TED_ENABLED is off", async () => {
-    delete process.env.TED_ENABLED;
+    process.env.TED_ENABLED = "false";
     const result = await scanTedForWatchProfile({
       profile: { id: "p1", name: "x", customFilters: { dataSources: ["ted"] } } as never,
       criteria: {
