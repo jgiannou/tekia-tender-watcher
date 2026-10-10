@@ -43,6 +43,7 @@ services:
       SAAS_ENABLED: "true"
       DATABASE_URL: postgresql://tekia:tekia@postgres:5432/tekia_tender_watcher?schema=public
       DATABASE_PATH: /data/tenders.db
+      SAAS_STORAGE_DIR: /app/storage
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-local-dev-change-me-to-a-long-random-secret}
       # Same-origin via web nginx proxy
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://127.0.0.1:8080}

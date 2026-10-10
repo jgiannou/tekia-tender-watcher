@@ -98,7 +98,7 @@ export const CompanyDocumentPicker = ({
         <DialogHeader>
           <DialogTitle>Προσθήκη από Έγγραφα Εταιρείας</DialogTitle>
           <DialogDescription>
-            Επιλέξτε υπάρχον έγγραφο από το Company Vault — χωρίς επαναφόρτωση.
+            Επιλέξτε υπάρχον έγγραφο από τα εταιρικά σας έγγραφα — χωρίς επαναφόρτωση.
           </DialogDescription>
         </DialogHeader>
         <Input

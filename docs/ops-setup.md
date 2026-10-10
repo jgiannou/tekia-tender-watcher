@@ -42,7 +42,7 @@ UI: `/app/subscription` (ίδιο ύφος με ARC Procurement Subscription pag
 | API | same origin via nginx `/api/*` → `saas-api:3000` (όχι ξεχωριστό public API host) |
 | Process | Coolify · `Dockerfile.saas-api` + `apps/saas-web/Dockerfile` |
 | DB | managed Postgres (χωριστά από internal watcher SQLite) |
-| Docs storage | volume `/app/storage` ή object storage |
+| Docs storage | volume `/app/storage` via `SAAS_STORAGE_DIR=/app/storage` (local default: `data/saas-vault`) |
 
 Local full stack smoke: `pnpm saas:docker:up` → http://127.0.0.1:8080  
 
@@ -300,7 +300,12 @@ Internet → Cloudflare/DNS → Coolify Traefik → saas-web:80 (nginx)
    | Container path | Σκοπός |
    |---|---|
    | `/data` | SQLite side-file του watcher (`DATABASE_PATH`) |
-   | `/app/storage` | Vault / ανεβασμένα αρχεία org |
+   | `/app/storage` | Εταιρικά έγγραφα (vault) — απαιτεί `SAAS_STORAGE_DIR=/app/storage` |
+
+   Το API διαβάζει τη ρίζα αποθήκευσης από `SAAS_STORAGE_DIR` (Docker/Coolify: `/app/storage`).
+   Τοπικά, χωρίς env, γράφει σε `data/saas-vault` κάτω από το cwd.
+   **Restore:** κάνε restore του volume στο ίδιο path· μην μετακινείς/διαγράφεις αρχεία από λάθος path (`data/saas-vault` μέσα στο container χωρίς volume).
+   Αν παλιό deploy έγραψε εκτός volume, αντέγραψε (copy, όχι delete) στο `/app/storage` πριν το cutover.
 
 7. **Healthcheck** (αν το Coolify δεν διαβάζει το Dockerfile HEALTHCHECK):  
    - Path: `/health` · Port `3000` · start period ≥ 40s  
@@ -367,6 +372,7 @@ PORT=3000
 SAAS_ENABLED=true
 DATABASE_URL=postgresql://USER:PASS@arc-tenders-db:5432/arc_tenders?schema=public
 DATABASE_PATH=/data/tenders.db
+SAAS_STORAGE_DIR=/app/storage
 
 BETTER_AUTH_SECRET=<openssl-rand-output>
 BETTER_AUTH_URL=https://arc-tenders.tekia.gr

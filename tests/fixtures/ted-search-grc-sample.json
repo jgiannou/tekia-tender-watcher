@@ -1,0 +1,62 @@
+{
+  "notices": [
+    {
+      "publication-number": "77-2026",
+      "notice-title": {
+        "ell": "Ελλάδα – Συσκευές φόρτισης – ΥΠΗΡΕΣΙΑ ΠΑΡΑΧΩΡΗΣΗΣ ΣΤΑΘΜΏΝ ΦΟΡΤΙΣΗΣ ΗΛΕΚΤΡΟΚΙΝΗΤΩΝ ΟΧΗΜΑΤΩΝ (Η/Ο) ΣΤΟΝ ΔΗΜΟ ΓΡΕΒΕΝΩΝ",
+        "eng": "Greece – Rechargers – ΥΠΗΡΕΣΙΑ ΠΑΡΑΧΩΡΗΣΗΣ ΣΤΑΘΜΏΝ ΦΟΡΤΙΣΗΣ ΗΛΕΚΤΡΟΚΙΝΗΤΩΝ ΟΧΗΜΑΤΩΝ (Η/Ο) ΣΤΟΝ ΔΗΜΟ ΓΡΕΒΕΝΩΝ"
+      },
+      "buyer-name": {
+        "ell": [
+          "ΔΗΜΟΣ ΓΡΕΒΕΝΩΝ"
+        ]
+      },
+      "publication-date": "2026-01-02+01:00",
+      "notice-type": "cn-social",
+      "classification-cpv": [
+        "31681500",
+        "48000000",
+        "31681500",
+        "48000000"
+      ],
+      "deadline-receipt-tender-date-lot": null,
+      "links": {
+        "html": {
+          "ELL": "https://ted.europa.eu/el/notice/-/detail/77-2026"
+        },
+        "pdf": {
+          "ELL": "https://ted.europa.eu/el/notice/77-2026/pdf"
+        }
+      }
+    },
+    {
+      "publication-number": "1474-2026",
+      "notice-title": {
+        "ell": "Ελλάδα – Υπηρεσίες μεταφοράς απορριμμάτων – ΑΝΑΘΕΣΗ ΕΡΓΑΣΙΩΝ ΜΕΤΑΦΟΡΤΩΣΗΣ ΚΑΙ ΜΕΤΑΦΟΡΑΣ 14.000 ΤΟΝΩΝ Α.Σ.Α. ΤΟΥ ΔΗΜΟΥ ΒΟΡΕΙΑΣ ΚΕΡΚΥΡΑΣ ΕΚ ΤΩΝ ΟΠΟΙΩΝ ΣΤΟΝ Χ.Υ.Τ.Α. ΠΑΛΑΙΡΟΥ (7.000tn) ΚΑΙ ΣΤΗΝ Μ.Ε.Α. ΚΟΖΑΝΗΣ (7.000tn)",
+        "eng": "Greece – Refuse transport services – ΑΝΑΘΕΣΗ ΕΡΓΑΣΙΩΝ ΜΕΤΑΦΟΡΤΩΣΗΣ ΚΑΙ ΜΕΤΑΦΟΡΑΣ 14.000 ΤΟΝΩΝ Α.Σ.Α. ΤΟΥ ΔΗΜΟΥ ΒΟΡΕΙΑΣ ΚΕΡΚΥΡΑΣ ΕΚ ΤΩΝ ΟΠΟΙΩΝ ΣΤΟΝ Χ.Υ.Τ.Α. ΠΑΛΑΙΡΟΥ (7.000tn) ΚΑΙ ΣΤΗΝ Μ.Ε.Α. ΚΟΖΑΝΗΣ (7.000tn)"
+      },
+      "buyer-name": {
+        "ell": [
+          "ΔΗΜΟΣ ΒΟΡΕΙΑΣ ΚΕΡΚΥΡΑΣ"
+        ]
+      },
+      "publication-date": "2026-01-02+01:00",
+      "notice-type": "pin-cfc-social",
+      "classification-cpv": [
+        "90512000",
+        "90512000"
+      ],
+      "deadline-receipt-tender-date-lot": null,
+      "links": {
+        "html": {
+          "ELL": "https://ted.europa.eu/el/notice/-/detail/1474-2026"
+        },
+        "pdf": {
+          "ELL": "https://ted.europa.eu/el/notice/1474-2026/pdf"
+        }
+      }
+    }
+  ],
+  "totalNoticeCount": 2837,
+  "iterationNextToken": null
+}

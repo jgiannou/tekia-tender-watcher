@@ -100,6 +100,12 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
     const { runSharedKimdisIngest } = await import(
       "./saas/jobs/shared-ingest.js"
     );
+    const { runSaasOutboxWorker } = await import(
+      "./saas/jobs/process-outbox.js"
+    );
+    const { scheduleDueWeeklyFreeDigests } = await import(
+      "./saas/jobs/weekly-free-digest.js"
+    );
     const { app: saasApp } = createSaasApp({ prisma: getPrisma(), kimdis });
     app.route("/", saasApp);
     console.log("saas API: enabled (/api/auth/* , /api/saas/*)");
@@ -163,6 +169,60 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
       );
       console.log(
         `saas notification waves: cron ${hourlyWaveExpression} Europe/Athens`,
+      );
+    }
+
+    // Product email outbox + Free weekly digest scheduler (Europe/Athens).
+    const outboxExpression = "*/2 * * * *";
+    if (cron.validate(outboxExpression)) {
+      cron.schedule(
+        outboxExpression,
+        () => {
+          void runSaasOutboxWorker(getPrisma(), { limit: 20 })
+            .then((summary) => {
+              if (summary.processed > 0) {
+                console.log("[outbox] processed", JSON.stringify(summary));
+              }
+            })
+            .catch((error) => {
+              console.error(
+                "saas outbox worker error:",
+                error instanceof Error ? error.message : error,
+              );
+            });
+        },
+        { timezone: "Europe/Athens" },
+      );
+      console.log(
+        `saas outbox worker: cron ${outboxExpression} Europe/Athens`,
+      );
+    }
+
+    const weeklyExpression = "10,40 * * * *";
+    if (cron.validate(weeklyExpression)) {
+      cron.schedule(
+        weeklyExpression,
+        () => {
+          void scheduleDueWeeklyFreeDigests(getPrisma())
+            .then((summary) => {
+              if (summary.due > 0) {
+                console.log(
+                  "[email] weekly free digest schedule",
+                  JSON.stringify(summary),
+                );
+              }
+            })
+            .catch((error) => {
+              console.error(
+                "weekly free digest schedule error:",
+                error instanceof Error ? error.message : error,
+              );
+            });
+        },
+        { timezone: "Europe/Athens" },
+      );
+      console.log(
+        `saas weekly free digests: cron ${weeklyExpression} Europe/Athens`,
       );
     }
   } catch (error) {

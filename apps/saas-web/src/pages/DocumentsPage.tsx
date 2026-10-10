@@ -238,7 +238,7 @@ export const DocumentsPage = () => {
     return (
       <EmptyState
         title="Χωρίς οργανισμό"
-        description="Το Company Vault ανήκει στον οργανισμό."
+        description="Τα εταιρικά έγγραφα ανήκουν στην εταιρεία σας."
       />
     );
   }

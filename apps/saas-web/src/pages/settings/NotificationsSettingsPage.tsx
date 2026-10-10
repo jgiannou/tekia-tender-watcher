@@ -35,10 +35,26 @@ const DIGEST_HOUR_OPTIONS = [
   "22:00",
 ] as const;
 
+const WEEKDAY_EL = [
+  "Κυριακή",
+  "Δευτέρα",
+  "Τρίτη",
+  "Τετάρτη",
+  "Πέμπτη",
+  "Παρασκευή",
+  "Σάββατο",
+] as const;
+
 const defaultPrefs = (email: string): NotificationPreferences => ({
   emailEnabled: true,
   recipients: email ? [email] : [],
-  digestHours: ["08:00"],
+  digestHours: [],
+  emailDeliveryMode: "DIGEST",
+  weeklyEmailEnabled: true,
+  weeklyRecipient: null,
+  weeklyDigestWeekday: 1,
+  weeklyDigestHour: "08:00",
+  weeklyLastSentAt: null,
   events: {
     newOpportunity: true,
     relatedActOnFollowed: true,
@@ -46,6 +62,20 @@ const defaultPrefs = (email: string): NotificationPreferences => ({
     deadlineRadar: false,
   },
 });
+
+const formatNextSend = (iso: string | null | undefined): string | null => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat("el-GR", {
+    timeZone: "Europe/Athens",
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+};
 
 export const NotificationsSettingsPage = () => {
   const { activeOrganization, user } = useSessionContext();
@@ -58,11 +88,18 @@ export const NotificationsSettingsPage = () => {
   const [entitlements, setEntitlements] = useState<SaasEntitlementsResponse | null>(
     null,
   );
+  const [nextWeeklyIso, setNextWeeklyIso] = useState<string | null>(null);
 
+  const emailCadence =
+    entitlements?.entitlements.emailCadence ??
+    entitlements?.plan?.features?.emailCadence ??
+    (entitlements?.scanAccess.planKey === "free" ? "WEEKLY" : "DIGEST_HOURS");
+  const isWeekly = emailCadence === "WEEKLY";
   const maxHours =
+    entitlements?.entitlements.maxDigestHoursPerDay ??
     entitlements?.entitlements.periodicScansPerDay ??
     entitlements?.scanAccess.limits.periodicScansPerDay ??
-    1;
+    0;
   const deadlineRadarAllowed =
     entitlements?.entitlements.deadlineRadar === true ||
     entitlements?.plan?.features?.deadlineRadar === true;
@@ -79,18 +116,51 @@ export const NotificationsSettingsPage = () => {
         saasApi.getSettings(activeOrganization.id),
         saasApi.getEntitlements(activeOrganization.id),
       ]);
-      const next = data.settings.notifications;
+      const next = {
+        ...defaultPrefs(user?.email ?? ""),
+        ...data.settings.notifications,
+        events: {
+          ...defaultPrefs(user?.email ?? "").events,
+          ...data.settings.notifications.events,
+        },
+      };
       if (!next.recipients.length && user?.email) {
         next.recipients = [user.email];
       }
-      if (!Array.isArray(next.digestHours) || next.digestHours.length === 0) {
-        next.digestHours = ["08:00"];
-      }
-      if (!next.events.deadlineRadar) {
-        next.events.deadlineRadar = false;
+      if (!next.weeklyRecipient && user?.email) {
+        next.weeklyRecipient = user.email;
       }
       setPrefs(next);
       setEntitlements(ent);
+      const weekday = next.weeklyDigestWeekday ?? 1;
+      const hour = next.weeklyDigestHour ?? "08:00";
+      // Approximate next send for display (client-side, Europe/Athens).
+      const now = new Date();
+      for (let i = 0; i < 60 * 24 * 8; i += 30) {
+        const candidate = new Date(now.getTime() + i * 60_000);
+        const parts = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Europe/Athens",
+          weekday: "short",
+          hour: "2-digit",
+          hourCycle: "h23",
+        }).formatToParts(candidate);
+        const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+        const wdMap: Record<string, number> = {
+          Sun: 0,
+          Mon: 1,
+          Tue: 2,
+          Wed: 3,
+          Thu: 4,
+          Fri: 5,
+          Sat: 6,
+        };
+        const w = wdMap[map.weekday ?? "Mon"] ?? 1;
+        const h = `${String(map.hour ?? "0").padStart(2, "0")}:00`;
+        if (w === weekday && h === hour && candidate.getTime() > now.getTime()) {
+          setNextWeeklyIso(candidate.toISOString());
+          break;
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης");
     } finally {
@@ -113,7 +183,7 @@ export const NotificationsSettingsPage = () => {
         selected.delete(hour);
       } else {
         if (selected.size >= maxHours) {
-          toast.error(`Το πλάνο σας επιτρέπει έως ${maxHours} ώρες/ημέρα`);
+          toast.error(`Το πακέτο σας επιτρέπει έως ${maxHours} ώρες/ημέρα`);
           return prev;
         }
         selected.add(hour);
@@ -127,7 +197,7 @@ export const NotificationsSettingsPage = () => {
 
   const handleSave = async () => {
     if (!activeOrganization) return;
-    if (prefs.digestHours.length === 0) {
+    if (!isWeekly && prefs.digestHours.length === 0) {
       toast.error("Επιλέξτε τουλάχιστον μία ώρα");
       return;
     }
@@ -135,7 +205,7 @@ export const NotificationsSettingsPage = () => {
     try {
       const payload: NotificationPreferences = {
         ...prefs,
-        digestHours: prefs.digestHours.slice(0, maxHours),
+        digestHours: isWeekly ? [] : prefs.digestHours.slice(0, maxHours),
         events: {
           ...prefs.events,
           deadlineRadar: deadlineRadarAllowed ? prefs.events.deadlineRadar : false,
@@ -145,7 +215,14 @@ export const NotificationsSettingsPage = () => {
         activeOrganization.id,
         payload,
       );
-      setPrefs(data.settings.notifications);
+      setPrefs({
+        ...defaultPrefs(user?.email ?? ""),
+        ...data.settings.notifications,
+        events: {
+          ...defaultPrefs(user?.email ?? "").events,
+          ...data.settings.notifications.events,
+        },
+      });
       toast.success("Οι ειδοποιήσεις αποθηκεύτηκαν");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Αποτυχία αποθήκευσης");
@@ -158,22 +235,25 @@ export const NotificationsSettingsPage = () => {
   if (!activeOrganization) {
     return (
       <EmptyState
-        title="Χωρίς οργανισμό"
-        description="Δημιουργήστε οργανισμό για ρυθμίσεις ειδοποιήσεων."
+        title="Χωρίς εταιρεία"
+        description="Δημιουργήστε εταιρεία για ρυθμίσεις ειδοποιήσεων."
       />
     );
   }
   if (error) return <ErrorState description={error} onRetry={() => void load()} />;
+
+  const weekdayLabel =
+    WEEKDAY_EL[((prefs.weeklyDigestWeekday % 7) + 7) % 7] ?? "Δευτέρα";
+  const nextLabel = formatNextSend(nextWeeklyIso);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Ειδοποιήσεις</CardTitle>
         <CardDescription>
-          Λειτουργικά email οργανισμού (όχι marketing). Επιλέγετε ώρες Europe/Athens —
-          έως {maxHours} την ημέρα σύμφωνα με το πακέτο σας. Σε κάθε ώρα ελέγχου
-          λαμβάνετε digest με νέα ευρήματα, ή σύνοψη με τις ενεργές αντιστοιχίες αν
-          δεν υπάρχει κάτι νέο.
+          {isWeekly
+            ? "Έως μία εβδομαδιαία σύνοψη email όταν υπάρχουν νέα. Οι ενημερώσεις εμφανίζονται στην εφαρμογή χωρίς να περιμένετε το email."
+            : `Τρόπος ενημέρωσης μέσω email για την εταιρεία σας. Επιλέξτε έως ${maxHours} ώρες την ημέρα (ώρα Ελλάδας).`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -193,67 +273,169 @@ export const NotificationsSettingsPage = () => {
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="recipients">Παραλήπτες (διαχωρισμός με κόμμα)</Label>
-          <Input
-            id="recipients"
-            value={prefs.recipients.join(", ")}
-            onChange={(e) =>
-              setPrefs((p) => ({
-                ...p,
-                recipients: e.target.value
-                  .split(",")
-                  .map((v) => v.trim())
-                  .filter(Boolean),
-              }))
-            }
-          />
-        </div>
-
-        <div className="space-y-3">
-          <div>
-            <div className="text-sm font-medium">Ώρες email (Europe/Athens)</div>
+        {isWeekly ? (
+          <div className="space-y-4 rounded-md border border-border px-3 py-3">
+            <div>
+              <div className="text-sm font-medium">Εβδομαδιαία σύνοψη email</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Λάβετε συγκεντρωμένα τις νέες ευκαιρίες και τις εξελίξεις στους
+                διαγωνισμούς που παρακολουθείτε. Αν δεν υπάρχουν νέα, δεν στέλνουμε
+                email.
+              </p>
+            </div>
+            <label className="flex items-center justify-between gap-4 text-sm">
+              <span>Λήψη εβδομαδιαίας σύνοψης</span>
+              <Switch
+                checked={prefs.weeklyEmailEnabled !== false}
+                onCheckedChange={(checked) =>
+                  setPrefs((p) => ({ ...p, weeklyEmailEnabled: checked }))
+                }
+                aria-label="Λήψη εβδομαδιαίας σύνοψης"
+              />
+            </label>
+            <div className="space-y-2">
+              <Label htmlFor="weeklyRecipient">Παραλήπτης εβδομαδιαίας σύνοψης</Label>
+              <Input
+                id="weeklyRecipient"
+                value={prefs.weeklyRecipient ?? ""}
+                onChange={(e) =>
+                  setPrefs((p) => ({
+                    ...p,
+                    weeklyRecipient: e.target.value.trim() || null,
+                  }))
+                }
+                aria-label="Παραλήπτης εβδομαδιαίας σύνοψης"
+              />
+            </div>
+            <p className="text-sm text-foreground">
+              Προγραμματισμένη αποστολή: κάθε {weekdayLabel}, στις{" "}
+              {prefs.weeklyDigestHour}, ώρα Ελλάδας.
+            </p>
+            {nextLabel ? (
+              <p className="text-sm text-muted-foreground">
+                Επόμενη προγραμματισμένη αποστολή: {nextLabel}
+              </p>
+            ) : null}
             <p className="text-xs text-muted-foreground">
-              Επιλεγμένες: {prefs.digestHours.length}/{maxHours}
+              Οι νέες ενημερώσεις εμφανίζονται στην εφαρμογή χωρίς να περιμένετε την
+              εβδομαδιαία σύνοψη.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Θέλετε συχνότερα email; Με το Basic επιλέγετε έως 2 καθημερινές ώρες
+              ενημέρωσης ή άμεσες ειδοποιήσεις για σημαντικές εξελίξεις.{" "}
+              <Link
+                to="/app/subscription"
+                className="text-foreground underline underline-offset-2"
+              >
+                Δείτε τα πακέτα
+              </Link>
             </p>
           </div>
-          <div
-            className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6"
-            role="group"
-            aria-label="Ώρες email"
-          >
-            {DIGEST_HOUR_OPTIONS.map((hour) => {
-              const selected = prefs.digestHours.includes(hour);
-              return (
-                <button
-                  key={hour}
-                  type="button"
-                  tabIndex={0}
-                  aria-pressed={selected}
-                  aria-label={`Ώρα ${hour}`}
-                  onClick={() => handleToggleHour(hour)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      handleToggleHour(hour);
-                    }
-                  }}
-                  className={cn(
-                    "rounded-md border px-2 py-2 text-sm tabular-nums transition-colors",
-                    selected
-                      ? "border-primary bg-primary/15 text-foreground"
-                      : "border-border bg-background text-muted-foreground hover:border-primary/40",
-                  )}
-                >
-                  {hour}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        ) : (
+          <>
+            <div className="space-y-3 rounded-md border border-border px-3 py-3">
+              <div className="text-sm font-medium">Τρόπος ενημέρωσης μέσω email</div>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Τρόπος ενημέρωσης">
+                {(
+                  [
+                    ["DIGEST", "Συγκεντρωτική ενημέρωση"],
+                    ["IMMEDIATE", "Άμεσες ενημερώσεις"],
+                  ] as const
+                ).map(([mode, label]) => {
+                  const selected = (prefs.emailDeliveryMode ?? "DIGEST") === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      tabIndex={0}
+                      aria-pressed={selected}
+                      aria-label={label}
+                      onClick={() =>
+                        setPrefs((p) => ({ ...p, emailDeliveryMode: mode }))
+                      }
+                      className={cn(
+                        "rounded-md border px-3 py-2 text-sm transition-colors",
+                        selected
+                          ? "border-primary bg-primary/15 text-foreground"
+                          : "border-border text-muted-foreground",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {(prefs.emailDeliveryMode ?? "DIGEST") === "IMMEDIATE"
+                  ? "Οι άμεσες ενημερώσεις αποστέλλονται αφού εντοπιστεί η εξέλιξη. Κοντινές χρονικά ενημερώσεις μπορεί να ομαδοποιούνται σε ένα email."
+                  : "Οι ενημερώσεις από όλες τις αναζητήσεις σας συγκεντρώνονται στο ίδιο email. Αν δεν υπάρχουν νέα, δεν στέλνουμε σύνοψη."}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="recipients">Παραλήπτες (διαχωρισμός με κόμμα)</Label>
+              <Input
+                id="recipients"
+                value={prefs.recipients.join(", ")}
+                onChange={(e) =>
+                  setPrefs((p) => ({
+                    ...p,
+                    recipients: e.target.value
+                      .split(",")
+                      .map((v) => v.trim())
+                      .filter(Boolean),
+                  }))
+                }
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <div className="text-sm font-medium">Ώρες αποστολής, ώρα Ελλάδας</div>
+                <p className="text-xs text-muted-foreground">
+                  Επιλέξτε έως {maxHours} ώρες την ημέρα. Επιλεγμένες:{" "}
+                  {prefs.digestHours.length}/{maxHours}
+                </p>
+              </div>
+              <div
+                className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6"
+                role="group"
+                aria-label="Ώρες αποστολής"
+              >
+                {DIGEST_HOUR_OPTIONS.map((hour) => {
+                  const selected = prefs.digestHours.includes(hour);
+                  return (
+                    <button
+                      key={hour}
+                      type="button"
+                      tabIndex={0}
+                      aria-pressed={selected}
+                      aria-label={`Ώρα ${hour}`}
+                      onClick={() => handleToggleHour(hour)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          handleToggleHour(hour);
+                        }
+                      }}
+                      className={cn(
+                        "rounded-md border px-2 py-2 text-sm tabular-nums transition-colors",
+                        selected
+                          ? "border-primary bg-primary/15 text-foreground"
+                          : "border-border bg-background text-muted-foreground hover:border-primary/40",
+                      )}
+                    >
+                      {hour}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
 
         <div className="space-y-3">
-          <div className="text-sm font-medium">Γεγονότα</div>
+          <div className="text-sm font-medium">Γεγονότα στην εφαρμογή</div>
           {(
             [
               ["newOpportunity", "Νέα σχετική ευκαιρία"],
@@ -281,9 +463,7 @@ export const NotificationsSettingsPage = () => {
 
           {deadlineRadarAllowed ? (
             <label className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2 text-sm">
-              <span>
-                Deadline radar — επερχόμενες προθεσμίες (έως 7 ημέρες)
-              </span>
+              <span>Επερχόμενες προθεσμίες (έως 7 ημέρες) μέσω email</span>
               <Switch
                 checked={prefs.events.deadlineRadar}
                 onCheckedChange={(checked) =>
@@ -292,12 +472,12 @@ export const NotificationsSettingsPage = () => {
                     events: { ...p.events, deadlineRadar: checked },
                   }))
                 }
-                aria-label="Deadline radar"
+                aria-label="Επερχόμενες προθεσμίες"
               />
             </label>
           ) : (
             <div className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
-              Deadline radar (επερχόμενες προθεσμίες) — διαθέσιμο στο{" "}
+              Συγκεντρωτική προβολή επερχόμενων προθεσμιών μέσω email — διαθέσιμο στο{" "}
               <Link
                 to="/app/subscription"
                 className="text-foreground underline underline-offset-2"

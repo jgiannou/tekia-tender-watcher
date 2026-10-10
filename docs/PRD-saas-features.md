@@ -17,9 +17,9 @@
 
 ## Plans
 
-- **Free — €0, no expiry.** 1 seat, 1 saved search, 5 follows. Same ingest speed. 1 grouped email per day. Push and in-app. Region filter. Thread screen within the 5 follows. No vault, outreach, submission recording, PDF checklist, or price memory. Expiring contracts: count only. No deadline-radar email.
-- **Basic — €4.99 / month.** 1 seat, 3 searches, 20 follows. Same speed. Digest at the hours the user picks. Push and in-app. Region. Thread screen. Vault, outreach, submission recording. PDF checklist. Expiring list and follow. Price memory on the tender. No deadline-radar email.
-- **Pro — €9.99 / month.** 3 seats, extra seat €2.49. 15 searches, 100 follows. Same speed. Immediate email. Everything in Basic. Deadline-radar email.
+- **Free — €0, no expiry.** 1 seat, 1 saved search, 5 follows. Shared KIMDIS check every 2 minutes. ≤1 weekly summary email when there is new content (one recipient). Push and in-app without weekly delay. Region filter. Thread screen within the 5 follows. No company docs, outreach, submission recording, PDF checklist, or private bid price. Expiring contracts: count only. No AI.
+- **Basic — €4.99 / month.** 1 seat, 5 searches, 30 follows. Digest at up to 2 chosen hours/day, or immediate email for followed-tender developments. Company docs, outreach, submission recording, PDF checklist (rules + citations), expiring list, award history, private bid price note.
+- **Pro — €9.99 / month.** 3 seats, extra seat €2.49. 15 searches, 100 follows. Digest at up to 6 hours/day; optional immediate for high-match new opportunities. Everything in Basic. Upcoming-deadlines email. No AI.
 
 Manual KIMDIS search stays on every plan. Refresh is not how new acts arrive. The shared ingest brings them.
 

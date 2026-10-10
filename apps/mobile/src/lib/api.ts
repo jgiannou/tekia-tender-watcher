@@ -92,8 +92,14 @@ export type OrganizationActivity = {
 export type NotificationPreferences = {
   emailEnabled: boolean;
   recipients: string[];
-  /** Europe/Athens HH:00 slots; capped by plan periodicScansPerDay. */
+  /** Europe/Athens HH:00 slots; capped by plan maxDigestHoursPerDay (empty on Free). */
   digestHours: string[];
+  emailDeliveryMode?: "DIGEST" | "IMMEDIATE";
+  weeklyEmailEnabled?: boolean;
+  weeklyRecipient?: string | null;
+  weeklyDigestWeekday?: number;
+  weeklyDigestHour?: string;
+  weeklyLastSentAt?: string | null;
   events: {
     newOpportunity: boolean;
     relatedActOnFollowed: boolean;

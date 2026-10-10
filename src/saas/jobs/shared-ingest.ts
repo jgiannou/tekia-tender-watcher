@@ -2,7 +2,11 @@ import type { PrismaClient, WatchProfile } from "@prisma/client";
 import type { KimdisClient } from "../../kimdis/client.js";
 import { evaluateRegionGate } from "../geo/nuts.js";
 import { athensDateKey } from "../services/digest-hours.js";
-import { fetchRecentActs } from "../services/kimdis-acts.js";
+import {
+  dedupeKimdisItems,
+  fetchRecentActs,
+  type KimdisFetchCheckpoint,
+} from "../services/kimdis-acts.js";
 import type { KimdisSearchItem } from "../services/kimdis-search.js";
 import { queueAttentionPush } from "../services/push.js";
 import {
@@ -17,6 +21,8 @@ const SUCCESS_KEY = "saas.ingest.lastSuccessAt";
 const ERROR_KEY = "saas.ingest.lastError";
 const STARTED_KEY = "saas.ingest.lastStartedAt";
 const SWEEP_KEY = "saas.ingest.lastContractSweepAt";
+const CHECKPOINT_KEY = "saas.ingest.kimdisCheckpoints";
+const COMPLETENESS_KEY = "saas.ingest.completeness";
 
 let ingestRunning = false;
 
@@ -34,14 +40,49 @@ const readMeta = async (prisma: PrismaClient, key: string): Promise<string | nul
 };
 
 export const getSharedIngestStatus = async (prisma: PrismaClient) => {
-  const [lastSuccessAt, lastError, lastStartedAt] = await Promise.all([
-    readMeta(prisma, SUCCESS_KEY),
-    readMeta(prisma, ERROR_KEY),
-    readMeta(prisma, STARTED_KEY),
-  ]);
+  const [lastSuccessAt, lastError, lastStartedAt, completenessRaw] =
+    await Promise.all([
+      readMeta(prisma, SUCCESS_KEY),
+      readMeta(prisma, ERROR_KEY),
+      readMeta(prisma, STARTED_KEY),
+      readMeta(prisma, COMPLETENESS_KEY),
+    ]);
   const successMs = lastSuccessAt ? Date.parse(lastSuccessAt) : NaN;
   const fresh = Number.isFinite(successMs) && Date.now() - successMs < 10 * 60 * 1000;
-  return { lastSuccessAt, lastError, lastStartedAt, fresh };
+  let completeness: {
+    pageBudgetExhausted: boolean;
+    noteEl: string;
+  } | null = null;
+  if (completenessRaw) {
+    try {
+      completeness = JSON.parse(completenessRaw) as {
+        pageBudgetExhausted: boolean;
+        noteEl: string;
+      };
+    } catch {
+      completeness = null;
+    }
+  }
+  return { lastSuccessAt, lastError, lastStartedAt, fresh, completeness };
+};
+
+const persistCheckpoints = async (
+  prisma: PrismaClient,
+  checkpoints: KimdisFetchCheckpoint[],
+  pageBudgetExhausted: boolean,
+) => {
+  await writeMeta(prisma, CHECKPOINT_KEY, JSON.stringify(checkpoints));
+  await writeMeta(
+    prisma,
+    COMPLETENESS_KEY,
+    JSON.stringify({
+      pageBudgetExhausted,
+      noteEl: pageBudgetExhausted
+        ? "Ο έλεγχος ΚΗΜΔΗΣ ολοκληρώθηκε με όριο σελίδων· μπορεί να υπάρχει ουρά προς κάλυψη στον επόμενο κύκλο."
+        : "Ο έλεγχος ΚΗΜΔΗΣ έφτασε στο τέλος των διαθέσιμων σελίδων για το τρέχον παράθυρο ημερομηνιών.",
+      at: new Date().toISOString(),
+    }),
+  );
 };
 
 const linkParents = async (
@@ -198,11 +239,25 @@ export const runSharedKimdisIngest = async (
   ingestRunning = true;
   await writeMeta(prisma, STARTED_KEY, new Date().toISOString());
   try {
-    const items = await fetchRecentActs(kimdis, { days: 2, pages: 2 });
+    // Catch-up: if last success is older than the 2-day window, widen slightly
+    // but keep a hard page budget (never claim pages:N = full history).
+    const lastSuccess = await readMeta(prisma, SUCCESS_KEY);
+    const lagMs = lastSuccess ? Date.now() - Date.parse(lastSuccess) : 0;
+    const catchUp = Number.isFinite(lagMs) && lagMs > 2 * 24 * 60 * 60 * 1000;
+    const recent = await fetchRecentActs(kimdis, {
+      days: catchUp ? 5 : 2,
+      pages: catchUp ? 4 : 2,
+    });
+    const items = dedupeKimdisItems(recent.items);
     await persistActs(prisma, items);
     await matchNewActs(prisma, items);
     await monitorFollowedThreads(prisma);
     await notifyUrgentDeadlines(prisma);
+    await persistCheckpoints(
+      prisma,
+      recent.checkpoints,
+      recent.pageBudgetExhausted,
+    );
 
     const lastSweep = await readMeta(prisma, SWEEP_KEY);
     const sweepMs = lastSweep ? Date.parse(lastSweep) : 0;
@@ -212,8 +267,14 @@ export const runSharedKimdisIngest = async (
         pages: 4,
         recordTypes: ["CONTRACT"],
       });
-      await persistActs(prisma, contracts);
+      await persistActs(prisma, dedupeKimdisItems(contracts.items));
       await writeMeta(prisma, SWEEP_KEY, new Date().toISOString());
+      // Bounded contract sweep is not a complete 180-day history guarantee.
+      await persistCheckpoints(
+        prisma,
+        [...recent.checkpoints, ...contracts.checkpoints],
+        recent.pageBudgetExhausted || contracts.pageBudgetExhausted,
+      );
     }
 
     await writeMeta(prisma, SUCCESS_KEY, new Date().toISOString());

@@ -96,6 +96,16 @@ import { loadParticipationChecklist } from "./services/participation-checklist.j
 import { loadExpiringContracts } from "./services/expiring-contracts.js";
 import { loadPriceMemory } from "./services/price-memory.js";
 import { resolveDiavgeiaForTender } from "./services/diavgeia.js";
+import {
+  fetchDiavgeiaDecisionByAda,
+  getDiavgeiaAdapterStatus,
+  searchDiavgeiaDecisions,
+} from "./sources/diavgeia-adapter.js";
+import {
+  getTedAdapterStatus,
+  searchTedNotices,
+} from "./sources/ted-adapter.js";
+import { followTedNotice } from "./services/ted-notices.js";
 import { GREEK_NUTS2_REGIONS } from "./geo/nuts.js";
 import {
   createWatchProfile,
@@ -533,7 +543,17 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       .object({
         emailEnabled: z.boolean(),
         recipients: z.array(z.string().email()).default([]),
-        digestHours: z.array(z.string().regex(/^([01]\d|2[0-3]):00$/)).min(1),
+        // Free weekly cadence may send an empty list; paid plans enforce min in service.
+        digestHours: z.array(z.string().regex(/^([01]\d|2[0-3]):00$/)).default([]),
+        emailDeliveryMode: z.enum(["DIGEST", "IMMEDIATE"]).optional(),
+        weeklyEmailEnabled: z.boolean().optional(),
+        weeklyRecipient: z.string().email().nullable().optional(),
+        weeklyDigestWeekday: z.number().int().min(0).max(6).optional(),
+        weeklyDigestHour: z
+          .string()
+          .regex(/^([01]\d|2[0-3]):00$/)
+          .optional(),
+        weeklyLastSentAt: z.string().nullable().optional(),
         events: z.object({
           newOpportunity: z.boolean(),
           relatedActOnFollowed: z.boolean(),
@@ -545,7 +565,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     const settings = await updateNotifications(deps.prisma, {
       userId: c.get("userId"),
       organizationId: resolveOrgId(c),
-      notifications: body,
+      notifications: body as never,
     });
     return c.json({ settings });
   });
@@ -1400,6 +1420,110 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       return c.json({ diavgeia: link });
     },
   );
+
+  app.get("/api/saas/sources/status", requireSession, async (c) => {
+    await requireOrgMembership(
+      deps.prisma,
+      c.get("userId"),
+      resolveOrgId(c),
+    );
+    return c.json({
+      ted: getTedAdapterStatus(),
+      diavgeia: getDiavgeiaAdapterStatus(),
+    });
+  });
+
+  app.get("/api/saas/sources/ted/search", requireSession, async (c) => {
+    await requireOrgMembership(
+      deps.prisma,
+      c.get("userId"),
+      resolveOrgId(c),
+    );
+    const q = String(c.req.query("q") || "").trim();
+    const cpvRaw = String(c.req.query("cpv") || "").trim();
+    const page = Number(c.req.query("page") || "1");
+    const limit = Number(c.req.query("limit") || "10");
+    const result = await searchTedNotices({
+      keywords: q ? q.split(/\s+/).filter(Boolean).slice(0, 8) : undefined,
+      cpv: cpvRaw
+        ? cpvRaw.split(/[,\s]+/).map((row) => row.trim()).filter(Boolean)
+        : undefined,
+      page: Number.isFinite(page) ? page : 1,
+      limit: Number.isFinite(limit) ? limit : 10,
+    });
+    return c.json(result);
+  });
+
+  app.post("/api/saas/sources/ted/follow", requireSession, async (c) => {
+    const organizationId = resolveOrgId(c)!;
+    await requireOrgMembership(deps.prisma, c.get("userId"), organizationId);
+    const body = await c.req.json().catch(() => null);
+    const notice = z
+      .object({
+        publicationNumber: z.string().min(1),
+        title: z.string().nullable().optional(),
+        buyerName: z.string().nullable().optional(),
+        publicationDate: z.string().nullable().optional(),
+        noticeType: z.string().nullable().optional(),
+        cpvs: z.array(z.string()).optional(),
+        deadline: z.string().nullable().optional(),
+        url: z.string().url(),
+        pdfUrl: z.string().url().nullable().optional(),
+      })
+      .safeParse(body?.notice ?? body);
+    if (!notice.success) throw badRequest("invalid_ted_notice");
+    const row = await followTedNotice(deps.prisma, {
+      userId: c.get("userId"),
+      organizationId,
+      notice: {
+        ...notice.data,
+        title: notice.data.title ?? null,
+        buyerName: notice.data.buyerName ?? null,
+        publicationDate: notice.data.publicationDate ?? null,
+        noticeType: notice.data.noticeType ?? null,
+        cpvs: notice.data.cpvs ?? [],
+        deadline: notice.data.deadline ?? null,
+        pdfUrl: notice.data.pdfUrl ?? null,
+        provenance: "ted",
+      },
+    });
+    return c.json(row);
+  });
+
+  app.get(
+    "/api/saas/sources/diavgeia/decisions/:ada",
+    requireSession,
+    async (c) => {
+      await requireOrgMembership(
+        deps.prisma,
+        c.get("userId"),
+        resolveOrgId(c),
+      );
+      const status = getDiavgeiaAdapterStatus();
+      if (!status.enabled) {
+        return c.json({ decision: null, blocker: status.blocker });
+      }
+      const decision = await fetchDiavgeiaDecisionByAda(c.req.param("ada"));
+      return c.json({ decision, blocker: null });
+    },
+  );
+
+  app.get("/api/saas/sources/diavgeia/search", requireSession, async (c) => {
+    await requireOrgMembership(
+      deps.prisma,
+      c.get("userId"),
+      resolveOrgId(c),
+    );
+    const term = String(c.req.query("term") || "").trim();
+    const page = Number(c.req.query("page") || "0");
+    const size = Number(c.req.query("size") || "10");
+    const result = await searchDiavgeiaDecisions({
+      term,
+      page: Number.isFinite(page) ? page : 0,
+      size: Number.isFinite(size) ? size : 10,
+    });
+    return c.json(result);
+  });
 
   app.post("/api/saas/tenders/:tenderId/follow", requireSession, async (c) => {
     const organizationId = resolveOrgId(c);

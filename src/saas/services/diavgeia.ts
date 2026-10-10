@@ -1,8 +1,15 @@
 import type { PrismaClient } from "@prisma/client";
+import {
+  diavgeiaPublicUrl,
+  fetchDiavgeiaDecisionByAda,
+  getDiavgeiaAdapterStatus,
+  parseDiavgeiaSearchPayload,
+  searchDiavgeiaDecisions,
+} from "../sources/diavgeia-adapter.js";
 
 /**
- * Enrichment only: an ADA next to the same ADAM.
- * Not a Diavgeia search product.
+ * Enrichment: link a KIMDIS ADAM to a Diavgeia ADA when possible.
+ * Full discovery search is available via the Diavgeia adapter when enabled.
  */
 
 const DIAVGEIA_SEARCH = "https://diavgeia.gov.gr/luminapi/opendata/search.json";
@@ -10,35 +17,24 @@ const DIAVGEIA_SEARCH = "https://diavgeia.gov.gr/luminapi/opendata/search.json";
 export type DiavgeiaLink = {
   ada: string;
   url: string;
+  subject?: string | null;
 };
 
-type DiavgeiaDecision = {
-  ada?: string;
-  documentUrl?: string;
-  url?: string;
-  subject?: string;
-};
-
-export const diavgeiaUrlForAda = (ada: string): string =>
-  `https://diavgeia.gov.gr/decision/view/${encodeURIComponent(ada)}`;
+export const diavgeiaUrlForAda = (ada: string): string => diavgeiaPublicUrl(ada);
 
 export const parseDiavgeiaSearch = (
   payload: unknown,
   adam: string,
 ): DiavgeiaLink | null => {
-  if (!payload || typeof payload !== "object") return null;
-  const decisions = (payload as { decisions?: DiavgeiaDecision[] }).decisions;
-  if (!Array.isArray(decisions)) return null;
+  const decisions = parseDiavgeiaSearchPayload(payload);
   const needle = adam.trim().toUpperCase();
   for (const decision of decisions) {
-    const ada = decision.ada?.trim();
-    if (!ada) continue;
     const subject = decision.subject ?? "";
-    const mentionsAdam = subject.toUpperCase().includes(needle);
-    if (!mentionsAdam) continue;
+    if (!subject.toUpperCase().includes(needle)) continue;
     return {
-      ada,
-      url: decision.documentUrl || decision.url || diavgeiaUrlForAda(ada),
+      ada: decision.ada,
+      url: decision.documentUrl || decision.url || diavgeiaUrlForAda(decision.ada),
+      subject: decision.subject,
     };
   }
   return null;
@@ -48,6 +44,16 @@ export const lookupDiavgeiaByAdam = async (
   adam: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<DiavgeiaLink | null> => {
+  const status = getDiavgeiaAdapterStatus();
+  if (status.enabled) {
+    const result = await searchDiavgeiaDecisions(
+      { term: adam, page: 0, size: 5 },
+      fetchImpl,
+    );
+    const viaAdapter = parseDiavgeiaSearch({ decisions: result.decisions }, adam);
+    if (viaAdapter) return viaAdapter;
+  }
+
   const url = `${DIAVGEIA_SEARCH}?term=${encodeURIComponent(adam)}&page=0&size=5`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
@@ -81,9 +87,15 @@ export const resolveDiavgeiaForTender = async (
   });
   if (!tender) return null;
   if (tender.diavgeiaAda) {
+    const enriched = await fetchDiavgeiaDecisionByAda(tender.diavgeiaAda);
     return {
       ada: tender.diavgeiaAda,
-      url: tender.diavgeiaUrl || diavgeiaUrlForAda(tender.diavgeiaAda),
+      url:
+        enriched?.documentUrl ||
+        enriched?.url ||
+        tender.diavgeiaUrl ||
+        diavgeiaUrlForAda(tender.diavgeiaAda),
+      subject: enriched?.subject ?? null,
     };
   }
   const found = await lookupDiavgeiaByAdam(tender.referenceNumber);

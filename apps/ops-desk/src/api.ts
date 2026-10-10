@@ -4,6 +4,17 @@ export type ConnectionConfig = {
   pollSeconds: number;
 };
 
+export type PipelineHealthSummary = {
+  outboxPending: number;
+  outboxFailed: number;
+  outboxLagMs: number | null;
+  ingestFresh: boolean;
+  ingestSuccessAgeMs: number | null;
+  emailFailed24h: number;
+  alertCount: number;
+  alertLevels: { error: number; warn: number; info: number };
+};
+
 export type OpsStats = {
   generatedAt: string;
   users: number;
@@ -35,6 +46,77 @@ export type OpsStats = {
     warnsInBuffer: number;
     http5xxInBuffer: number;
     http4xxInBuffer: number;
+  };
+  pipeline?: PipelineHealthSummary | null;
+};
+
+export type PipelineMetrics = {
+  generatedAt: string;
+  alerts: Array<{
+    level: "info" | "warn" | "error";
+    code: string;
+    messageEl: string;
+  }>;
+  outbox: {
+    process: {
+      enqueued: number;
+      claimed: number;
+      succeeded: number;
+      failed: number;
+      retried: number;
+      cancelled: number;
+      lastLagMs: number | null;
+    };
+    byStatus: Record<string, number>;
+    byType: Record<string, number>;
+    pending: number;
+    running: number;
+    failed: number;
+    succeeded: number;
+    cancelled: number;
+    oldestPendingAgeMs: number | null;
+    stuckRunning: number;
+    dueNow: number;
+    recentFailed: Array<{
+      id: string;
+      type: string;
+      attempts: number;
+      lastError: string | null;
+      updatedAt: string;
+    }>;
+  };
+  ingest: {
+    lastSuccessAt: string | null;
+    lastError: string | null;
+    lastStartedAt: string | null;
+    fresh: boolean;
+    successAgeMs: number | null;
+    completeness: { pageBudgetExhausted: boolean; noteEl: string } | null;
+  };
+  email: {
+    last24h: Record<string, number>;
+    last7d: Record<string, number>;
+    sent24h: number;
+    failed24h: number;
+    pending24h: number;
+    skipped24h: number;
+  };
+  storage: {
+    root: string;
+    totalBytesUsed: number;
+    documentCount: number;
+    orgsWithVault: number;
+    noteEl: string;
+  };
+  pdf: {
+    process: {
+      count: number;
+      avgMs: number | null;
+      maxMs: number | null;
+      lastMs: number | null;
+      byStatus: Record<string, number>;
+    };
+    tendersByPdfStatus: Record<string, number>;
   };
 };
 
@@ -111,6 +193,7 @@ export type HealthOps = {
   warnsInBuffer: number;
   http5xxInBuffer: number;
   http4xxInBuffer: number;
+  pipeline?: PipelineHealthSummary | null;
 };
 
 export type OpsUserListItem = {
@@ -412,6 +495,9 @@ export const fetchRequests = async (
 
 export const fetchHealthOps = async (cfg: ConnectionConfig) =>
   parseJson<HealthOps>(await opsRequest(cfg, "/admin/ops/health"));
+
+export const fetchPipeline = async (cfg: ConnectionConfig) =>
+  parseJson<PipelineMetrics>(await opsRequest(cfg, "/admin/ops/pipeline"));
 
 export const notifySlackStats = async (cfg: ConnectionConfig) => {
   const res = await opsRequest(cfg, "/admin/ops/stats/notify", { method: "POST", body: "{}" });

@@ -19,39 +19,52 @@ export type PlanLimits = {
   maxActiveWatchProfiles: number;
   maxActiveFollowedTenders: number;
   storageBytes: number;
+  maxDigestHoursPerDay: number;
+  /** @deprecated Alias of maxDigestHoursPerDay */
   periodicScansPerDay: number;
   manualProfileScansPerDay: number;
   includedSeats: number;
   maxSeatsSelfService: number;
   advancedWatchProfileFilters: boolean;
   emailMode: PlanEntitlements["emailMode"];
+  emailCadence: PlanEntitlements["emailCadence"];
+  immediateFollowedDevelopments: boolean;
+  immediateNewOpportunity: boolean;
 };
 
 export const limitsFromEntitlements = (plan: PlanEntitlements): PlanLimits => ({
   maxActiveWatchProfiles: plan.maxActiveWatchProfiles,
   maxActiveFollowedTenders: plan.maxActiveFollowedTenders,
   storageBytes: plan.storageBytes,
-  periodicScansPerDay: plan.periodicScansPerDay,
+  maxDigestHoursPerDay: plan.maxDigestHoursPerDay,
+  periodicScansPerDay: plan.maxDigestHoursPerDay,
   manualProfileScansPerDay: plan.manualProfileScansPerDay,
   includedSeats: plan.includedSeats,
   maxSeatsSelfService: plan.maxSeatsSelfService,
   advancedWatchProfileFilters: plan.advancedWatchProfileFilters,
   emailMode: plan.emailMode,
+  emailCadence: plan.emailCadence,
+  immediateFollowedDevelopments: plan.immediateFollowedDevelopments,
+  immediateNewOpportunity: plan.immediateNewOpportunity,
 });
 
 export const limitsForPlanKey = (planKey: string): PlanLimits =>
   limitsFromEntitlements(entitlementsForPlanKey(planKey));
 
 const INACTIVE_LIMITS: PlanLimits = {
-  maxActiveWatchProfiles: 3,
+  maxActiveWatchProfiles: 0,
   maxActiveFollowedTenders: 0,
-  storageBytes: 250_000_000,
+  storageBytes: 0,
+  maxDigestHoursPerDay: 0,
   periodicScansPerDay: 0,
   manualProfileScansPerDay: 0,
   includedSeats: 1,
   maxSeatsSelfService: 1,
   advancedWatchProfileFilters: false,
   emailMode: "DIGEST",
+  emailCadence: "WEEKLY",
+  immediateFollowedDevelopments: false,
+  immediateNewOpportunity: false,
 };
 
 export type ScanAccessStatus =
@@ -249,6 +262,10 @@ export const resolveOrganizationScanAccess = async (
       where: { id: subscription.id },
       data: { status: "ACTIVE", planKey: PLAN_KEYS.free },
     });
+    const { onTransitionToFreeEmailPolicy } = await import(
+      "./plan-email-transition.js"
+    );
+    await onTransitionToFreeEmailPolicy(prisma, subscription.organizationId);
     const limits = limitsForPlanKey(PLAN_KEYS.free);
     const plan = entitlementsForPlanKey(PLAN_KEYS.free);
     return {

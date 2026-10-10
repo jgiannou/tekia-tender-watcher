@@ -28,22 +28,26 @@ const HOUR_RE = /^([01]\d|2[0-3]):00$/;
 
 export const defaultDigestHoursForPlanKey = (planKey: string): string[] => {
   const plan = entitlementsForPlanKey(planKey);
-  if (plan.planKey === PLAN_KEYS.pro) {
-    return ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00"];
+  if (plan.emailCadence === "WEEKLY" || plan.maxDigestHoursPerDay <= 0) {
+    return [];
   }
-  if (plan.planKey === PLAN_KEYS.trial || plan.planKey === PLAN_KEYS.free) {
-    return ["08:00"];
+  if (plan.planKey === PLAN_KEYS.pro || plan.planKey === PLAN_KEYS.trial) {
+    return ["08:00", "10:00", "12:00", "14:00", "16:00", "18:00"].slice(
+      0,
+      plan.maxDigestHoursPerDay,
+    );
   }
-  return ["08:00", "18:00"];
+  return ["08:00", "18:00"].slice(0, plan.maxDigestHoursPerDay);
 };
 
-/** Keep unique sorted hours, capped by plan limit. */
+/** Keep unique sorted hours, capped by plan limit. maxSlots=0 → no daily digest hours. */
 export const normalizeDigestHours = (
   raw: unknown,
   maxSlots: number,
   fallbackPlanKey: PlanKey | string = PLAN_KEYS.basic,
 ): string[] => {
   const max = Math.max(0, Math.floor(maxSlots));
+  if (max === 0) return [];
   const allowed = new Set<string>(DIGEST_HOUR_OPTIONS);
   const fromRaw = Array.isArray(raw)
     ? raw
@@ -53,9 +57,9 @@ export const normalizeDigestHours = (
     : [];
   const unique = [...new Set(fromRaw)].sort();
   if (unique.length === 0) {
-    return defaultDigestHoursForPlanKey(fallbackPlanKey).slice(0, max || 1);
+    return defaultDigestHoursForPlanKey(fallbackPlanKey).slice(0, max);
   }
-  return unique.slice(0, max || 1);
+  return unique.slice(0, max);
 };
 
 /** Current Europe/Athens hour as HH:00. */

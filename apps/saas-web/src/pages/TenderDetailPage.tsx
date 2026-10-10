@@ -1039,6 +1039,11 @@ export const TenderDetailPage = () => {
                 {priceMemory.note ? (
                   <p className="text-muted-foreground">{priceMemory.note}</p>
                 ) : null}
+                {priceMemory.coverage?.descriptionEl ? (
+                  <p className="text-xs text-muted-foreground">
+                    {priceMemory.coverage.descriptionEl}
+                  </p>
+                ) : null}
                 {priceMemory.samples.length === 0 ? (
                   <p className="text-muted-foreground">
                     Δεν υπάρχουν ακόμη κατακυρώσεις για αυτό το ζεύγος.

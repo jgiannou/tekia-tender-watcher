@@ -42,6 +42,9 @@ describe("attention email delivery", () => {
       true,
     );
     expect(
+      shouldEmailAttentionType("OPPORTUNITY_DIGEST", "DIGEST", "free"),
+    ).toBe(false);
+    expect(
       shouldEmailAttentionType("RELATED_PROC_DISCOVERED", "DIGEST"),
     ).toBe(false);
     expect(
@@ -395,13 +398,14 @@ describe("attention email delivery", () => {
     expect(await deliverAttentionEmail(prisma, eventB.id)).toBe("skipped");
     expect(sendMail).not.toHaveBeenCalled();
 
-    const digestOnly = await flushRelatedActEmailDigests(prisma, {
-      modes: ["DIGEST"],
+    // Pro defaults to DIGEST_HOURS coalesce (optional IMMEDIATE via prefs).
+    const immediateOnly = await flushRelatedActEmailDigests(prisma, {
+      modes: ["IMMEDIATE"],
     });
-    expect(digestOnly.sent).toBe(0);
+    expect(immediateOnly.sent).toBe(0);
 
     const flush = await flushRelatedActEmailDigests(prisma, {
-      modes: ["IMMEDIATE"],
+      modes: ["DIGEST"],
     });
     expect(flush.sent).toBe(1);
     expect(sendMail).toHaveBeenCalledTimes(1);
