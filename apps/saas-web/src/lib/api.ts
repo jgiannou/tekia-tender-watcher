@@ -1686,11 +1686,22 @@ export const saasApi = {
     }>("/api/saas/sources/status", { organizationId }),
   searchTedNotices: (
     organizationId: string,
-    params?: { q?: string; cpv?: string; page?: number; limit?: number },
+    params?: {
+      q?: string;
+      cpv?: string;
+      authority?: string;
+      dateFrom?: string;
+      dateTo?: string;
+      page?: number;
+      limit?: number;
+    },
   ) => {
     const query = new URLSearchParams();
     if (params?.q) query.set("q", params.q);
     if (params?.cpv) query.set("cpv", params.cpv);
+    if (params?.authority) query.set("authority", params.authority);
+    if (params?.dateFrom) query.set("dateFrom", params.dateFrom);
+    if (params?.dateTo) query.set("dateTo", params.dateTo);
     if (params?.page != null) query.set("page", String(params.page));
     if (params?.limit != null) query.set("limit", String(params.limit));
     const suffix = query.toString() ? `?${query}` : "";

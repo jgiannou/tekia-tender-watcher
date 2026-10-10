@@ -67,8 +67,16 @@ describe("TED adapter", () => {
   });
 
   it("builds expert queries without inventing keywords", () => {
-    expect(buildTedExpertQuery({ keywords: ["φόρτιση"], cpv: ["31681500"] })).toBe(
-      "buyer-country=GRC AND notice-title~φόρτιση AND classification-cpv=31681500*",
+    expect(
+      buildTedExpertQuery({
+        keywords: ["φόρτιση"],
+        cpv: ["31681500"],
+        dateFrom: "2026-01-01",
+        dateTo: "2026-10-10",
+        buyerName: "Δήμος",
+      }),
+    ).toBe(
+      "buyer-country=GRC AND notice-title~φόρτιση AND classification-cpv=31681500* AND buyer-name~Δήμος AND publication-date>=20260101 AND publication-date<=20261010",
     );
   });
 

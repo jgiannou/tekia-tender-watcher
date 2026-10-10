@@ -105,10 +105,10 @@ const humanScanError = (error?: string | null) => {
   }
   if (error === "kimdis_not_configured") return "το ΚΗΜΔΗΣ δεν ήταν διαθέσιμο";
   if (error.includes("ted_disabled") || error.includes("TED_ENABLED")) {
-    return "το TED δεν είναι ενεργοποιημένο (TED_ENABLED=true)";
+    return "η πηγή TED δεν είναι διαθέσιμη αυτή τη στιγμή";
   }
   if (error.includes("diavgeia_disabled") || error.includes("DIAVGEIA_ENABLED")) {
-    return "η Διαύγεια δεν είναι ενεργοποιημένη (DIAVGEIA_ENABLED=true)";
+    return "η πηγή Διαύγεια δεν είναι διαθέσιμη αυτή τη στιγμή";
   }
   if (error.startsWith("ted_http_") || error === "ted_request_failed") {
     return "αποτυχία επικοινωνίας με το TED — δοκιμάστε ξανά";
@@ -945,9 +945,8 @@ export const SavedSearchesPage = () => {
                 <div className="space-y-2">
                   <Label>Πηγές δεδομένων</Label>
                   <p className="text-xs text-muted-foreground">
-                    Το TED και η Διαύγεια απαιτούν ενεργοποίηση στον server
-                    (`TED_ENABLED` / `DIAVGEIA_ENABLED`). Αν μια πηγή είναι
-                    απενεργοποιημένη, ο έλεγχος ολοκληρώνεται μερικά με σχετικό μήνυμα.
+                    Επιλέξτε ποιες δημόσιες πηγές θα ελέγχονται αυτόματα. Αν μια
+                    πηγή δεν είναι διαθέσιμη, ο έλεγχος συνεχίζει με τις υπόλοιπες.
                   </p>
                   <div className="flex flex-wrap gap-3">
                     {(

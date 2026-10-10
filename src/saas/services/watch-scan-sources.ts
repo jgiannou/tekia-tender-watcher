@@ -117,6 +117,9 @@ export const scanTedForWatchProfile = async (input: {
       keywords,
       cpv: cpvs,
       buyerCountry: "GRC",
+      buyerName: input.profile.authority,
+      dateFrom: input.profile.dateFrom,
+      dateTo: input.profile.dateTo,
       limit: 20,
       page,
     });
