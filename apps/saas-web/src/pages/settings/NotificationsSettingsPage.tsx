@@ -242,8 +242,9 @@ export const NotificationsSettingsPage = () => {
   }
   if (error) return <ErrorState description={error} onRetry={() => void load()} />;
 
-  const weekdayLabel =
-    WEEKDAY_EL[((prefs.weeklyDigestWeekday % 7) + 7) % 7] ?? "Δευτέρα";
+  const weekday =
+    typeof prefs.weeklyDigestWeekday === "number" ? prefs.weeklyDigestWeekday : 1;
+  const weekdayLabel = WEEKDAY_EL[((weekday % 7) + 7) % 7] ?? "Δευτέρα";
   const nextLabel = formatNextSend(nextWeeklyIso);
 
   return (

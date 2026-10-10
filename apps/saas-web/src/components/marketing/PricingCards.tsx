@@ -3,7 +3,6 @@ import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   MARKETING_PLANS,
-  TRIAL_DAYS,
   priceWithTaxHint,
   type MarketingPlanKey,
 } from "@/marketing/pricing";
@@ -94,15 +93,9 @@ export const PricingCards = ({ mode, className }: PricingCardsProps) => {
                       ? "/signup?next=/app/subscription"
                       : "/signup"
                 }
-                aria-label={"ctaEl" in plan ? plan.ctaEl : plan.name}
+                aria-label={plan.ctaEl}
               >
-                {"ctaEl" in plan
-                  ? plan.ctaEl
-                  : key === "free"
-                    ? "Ξεκινήστε δωρεάν"
-                    : key === "pro"
-                      ? `Δοκιμάστε το Pro για ${TRIAL_DAYS} ημέρες`
-                      : "Επιλέξτε Basic"}
+                {plan.ctaEl}
               </Link>
             </Button>
           </article>
