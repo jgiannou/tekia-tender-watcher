@@ -9,33 +9,36 @@ import {
   MARKETING_PLANS,
   TRIAL_DAYS,
   formatEur,
-  priceWithTaxHint,
 } from "@/marketing/pricing";
 
 const faqs = [
   {
     q: "Είναι το ARC Tenders επίσημη υπηρεσία του ΚΗΜΔΗΣ;",
-    a: "Όχι. Είναι ανεξάρτητη ιδιωτική υπηρεσία που χρησιμοποιεί δημόσια δεδομένα δημοσίων συμβάσεων.",
+    a: "Όχι. Το ARC Tenders είναι ανεξάρτητη ιδιωτική υπηρεσία που χρησιμοποιεί δημόσια διαθέσιμα δεδομένα για δημόσιες συμβάσεις.",
   },
   {
-    q: "Το ARC Tenders υποβάλλει προσφορές αυτόματα;",
-    a: "Όχι. Καταγράφετε ενέργειες που κάνατε εσείς στο επίσημο κανάλι· η πλατφόρμα δεν υποβάλλει προσφορές.",
+    q: "Μπορώ να υποβάλω προσφορά μέσα από το ARC Tenders;",
+    a: "Όχι. Υποβάλλετε την προσφορά σας με τον τρόπο που ορίζει η πρόσκληση ή η διακήρυξη. Στο ARC Tenders καταγράφετε την υποβολή και παρακολουθείτε τις εξελίξεις του διαγωνισμού.",
   },
   {
     q: "Μπορώ να ακυρώσω τη συνδρομή μου;",
-    a: "Ναι, μέσω της διαχείρισης χρέωσης. Η ακύρωση ισχύει στο τέλος της τρέχουσας περιόδου.",
+    a: "Ναι. Μπορείτε να ακυρώσετε τη συνδρομή σας από τη «Διαχείριση πληρωμών». Διατηρείτε την πρόσβαση στο πακέτο σας μέχρι τη λήξη της περιόδου που έχετε ήδη πληρώσει.",
   },
   {
-    q: "Υπάρχει δωρεάν πλάνο;",
-    a: "Ναι. Το Δωρεάν πλάνο δεν λήγει και δεν απαιτεί κάρτα. Η δοκιμή Pro είναι χωριστή ενέργεια 7 ημερών.",
+    q: "Υπάρχει δωρεάν πακέτο;",
+    a: "Ναι. Το δωρεάν πακέτο διατίθεται χωρίς χρονικό περιορισμό και χωρίς κάρτα. Αν θέλετε να γνωρίσετε τις επιπλέον δυνατότητες του Pro, μπορείτε να ενεργοποιήσετε δοκιμή 7 ημερών.",
   },
   {
-    q: "Τι συμβαίνει όταν λήξει η δοκιμή Pro;",
-    a: `Μετά ${TRIAL_DAYS} ημέρες επανέρχεστε στο Δωρεάν πλάνο, εκτός αν επιλέξετε Basic ή Pro. Η χειροκίνητη αναζήτηση ΚΗΜΔΗΣ παραμένει διαθέσιμη.`,
+    q: "Τι συμβαίνει όταν λήξει η δοκιμή του Pro;",
+    a: "Αν δεν επιλέξετε συνδρομή Basic ή Pro, συνεχίζετε με το δωρεάν πακέτο. Η αναζήτηση στο ΚΗΜΔΗΣ παραμένει διαθέσιμη.",
   },
   {
     q: "Μπορώ να προσθέσω περισσότερους χρήστες;",
-    a: `Basic: 1 χρήστης. Pro: ${MARKETING_PLANS.pro.includedSeats} περιλαμβάνονται + €${formatEur(MARKETING_PLANS.pro.extraSeatMonthlyEur!)} / χρήστη / μήνα (έως ${MARKETING_PLANS.pro.maxSeatsSelfService}).`,
+    a: `Το Basic περιλαμβάνει 1 χρήστη και το Pro ${MARKETING_PLANS.pro.includedSeats} χρήστες. Στο Pro μπορείτε να προσθέσετε επιπλέον χρήστες με ${formatEur(MARKETING_PLANS.pro.extraSeatMonthlyEur!)} € ανά χρήστη τον μήνα, έως ${MARKETING_PLANS.pro.maxSeatsSelfService} χρήστες συνολικά.`,
+  },
+  {
+    q: "Πότε λαμβάνω ειδοποιήσεις;",
+    a: "Η συχνότητα των email εξαρτάται από το πακέτο σας. Στο δωρεάν πακέτο λαμβάνετε ένα συγκεντρωτικό email την ημέρα. Στο Basic επιλέγετε τις ώρες αποστολής, ενώ στο Pro λαμβάνετε άμεσα email για νέες εξελίξεις.",
   },
 ] as const;
 
@@ -48,13 +51,12 @@ export const PricingPage = () => (
           Τιμές
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-          Δωρεάν, Basic και Pro — ίδια ταχύτητα εισαγωγής
+          Επιλέξτε το πακέτο που ταιριάζει στην επιχείρησή σας
         </h1>
         <p className="mt-3 text-sm text-muted-foreground sm:text-base">
-          Ξεκινήστε δωρεάν, χωρίς κάρτα. Basic από{" "}
-          {priceWithTaxHint(MARKETING_PLANS.basic.priceMonthlyEur)} · Pro από{" "}
-          {priceWithTaxHint(MARKETING_PLANS.pro.priceMonthlyEur)}. Η δοκιμή Pro είναι{" "}
-          {TRIAL_DAYS} ημέρες.
+          Ξεκινήστε δωρεάν, χωρίς κάρτα, ή δοκιμάστε το Pro για {TRIAL_DAYS} ημέρες. Το Basic
+          ξεκινά από {formatEur(MARKETING_PLANS.basic.priceMonthlyEur)} € και το Pro από{" "}
+          {formatEur(MARKETING_PLANS.pro.priceMonthlyEur)} € τον μήνα, πλέον ΦΠΑ.
         </p>
       </div>
 
@@ -62,12 +64,13 @@ export const PricingPage = () => (
         <PricingCards mode="full" />
       </div>
       <p className="mt-4 text-sm text-muted-foreground">
-        Επιπλέον χρήστες Pro: €{formatEur(MARKETING_PLANS.pro.extraSeatMonthlyEur!)} / χρήστη /
-        μήνα (έως {MARKETING_PLANS.pro.maxSeatsSelfService} self-service).
+        Στο Pro μπορείτε να προσθέσετε χρήστες από τις ρυθμίσεις σας, έως{" "}
+        {MARKETING_PLANS.pro.maxSeatsSelfService} συνολικά. Κάθε επιπλέον χρήστης κοστίζει{" "}
+        {formatEur(MARKETING_PLANS.pro.extraSeatMonthlyEur!)} € τον μήνα.
       </p>
 
       <section className="mt-14">
-        <h2 className="text-xl font-semibold tracking-tight">Σύγκριση πλάνων</h2>
+        <h2 className="text-xl font-semibold tracking-tight">Σύγκριση πακέτων</h2>
         <div className="mt-5 overflow-x-auto rounded-xl border border-border/70">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="bg-muted/40 text-muted-foreground">
@@ -110,8 +113,8 @@ export const PricingPage = () => (
       <section className="mt-14 rounded-2xl border border-border/70 bg-card/40 px-6 py-8 text-center">
         <h2 className="text-xl font-semibold">Ξεκινήστε δωρεάν — χωρίς κάρτα</h2>
         <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">
-          Δημιουργήστε λογαριασμό στο Free. Δοκιμή Pro {TRIAL_DAYS} ημερών ή Basic/Pro όταν
-          είστε έτοιμοι.
+          Ξεκινήστε με το δωρεάν πακέτο και επιλέξτε Basic ή Pro όταν χρειαστείτε περισσότερες
+          δυνατότητες. Διατίθεται δοκιμή Pro για {TRIAL_DAYS} ημέρες.
         </p>
         <Button asChild className="mt-5" size="lg">
           <Link to="/signup">Ξεκινήστε δωρεάν</Link>

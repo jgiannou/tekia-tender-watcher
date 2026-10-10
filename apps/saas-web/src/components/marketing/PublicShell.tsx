@@ -109,8 +109,8 @@ export const PublicShell = ({
         <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-8 text-xs text-muted-foreground sm:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <p className="max-w-xl">
-              Το ARC Tenders είναι ανεξάρτητη ιδιωτική υπηρεσία και δεν αποτελεί επίσημη
-              πλατφόρμα ή συνεργάτη του ΚΗΜΔΗΣ / ΕΣΗΔΗΣ.
+              Το ARC Tenders είναι ανεξάρτητη ιδιωτική υπηρεσία. Δεν αποτελεί επίσημη
+              πλατφόρμα του ΚΗΜΔΗΣ ή του ΕΣΗΔΗΣ και δεν συνεργάζεται επίσημα με αυτά.
             </p>
             <nav className="flex flex-wrap gap-3" aria-label="Νομικοί σύνδεσμοι">
               <Link className="hover:text-foreground" to="/legal/terms">
@@ -147,14 +147,14 @@ export const PublicShell = ({
                 . Όλα τα δικαιώματα διατηρούνται.
               </p>
               <p>
-                {LEGAL_CONTROLLER.productName} · προϊόν της{" "}
+                {LEGAL_CONTROLLER.productName} · Μια υπηρεσία της{" "}
                 <a
                   href={LEGAL_CONTROLLER.website}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline-offset-4 hover:underline hover:text-foreground"
                 >
-                  tekia.gr
+                  TEKIA
                 </a>
               </p>
             </div>

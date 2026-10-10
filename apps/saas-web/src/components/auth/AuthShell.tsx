@@ -59,14 +59,14 @@ export const AuthShell = ({ title, description, children, footer }: AuthShellPro
             to="/pricing"
             className="mt-1 inline-block text-sm font-medium text-primary underline-offset-4 hover:underline"
           >
-            Δείτε τα πλάνα
+            Δείτε τα πακέτα
           </Link>
         </div>
 
         <div className="mt-10 space-y-2 text-xs leading-relaxed text-muted-foreground lg:mt-0">
           <p>
-            Το ARC Tenders είναι ανεξάρτητη ιδιωτική υπηρεσία και δεν αποτελεί επίσημη
-            πλατφόρμα ή συνεργάτη του ΚΗΜΔΗΣ / ΕΣΗΔΗΣ.
+            Το ARC Tenders είναι ανεξάρτητη ιδιωτική υπηρεσία. Δεν αποτελεί επίσημη
+            πλατφόρμα του ΚΗΜΔΗΣ ή του ΕΣΗΔΗΣ και δεν συνεργάζεται επίσημα με αυτά.
           </p>
           <p>Πηγή δεδομένων δημοσίων συμβάσεων: ΚΗΜΔΗΣ / ΟΠΣ ΕΣΗΔΗΣ — CC BY 4.0</p>
           <p>

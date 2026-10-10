@@ -82,8 +82,8 @@ export const PricingCards = ({ mode, className }: PricingCardsProps) => {
                   : mode === "teaser"
                     ? "Ξεκινήστε δωρεάν"
                     : key === "pro"
-                      ? `Εγγραφή · Δοκίμασε Pro ${TRIAL_DAYS} ημερών`
-                      : "Εγγραφή · Basic"}
+                      ? `Δοκιμάστε το Pro για ${TRIAL_DAYS} ημέρες`
+                      : "Επιλέξτε Basic"}
               </Link>
             </Button>
           </article>
