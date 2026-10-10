@@ -1,5 +1,9 @@
 import type { PrismaClient } from "@prisma/client";
 import { getLogStats } from "./logger.js";
+import {
+  collectPipelineMetrics,
+  pipelineHealthSummary,
+} from "./pipeline-metrics.js";
 
 const PAID_PLAN_KEYS = ["basic", "pro"] as const;
 
@@ -56,6 +60,13 @@ export const collectOpsStats = async (prisma: PrismaClient) => {
           where: { organizationId: { in: [...payingOrgIds] } },
         });
 
+  let pipeline: ReturnType<typeof pipelineHealthSummary> | null = null;
+  try {
+    pipeline = pipelineHealthSummary(await collectPipelineMetrics(prisma));
+  } catch {
+    pipeline = null;
+  }
+
   return {
     generatedAt: new Date().toISOString(),
     users,
@@ -70,6 +81,7 @@ export const collectOpsStats = async (prisma: PrismaClient) => {
     payingOrgs: payingOrgIds.size,
     payingUsers,
     logs: getLogStats(),
+    pipeline,
   };
 };
 

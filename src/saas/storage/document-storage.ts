@@ -23,8 +23,15 @@ export type DocumentStorageProvider = {
 const sanitizeFilename = (name: string): string =>
   name.replace(/[^a-zA-Z0-9._\-()\s\u0370-\u03FF]/g, "_").slice(0, 120) || "file";
 
+/** Local vault root. Docker/Coolify: SAAS_STORAGE_DIR=/app/storage (mounted volume). */
+export const resolveSaasStorageRoot = (): string => {
+  const fromEnv = String(process.env.SAAS_STORAGE_DIR || "").trim();
+  if (fromEnv) return path.resolve(fromEnv);
+  return path.resolve(process.cwd(), "data/saas-vault");
+};
+
 export const createLocalDocumentStorage = (
-  rootDir = path.resolve(process.cwd(), "data/saas-vault"),
+  rootDir = resolveSaasStorageRoot(),
 ): DocumentStorageProvider => {
   const resolveKeyPath = (storageKey: string): string => {
     const full = path.resolve(rootDir, storageKey);

@@ -1072,7 +1072,7 @@ ${listHtml}
     };
   }
 
-  const subject = `ARC Tenders · Deadline radar · ${items.length} προθεσμίες`;
+  const subject = `ARC Tenders · Επερχόμενες προθεσμίες · ${items.length}`;
   const bodyHtml = `
 <p style="margin:0 0 16px;font-size:14px;line-height:1.55;color:${BRAND.ink};">
   ${urgent > 0 ? `${urgent} προθεσμία(ες) εντός 48 ωρών. ` : ""}
@@ -1088,11 +1088,77 @@ ${listHtml}
       locale,
       appUrl,
       preheader: subject,
-      eyebrow: "Deadline radar",
+      eyebrow: "Επερχόμενες προθεσμίες",
       heading: "Επερχόμενες προθεσμίες",
       bodyHtml,
       companyName: company,
     }),
     text: `${subject}\n${appUrl}/app`,
+  };
+};
+
+export type WeeklyDigestEmailItem = {
+  title: string;
+  authority: string | null;
+  kind: string;
+  deadline: string | null;
+  href: string;
+};
+
+/** Free plan — at most one weekly product summary when there is new content. */
+export const weeklyFreeDigestEmailCopy = (input: {
+  appUrl: string;
+  companyName?: string | null;
+  opportunities: WeeklyDigestEmailItem[];
+  developments: WeeklyDigestEmailItem[];
+  deadlines: WeeklyDigestEmailItem[];
+}): { subject: string; html: string; text: string } => {
+  const appUrl = input.appUrl.replace(/\/$/, "");
+  const subject = "ARC Tenders — Η εβδομαδιαία ενημέρωσή σας";
+  const preheader = "Νέες ευκαιρίες και εξελίξεις για την εταιρεία σας.";
+
+  const section = (heading: string, items: WeeklyDigestEmailItem[]): string => {
+    if (!items.length) return "";
+    const lis = items
+      .slice(0, 20)
+      .map((item) => {
+        const deadline = item.deadline
+          ? formatMatchDate(item.deadline, "el")
+          : null;
+        return `<li style="margin:0 0 12px;">
+  <a href="${escapeHtml(item.href)}" style="color:${BRAND.teal};font-weight:700;text-decoration:none;">${escapeHtml(item.title)}</a>
+  ${item.authority ? `<br/><span style="font-size:12px;color:${BRAND.muted};">${escapeHtml(item.authority)}</span>` : ""}
+  ${deadline ? `<br/><span style="font-size:12px;color:${BRAND.muted};">Προθεσμία: ${escapeHtml(deadline)}</span>` : ""}
+</li>`;
+      })
+      .join("");
+    return `<h2 style="margin:20px 0 10px;font-size:16px;color:${BRAND.ink};">${escapeHtml(heading)}</h2>
+<ul style="margin:0 0 8px;padding-left:18px;font-size:14px;line-height:1.5;color:${BRAND.ink};">${lis}</ul>`;
+  };
+
+  const bodyHtml = `
+<p style="margin:0 0 16px;font-size:14px;line-height:1.55;color:${BRAND.ink};">
+  Συγκεντρώσαμε τις νέες ευκαιρίες που ταιριάζουν στις αναζητήσεις σας και τις εξελίξεις στους διαγωνισμούς που παρακολουθείτε.
+</p>
+${section("Νέες ευκαιρίες", input.opportunities)}
+${section("Εξελίξεις στους διαγωνισμούς σας", input.developments)}
+${section("Επερχόμενες προθεσμίες", input.deadlines)}
+<p style="margin:20px 0 10px;">${ctaButton(`${appUrl}/app`, "Δείτε τις ενημερώσεις σας")}</p>
+<p style="margin:16px 0 0;font-size:12px;color:${BRAND.muted};">
+  Λαμβάνετε αυτή τη σύνοψη επειδή έχετε ενεργοποιήσει την εβδομαδιαία ενημέρωση του ARC Tenders.
+</p>`;
+
+  return {
+    subject,
+    html: wrapEmailLayout({
+      locale: "el",
+      appUrl,
+      preheader,
+      eyebrow: "Εβδομαδιαία σύνοψη",
+      heading: "Τα νέα της εβδομάδας",
+      bodyHtml,
+      companyName: input.companyName,
+    }),
+    text: `${subject}\n${preheader}\n${appUrl}/app`,
   };
 };

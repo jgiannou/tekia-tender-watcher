@@ -19,6 +19,19 @@ export type PriceMemory = {
   samples: PriceMemorySample[];
   thin: boolean;
   note: string | null;
+  /** Honest coverage of what this surface includes today. */
+  coverage: {
+    source: "kimdis_awrd";
+    complete: false;
+    descriptionEl: string;
+  };
+};
+
+const COVERAGE = {
+  source: "kimdis_awrd" as const,
+  complete: false as const,
+  descriptionEl:
+    "Δείγματα από κατακυρώσεις ΚΗΜΔΗΣ (AWRD) με κοινό CPV/περιοχή στην τοπική βάση. Δεν είναι πλήρες δημόσιο ιστορικό όλων των αναδόχων ή πηγών (TED/Διαύγεια).",
 };
 
 const THIN_BELOW = 3;
@@ -50,6 +63,7 @@ export const buildPriceMemory = (input: {
     samples: input.samples,
     thin,
     note: thin ? "λίγες κατακυρώσεις" : null,
+    coverage: COVERAGE,
   };
 };
 

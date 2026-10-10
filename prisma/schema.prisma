@@ -179,6 +179,7 @@ model Organization {
   outreachLedgers  OutreachLedger[]
   attentionEvents  OrganizationAttentionEvent[]
   notificationDeliveries NotificationDelivery[]
+  saasJobs           SaasJob[]
   vaultFolders       VaultFolder[]
   vaultDocuments     VaultDocument[]
   vaultDocumentVersions VaultDocumentVersion[]
@@ -922,6 +923,42 @@ model PollRun {
 
   @@index([startedAt])
   @@map("poll_runs")
+}
+
+enum SaasJobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+/// Durable product jobs (email outbox, digests). Auth/security mail stays direct SMTP.
+model SaasJob {
+  id             String        @id @default(cuid())
+  organizationId String?
+  type           String
+  /// Idempotent reservation key (e.g. WEEKLY_DIGEST:org:cycle).
+  deliveryKey    String        @unique
+  payload        Json?
+  status         SaasJobStatus @default(PENDING)
+  priority       Int           @default(100)
+  availableAt    DateTime      @default(now())
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  attempts       Int           @default(0)
+  maxAttempts    Int           @default(8)
+  lastError      String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  completedAt    DateTime?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt, priority])
+  @@index([organizationId, type, status])
+  @@index([leaseExpiresAt])
+  @@map("saas_jobs")
 }
 
 /// First-party product analytics for Ops Desk. No FK so events survive deletes.

@@ -126,14 +126,36 @@ const dateWindow = (days: number): { dateFrom: string; dateTo: string } => {
   return { dateFrom: formatDateOnly(from), dateTo: formatDateOnly(to) };
 };
 
+export type KimdisFetchCheckpoint = {
+  recordType: KimdisSearchItem["recordType"];
+  dateFrom: string;
+  dateTo: string;
+  lastPageFetched: number;
+  reachedLast: boolean;
+  fetchedCount: number;
+};
+
+export type FetchRecentActsResult = {
+  items: KimdisSearchItem[];
+  checkpoints: KimdisFetchCheckpoint[];
+  /** True when any source stopped early because the page budget was exhausted. */
+  pageBudgetExhausted: boolean;
+};
+
+/**
+ * Fetch recent KIMDIS acts with per-source page checkpoints.
+ * `pages` is a bounded budget — never present pages:N as full history coverage.
+ */
 export const fetchRecentActs = async (
   kimdis: KimdisClient,
   input: {
     days: number;
     pages: number;
     recordTypes?: Array<KimdisSearchItem["recordType"]>;
+    /** Resume from page index (inclusive) per record type. */
+    startPageByType?: Partial<Record<KimdisSearchItem["recordType"], number>>;
   },
-): Promise<KimdisSearchItem[]> => {
+): Promise<FetchRecentActsResult> => {
   const body = dateWindow(input.days);
   const allSources: Array<{
     path: string;
@@ -149,27 +171,71 @@ export const fetchRecentActs = async (
       !input.recordTypes?.length || input.recordTypes.includes(source.recordType),
   );
   const items: KimdisSearchItem[] = [];
+  const checkpoints: KimdisFetchCheckpoint[] = [];
+  let pageBudgetExhausted = false;
+
   for (const source of sources) {
     const requestBody =
       source.recordType === "REQ"
         ? { ...body, isInitial: true, isApproved: false, isApproval: false }
         : body;
-    for (let page = 0; page < input.pages; page += 1) {
+    const startPage = Math.max(0, input.startPageByType?.[source.recordType] ?? 0);
+    let lastPageFetched = startPage - 1;
+    let reachedLast = false;
+    let fetchedCount = 0;
+
+    for (let offset = 0; offset < input.pages; offset += 1) {
+      const page = startPage + offset;
       try {
         const result = await kimdis.searchOpenDataPage<Loose>(
           source.path,
           requestBody,
           page,
         );
+        lastPageFetched = page;
         for (const row of result.content ?? []) {
           const mapped = mapLooseKimdisAct(row, source.recordType, kimdis.publicUrl);
-          if (mapped) items.push(mapped);
+          if (mapped) {
+            items.push(mapped);
+            fetchedCount += 1;
+          }
         }
-        if (result.last || !(result.content?.length)) break;
+        if (result.last || !(result.content?.length)) {
+          reachedLast = true;
+          break;
+        }
+        if (offset === input.pages - 1) {
+          pageBudgetExhausted = true;
+        }
       } catch {
         break;
       }
     }
+
+    checkpoints.push({
+      recordType: source.recordType,
+      dateFrom: body.dateFrom,
+      dateTo: body.dateTo,
+      lastPageFetched: Math.max(0, lastPageFetched),
+      reachedLast,
+      fetchedCount,
+    });
   }
-  return items;
+
+  return { items, checkpoints, pageBudgetExhausted };
+};
+
+/** Deduplicate by ADAM + recordType (overlap windows / catch-up). */
+export const dedupeKimdisItems = (
+  items: KimdisSearchItem[],
+): KimdisSearchItem[] => {
+  const seen = new Set<string>();
+  const out: KimdisSearchItem[] = [];
+  for (const item of items) {
+    const key = `${item.recordType}:${item.adam}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
 };

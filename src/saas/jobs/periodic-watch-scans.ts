@@ -92,6 +92,7 @@ export const runPeriodicWatchProfileScans = async (
     const prefs = normalizeNotifications(
       settings?.notifications,
       access.planKey,
+      organizationId,
     );
     if (
       !orgIsDueAtHour({
@@ -138,7 +139,12 @@ export const listOrganizationsDueAtHour = async (
   const due: string[] = [];
   for (const row of settings) {
     const planKey = row.organization.subscription?.planKey ?? "trial";
-    const prefs = normalizeNotifications(row.notifications, planKey);
+    const prefs = normalizeNotifications(
+      row.notifications,
+      planKey,
+      row.organizationId,
+    );
+    if (prefs.digestHours.length === 0) continue;
     if (orgIsDueAtHour({ digestHours: prefs.digestHours, hourKey: dueHour })) {
       due.push(row.organizationId);
     }

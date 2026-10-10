@@ -9,7 +9,10 @@ import {
   uploadDocument,
   uploadNewVersion,
 } from "../src/saas/services/vault.js";
-import { createLocalDocumentStorage } from "../src/saas/storage/document-storage.js";
+import {
+  createLocalDocumentStorage,
+  resolveSaasStorageRoot,
+} from "../src/saas/storage/document-storage.js";
 import {
   createSaasTestApp,
   getSaasTestPrisma,
@@ -25,6 +28,29 @@ import { mkdtempSync, rmSync } from "node:fs";
 
 const prisma = getSaasTestPrisma();
 let tempStorageDir = "";
+
+describe("resolveSaasStorageRoot", () => {
+  const prev = process.env.SAAS_STORAGE_DIR;
+
+  afterEach(() => {
+    if (prev === undefined) delete process.env.SAAS_STORAGE_DIR;
+    else process.env.SAAS_STORAGE_DIR = prev;
+  });
+
+  it("uses SAAS_STORAGE_DIR when set", () => {
+    process.env.SAAS_STORAGE_DIR = "/tmp/arc-saas-storage-test";
+    expect(resolveSaasStorageRoot()).toBe(
+      path.resolve("/tmp/arc-saas-storage-test"),
+    );
+  });
+
+  it("defaults to data/saas-vault under cwd", () => {
+    delete process.env.SAAS_STORAGE_DIR;
+    expect(resolveSaasStorageRoot()).toBe(
+      path.resolve(process.cwd(), "data/saas-vault"),
+    );
+  });
+});
 
 describe("SaaS company vault", () => {
   beforeEach(async () => {
@@ -115,6 +141,24 @@ describe("SaaS company vault", () => {
       method: "GET",
     });
     expect(crossList.status).toBe(403);
+  });
+
+  it("keeps bytes readable after storage provider restart on the same root", async () => {
+    const root = tempStorageDir;
+    const first = createLocalDocumentStorage(root);
+    const stored = await first.putObject({
+      organizationId: "org-persist",
+      documentId: "doc-persist",
+      version: 1,
+      originalFilename: "keep.pdf",
+      bytes: Buffer.from("%PDF-1.4 persist-me"),
+    });
+    expect(stored.size).toBeGreaterThan(0);
+
+    // Simulate process restart: new provider instance, same mounted root.
+    const second = createLocalDocumentStorage(root);
+    const roundTrip = await second.getObject(stored.storageKey);
+    expect(roundTrip.toString("utf8")).toBe("%PDF-1.4 persist-me");
   });
 
   it("rejects unsupported upload types and persists PDF metadata", async () => {

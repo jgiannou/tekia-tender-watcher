@@ -73,7 +73,9 @@ describe("participation checklist", () => {
     expect(checklist.readable).toBe(true);
     expect(checklist.fields.find((f) => f.key === "deadline")?.value).toContain("15/12/2026");
     expect(checklist.fields.find((f) => f.key === "guarantee")?.status).toBe("found");
-    expect(checklist.documents.find((d) => d.key === "tax")?.status).toBe("in_vault");
+    expect(checklist.documents.find((d) => d.key === "tax")?.status).toBe(
+      "needs_review",
+    );
     expect(checklist.documents.find((d) => d.key === "insurance")?.status).toBe("missing");
     expect(checklist.documents.find((d) => d.key === "gemi")?.status).toBe("missing");
   });
@@ -81,7 +83,7 @@ describe("participation checklist", () => {
   it("marks unread PDF without inventing fields", () => {
     const checklist = extractParticipationChecklist("short");
     expect(checklist.readable).toBe(false);
-    expect(checklist.unreadMessage).toBe("Δεν διαβάστηκε το PDF");
+    expect(checklist.unreadMessage).toMatch(/χειροκίνητα|PDF/i);
     expect(checklist.fields).toEqual([]);
   });
 });

@@ -4,8 +4,11 @@
  * Pro extra seats are a recurring add-on, not a fourth plan.
  *
  * Discovery speed is the shared KIMDIS ingest (same for every plan).
- * periodicScansPerDay caps digest email hours / legacy per-org waves.
- * Free: 1 digest/day. Basic: DIGEST at chosen hours. Pro: IMMEDIATE + Deadline Radar.
+ * Email cadence is explicit (WEEKLY / DIGEST_HOURS) — do not overload
+ * periodicScansPerDay as a weekly limit. That field is a legacy alias of
+ * maxDigestHoursPerDay for older clients.
+ *
+ * No AI capabilities in any plan.
  */
 
 export const PLAN_KEYS = {
@@ -21,7 +24,10 @@ export type PublicPlanKey =
   | typeof PLAN_KEYS.pro;
 export type PlanKey = (typeof PLAN_KEYS)[keyof typeof PLAN_KEYS] | string;
 
+/** Legacy transport hint; prefer emailCadence + immediate* flags. */
 export type EmailMode = "DIGEST" | "IMMEDIATE";
+
+export type EmailCadence = "WEEKLY" | "DIGEST_HOURS";
 
 export type PlanEntitlements = {
   plan: "TRIAL" | "FREE" | "BASIC" | "PRO";
@@ -44,8 +50,22 @@ export type PlanEntitlements = {
   maxActiveWatchProfiles: number;
   maxActiveFollowedTenders: number;
   storageBytes: number;
+  /**
+   * Max Europe/Athens digest hour slots per day.
+   * Free weekly cadence uses 0 (not "1 email/day").
+   */
+  maxDigestHoursPerDay: number;
+  /**
+   * @deprecated Legacy alias of maxDigestHoursPerDay for older API clients.
+   * Free is 0 — never interpret as weekly email quota.
+   */
   periodicScansPerDay: number;
   manualProfileScansPerDay: number;
+  emailCadence: EmailCadence;
+  /** Optional immediate email for developments on followed tenders. */
+  immediateFollowedDevelopments: boolean;
+  /** Optional immediate email for high-match new opportunities (Pro). */
+  immediateNewOpportunity: boolean;
   opportunityMatching: boolean;
   matchScore: boolean;
   matchReasons: boolean;
@@ -58,15 +78,24 @@ export type PlanEntitlements = {
   tenderWorkspace: boolean;
   documentVersioning: boolean;
   inAppNotifications: boolean;
+  /** Legacy; derived from cadence for older clients. */
   emailMode: EmailMode;
   /** Pro-only: approaching-deadline radar emails. */
   deadlineRadar: boolean;
   advancedWatchProfileFilters: boolean;
   prioritySupport: boolean;
   participationChecklist: boolean;
+  /** Full expiring-contract list (Basic/Pro). Free gets count-only via UI. */
   expiringContractList: boolean;
+  /** Free: count only in UI; Basic/Pro: documented award history. */
+  awardHistory: boolean;
   priceMemory: boolean;
   positioningEl: string;
+  /** Greek marketing / subscription bullets (single source of truth). */
+  featuresEl: string[];
+  footnoteEl: string | null;
+  ctaEl: string;
+  includesLabelEl: string | null;
 };
 
 /** Operational safeguard for Pro self-service seat purchases. */
@@ -74,25 +103,30 @@ export const PRO_SELF_SERVICE_SEAT_CAP = 20;
 export const CONTACT_FOR_MORE_SEATS_EL =
   "Χρειάζεστε περισσότερους από 20 χρήστες; Επικοινωνήστε μαζί μας.";
 
+export const PRICING_VAT_FOOTNOTE_EL = "Οι τιμές δεν περιλαμβάνουν ΦΠΑ.";
+
 export const BASIC_PLAN: PlanEntitlements = {
   plan: "BASIC",
   planKey: PLAN_KEYS.basic,
   label: "Basic",
   labelEl: "Basic",
   positioning:
-    "For professionals and small businesses that want to discover and monitor selected public procurement opportunities.",
+    "For professionals and small businesses that want to organize participation in public tenders.",
   priceMonthlyEur: 4.99,
   priceYearlyEur: 49,
   includedSeats: 1,
   maxSeatsSelfService: 1,
   extraSeatPriceMonthlyEur: null,
   extraSeatPriceYearlyEur: null,
-  maxActiveWatchProfiles: 3,
-  maxActiveFollowedTenders: 20,
+  maxActiveWatchProfiles: 5,
+  maxActiveFollowedTenders: 30,
   storageBytes: 250_000_000,
-  // Below Pro cadence — leave upgrade headroom (Pro ~6/day).
+  maxDigestHoursPerDay: 2,
   periodicScansPerDay: 2,
   manualProfileScansPerDay: 10,
+  emailCadence: "DIGEST_HOURS",
+  immediateFollowedDevelopments: true,
+  immediateNewOpportunity: false,
   opportunityMatching: true,
   matchScore: true,
   matchReasons: true,
@@ -111,9 +145,25 @@ export const BASIC_PLAN: PlanEntitlements = {
   prioritySupport: false,
   participationChecklist: true,
   expiringContractList: true,
+  awardHistory: true,
   priceMemory: true,
   positioningEl:
-    "Για επαγγελματίες και μικρές επιχειρήσεις που αναζητούν δημόσιους διαγωνισμούς και οργανώνουν τη συμμετοχή τους.",
+    "Για επαγγελματίες και μικρές επιχειρήσεις που θέλουν να οργανώνουν τη συμμετοχή τους σε δημόσιους διαγωνισμούς.",
+  featuresEl: [
+    "1 χρήστης",
+    "Έως 5 ενεργές αποθηκευμένες αναζητήσεις",
+    "Έως 30 διαγωνισμοί σε παρακολούθηση",
+    "250 MB χώρου για εταιρικά έγγραφα",
+    "Συγκεντρωτικά email έως 2 φορές την ημέρα",
+    "Επιλογή άμεσων email για σημαντικές εξελίξεις στους διαγωνισμούς που παρακολουθείτε",
+    "Λίστα δικαιολογητικών και έλεγχος με τα έγγραφά σας",
+    "Οργάνωση προετοιμασίας και καταγραφή υποβολής προσφοράς",
+    "Καταγραφή εκδήλωσης ενδιαφέροντος προς τον φορέα",
+    "Συμβάσεις που λήγουν και ιστορικό κατακυρώσεων",
+  ],
+  footnoteEl: PRICING_VAT_FOOTNOTE_EL,
+  ctaEl: "Επιλέξτε Basic",
+  includesLabelEl: null,
 };
 
 export const FREE_PLAN: PlanEntitlements = {
@@ -123,16 +173,20 @@ export const FREE_PLAN: PlanEntitlements = {
   label: "Free",
   labelEl: "Δωρεάν",
   positioning:
-    "Discover and follow a few Greek public tenders, with the same ingest speed as paid plans.",
+    "Find opportunities for your business and follow up to 5 tenders for free.",
   positioningEl:
-    "Ξεκινήστε την αναζήτηση και παρακολουθήστε έως 5 διαγωνισμούς δωρεάν.",
+    "Βρείτε ευκαιρίες για την επιχείρησή σας και παρακολουθήστε έως 5 διαγωνισμούς δωρεάν.",
   priceMonthlyEur: 0,
   priceYearlyEur: 0,
   maxActiveWatchProfiles: 1,
   maxActiveFollowedTenders: 5,
   storageBytes: 0,
-  periodicScansPerDay: 1,
+  maxDigestHoursPerDay: 0,
+  periodicScansPerDay: 0,
   manualProfileScansPerDay: 5,
+  emailCadence: "WEEKLY",
+  immediateFollowedDevelopments: false,
+  immediateNewOpportunity: false,
   outreachWorkflow: false,
   submissionWorkflow: false,
   companyVault: false,
@@ -140,21 +194,32 @@ export const FREE_PLAN: PlanEntitlements = {
   documentVersioning: false,
   participationChecklist: false,
   expiringContractList: false,
+  awardHistory: false,
   priceMemory: false,
   emailMode: "DIGEST",
+  featuresEl: [
+    "1 χρήστης",
+    "1 ενεργή αποθηκευμένη αναζήτηση",
+    "Έως 5 διαγωνισμοί σε παρακολούθηση",
+    "Αναζήτηση στο ΚΗΜΔΗΣ με λέξεις-κλειδιά, CPV και περιοχή",
+    "Βαθμός συνάφειας με εξήγηση των αποτελεσμάτων",
+    "Ειδοποιήσεις μέσα στην εφαρμογή και προαιρετικές ειδοποιήσεις push",
+    "Έως 1 εβδομαδιαία σύνοψη email, όταν υπάρχουν νέα",
+    "Προβολή πορείας διαγωνισμού και υπενθυμίσεις προθεσμιών στην εφαρμογή",
+  ],
+  footnoteEl:
+    "Χωρίς κάρτα και χωρίς χρονικό περιορισμό. Η εβδομαδιαία σύνοψη αποστέλλεται σε έναν παραλήπτη ανά εταιρεία.",
+  ctaEl: "Ξεκινήστε δωρεάν",
+  includesLabelEl: null,
 };
 
-/**
- * Provisional Pro matrix — seats/pricing locked; feature numbers pending
- * full Pro entitlement block from product.
- */
 export const PRO_PLAN: PlanEntitlements = {
   plan: "PRO",
   planKey: PLAN_KEYS.pro,
   label: "Pro",
   labelEl: "Pro",
   positioning:
-    "For businesses that systematically monitor public procurement opportunities and need more automation, coverage and team access.",
+    "For businesses that monitor more tenders and collaborate as a team.",
   priceMonthlyEur: 9.99,
   priceYearlyEur: 99,
   includedSeats: 3,
@@ -164,8 +229,12 @@ export const PRO_PLAN: PlanEntitlements = {
   maxActiveWatchProfiles: 15,
   maxActiveFollowedTenders: 100,
   storageBytes: 2_000_000_000,
+  maxDigestHoursPerDay: 6,
   periodicScansPerDay: 6,
   manualProfileScansPerDay: 20,
+  emailCadence: "DIGEST_HOURS",
+  immediateFollowedDevelopments: true,
+  immediateNewOpportunity: true,
   opportunityMatching: true,
   matchScore: true,
   matchReasons: true,
@@ -178,15 +247,30 @@ export const PRO_PLAN: PlanEntitlements = {
   tenderWorkspace: true,
   documentVersioning: true,
   inAppNotifications: true,
-  emailMode: "IMMEDIATE",
+  emailMode: "DIGEST",
   deadlineRadar: true,
   advancedWatchProfileFilters: true,
   prioritySupport: true,
   participationChecklist: true,
   expiringContractList: true,
+  awardHistory: true,
   priceMemory: true,
   positioningEl:
     "Για επιχειρήσεις που παρακολουθούν περισσότερους διαγωνισμούς και συνεργάζονται ως ομάδα.",
+  featuresEl: [
+    "3 χρήστες",
+    "Έως 15 ενεργές αποθηκευμένες αναζητήσεις",
+    "Έως 100 διαγωνισμοί σε παρακολούθηση",
+    "2 GB χώρου για εταιρικά έγγραφα",
+    "Συγκεντρωτικά email έως 6 φορές την ημέρα",
+    "Επιλογή άμεσων email και για νέες ευκαιρίες υψηλής συνάφειας",
+    "Συγκεντρωτική προβολή επερχόμενων προθεσμιών",
+    "Προηγμένα φίλτρα αναζήτησης",
+    "Εξυπηρέτηση κατά προτεραιότητα",
+  ],
+  footnoteEl: PRICING_VAT_FOOTNOTE_EL,
+  ctaEl: "Δοκιμάστε το Pro για 7 ημέρες",
+  includesLabelEl: "Όλες οι δυνατότητες του Basic, με:",
 };
 
 /** 7-day Pro preview. Does not replace the non-expiring Free plan. */
@@ -197,12 +281,16 @@ export const TRIAL_PLAN: PlanEntitlements = {
   label: "Trial",
   labelEl: "Δοκιμή Pro",
   positioning: "7-day Pro preview. Does not replace the free plan.",
-  positioningEl: "7 ημέρες Pro. Δεν αντικαθιστά το δωρεάν πλάνο.",
+  positioningEl: "7 ημέρες Pro. Δεν αντικαθιστά το δωρεάν πακέτο.",
   priceMonthlyEur: null,
   priceYearlyEur: null,
+  ctaEl: "Δοκιμάστε το Pro για 7 ημέρες",
 };
 
 export const TRIAL_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** High-match threshold for Pro optional immediate new-opportunity email. */
+export const HIGH_MATCH_SCORE_THRESHOLD = 70;
 
 const LEGACY_PLAN_KEY_MAP: Record<string, PlanKey> = {
   starter_499: PLAN_KEYS.basic,
@@ -239,7 +327,12 @@ export const publicPlans = (): PlanEntitlements[] => [
 export const seatLimitForSubscription = (input: {
   planKey: string;
   extraSeats?: number | null;
-}): { includedSeats: number; extraSeats: number; seatLimit: number; selfServiceCap: number } => {
+}): {
+  includedSeats: number;
+  extraSeats: number;
+  seatLimit: number;
+  selfServiceCap: number;
+} => {
   const plan = entitlementsForPlanKey(input.planKey);
   const extraSeats = Math.max(0, input.extraSeats ?? 0);
   const seatLimit = Math.min(

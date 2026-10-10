@@ -121,7 +121,7 @@ export default function NotificationSettingsScreen() {
     { key: "newOpportunity", label: "Νέες ευκαιρίες" },
     { key: "relatedActOnFollowed", label: "Σχετικές πράξεις" },
     { key: "postSubmissionUpdate", label: "Ενημερώσεις μετά την υποβολή" },
-    { key: "deadlineRadar", label: "Radar προθεσμιών (Pro)" },
+    { key: "deadlineRadar", label: "Επερχόμενες προθεσμίες (Pro)" },
   ];
 
   return (
@@ -129,7 +129,8 @@ export default function NotificationSettingsScreen() {
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
         <Title>Ειδοποιήσεις</Title>
         <Subtitle>
-          Push στο κινητό (ήχος + οθόνη κλειδώματος) και email προτιμήσεις.
+          Push στο κινητό και email. Στο δωρεάν πακέτο: έως μία εβδομαδιαία σύνοψη όταν
+          υπάρχουν νέα — οι ενημερώσεις εμφανίζονται στην εφαρμογή χωρίς καθυστέρηση.
         </Subtitle>
 
         <View
@@ -186,6 +187,30 @@ export default function NotificationSettingsScreen() {
             value={prefs.emailEnabled}
             onValueChange={(value) =>
               setPrefs((prev) => (prev ? { ...prev, emailEnabled: value } : prev))
+            }
+            trackColor={{ true: colors.primary }}
+          />
+        </View>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingVertical: 8,
+          }}
+        >
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <Text style={{ color: colors.text }}>Λήψη εβδομαδιαίας σύνοψης</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 4 }}>
+              Ισχύει για το δωρεάν πακέτο. Αν δεν υπάρχουν νέα, δεν στέλνουμε email.
+            </Text>
+          </View>
+          <Switch
+            value={prefs.weeklyEmailEnabled !== false}
+            onValueChange={(value) =>
+              setPrefs((prev) =>
+                prev ? { ...prev, weeklyEmailEnabled: value } : prev,
+              )
             }
             trackColor={{ true: colors.primary }}
           />

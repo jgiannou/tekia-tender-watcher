@@ -37,7 +37,8 @@ WORKDIR /app
 ENV NODE_ENV=production \
     PORT=3000 \
     SAAS_ENABLED=true \
-    DATABASE_PATH=/data/tenders.db
+    DATABASE_PATH=/data/tenders.db \
+    SAAS_STORAGE_DIR=/app/storage
 
 COPY --from=build /app/package.json ./
 COPY --from=build /app/pnpm-lock.yaml ./

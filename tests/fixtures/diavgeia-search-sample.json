@@ -1,0 +1,90 @@
+{
+  "info": {
+    "query": "q:\"ΚΗΜΔΗΣ\" AND submissionTimestamp:[DT(2026-04-13T16:04:45+03:00) TO DT(2026-10-10T16:04:45+03:00)] AND issueDate:[DT(2026-04-13T16:04:45+03:00) TO DT(2026-10-10T16:04:45+03:00)] AND status:\"Αναρτημένη\"",
+    "page": 0,
+    "size": 3,
+    "actualSize": 3,
+    "total": 124556,
+    "order": "recent"
+  },
+  "decisions": [
+    {
+      "protocolNumber": "30732",
+      "subject": "Ανάθεση της υπηρεσίας με τίτλο «ΔΑΠΑΝΕΣ ΔΙΟΡΓΑΝΩΣΗΣ ΠΑΙΔΙΚΩΝ ΠΟΛΙΤΙΣΤΙΚΩΝ\nΔΡΑΣΤΗΡΙΟΤΗΤΩΝ (ΕΚΔΗΛΩΣΕΙΣ 10ος -12ος 2026)»",
+      "issueDate": 1791504000000,
+      "organizationId": "6178",
+      "signerIds": [
+        "100084075"
+      ],
+      "unitIds": [
+        "82032"
+      ],
+      "decisionTypeId": "Δ.1",
+      "thematicCategoryIds": [
+        "10004"
+      ],
+      "extraFieldValues": {
+        "person": [],
+        "awardAmount": {
+          "amount": 11000.0,
+          "currency": "EUR"
+        },
+        "assignmentType": "Υπηρεσίες",
+        "cpv": [
+          "79952100-3"
+        ],
+        "textRelatedADA": null,
+        "relatedDecisions": [],
+        "documentType": "ΠΡΑΞΗ"
+      },
+      "privateData": false,
+      "ada": "97ΠΒΩΛΔ-ΑΝΣ",
+      "publishTimestamp": 1791630743018,
+      "submissionTimestamp": 1791630743018,
+      "versionId": "e265e658-502f-4b1f-a4b2-48ba98362249",
+      "status": "PUBLISHED",
+      "url": "https://diavgeia.gov.gr/luminapi/api/decisions/97ΠΒΩΛΔ-ΑΝΣ",
+      "documentUrl": "https://diavgeia.gov.gr/doc/97ΠΒΩΛΔ-ΑΝΣ",
+      "documentChecksum": null,
+      "attachments": [],
+      "warnings": null,
+      "correctedVersionId": null
+    },
+    {
+      "protocolNumber": "744-58/29-09-2026",
+      "subject": "ΑΠΟΣΠΑΣΜΑ ΠΡΑΚΤΙΚΟΥ ΤΗΣ ΥΠ. ΑΡΙΘΜ. 744-58/29-09-2026 ΑΠΟΦΑΣΗΣ ΤΗΣ ΠΕΡΙΦΕΡΕΙΑΚΗΣ ΕΠΙΤΡΟΠΗΣ Π.Ι.Ν.",
+      "issueDate": 1790812800000,
+      "organizationId": "5008",
+      "signerIds": [
+        "100105141"
+      ],
+      "unitIds": [
+        "100086743"
+      ],
+      "decisionTypeId": "Α.2",
+      "thematicCategoryIds": [
+        "24"
+      ],
+      "extraFieldValues": {
+        "fek": {},
+        "kanonistikipraxiaa": null,
+        "kanonistikipraxitype": null,
+        "co_competent": null,
+        "relatedDecisions": [],
+        "documentType": "ΠΡΑΞΗ"
+      },
+      "privateData": false,
+      "ada": "9ΤΘ87ΛΕ-ΨΦ5",
+      "publishTimestamp": 1790837081885,
+      "submissionTimestamp": 1791626095185,
+      "versionId": "0288b512-0671-4601-99e3-e0d3746c7972",
+      "status": "PUBLISHED",
+      "url": "https://diavgeia.gov.gr/luminapi/api/decisions/9ΤΘ87ΛΕ-ΨΦ5",
+      "documentUrl": "https://diavgeia.gov.gr/doc/9ΤΘ87ΛΕ-ΨΦ5",
+      "documentChecksum": null,
+      "attachments": [],
+      "warnings": null,
+      "correctedVersionId": "5242cfbd-9067-406a-bcd7-f6063ee55aea"
+    }
+  ]
+}

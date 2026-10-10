@@ -4,6 +4,7 @@ import { requireOrgMembership } from "../auth/org-context.js";
 import type { CompanyRegistryRecord } from "../company-registry/types.js";
 import { entitlementsForPlanKey, PLAN_KEYS } from "../plans/catalog.js";
 import { defaultDigestHoursForPlanKey, normalizeDigestHours } from "./digest-hours.js";
+import { assignWeeklyDigestSlot } from "./weekly-digest-schedule.js";
 
 export type CompanyProfile = {
   legalName: string;
@@ -39,13 +40,28 @@ export type OrganizationActivity = {
 export type NotificationPreferences = {
   emailEnabled: boolean;
   recipients: string[];
-  /** Europe/Athens HH:00 slots; length always capped by plan periodicScansPerDay. */
+  /** Europe/Athens HH:00 slots; capped by plan maxDigestHoursPerDay (0 on Free). */
   digestHours: string[];
+  /**
+   * Paid plans: DIGEST (hours) or IMMEDIATE (followed / high-match per entitlements).
+   * Free ignores this and uses weekly cadence.
+   */
+  emailDeliveryMode: "DIGEST" | "IMMEDIATE";
+  /** Free weekly summary opt-in (independent of push/in-app). */
+  weeklyEmailEnabled: boolean;
+  /** Single verified recipient for Free weekly summary (optional override). */
+  weeklyRecipient: string | null;
+  /** 0=Sunday … 6=Saturday, Europe/Athens. Assigned at org create. */
+  weeklyDigestWeekday: number;
+  /** HH:00 Europe/Athens. */
+  weeklyDigestHour: string;
+  /** ISO timestamp of last successfully sent weekly digest (cursor). */
+  weeklyLastSentAt: string | null;
   events: {
     newOpportunity: boolean;
     relatedActOnFollowed: boolean;
     postSubmissionUpdate: boolean;
-    /** Pro-only; ignored/forced false on Basic/Trial. */
+    /** Pro-only; ignored/forced false on Basic. */
     deadlineRadar: boolean;
   };
 };
@@ -60,17 +76,28 @@ export type OrgSettingsView = {
 
 const defaultNotifications = (
   planKey: string = PLAN_KEYS.basic,
-): NotificationPreferences => ({
-  emailEnabled: true,
-  recipients: [],
-  digestHours: defaultDigestHoursForPlanKey(planKey),
-  events: {
-    newOpportunity: true,
-    relatedActOnFollowed: true,
-    postSubmissionUpdate: true,
-    deadlineRadar: entitlementsForPlanKey(planKey).deadlineRadar,
-  },
-});
+  organizationId?: string,
+): NotificationPreferences => {
+  const plan = entitlementsForPlanKey(planKey);
+  const weekly = assignWeeklyDigestSlot(organizationId ?? "default");
+  return {
+    emailEnabled: true,
+    recipients: [],
+    digestHours: defaultDigestHoursForPlanKey(planKey),
+    emailDeliveryMode: "DIGEST",
+    weeklyEmailEnabled: true,
+    weeklyRecipient: null,
+    weeklyDigestWeekday: weekly.weeklyDigestWeekday,
+    weeklyDigestHour: weekly.weeklyDigestHour,
+    weeklyLastSentAt: null,
+    events: {
+      newOpportunity: true,
+      relatedActOnFollowed: true,
+      postSubmissionUpdate: true,
+      deadlineRadar: plan.deadlineRadar,
+    },
+  };
+};
 
 const emptyAddress = (): CompanyProfile["address"] => ({
   street: null,
@@ -163,9 +190,10 @@ export const normalizeActivities = (raw: unknown): OrganizationActivity[] => {
 export const normalizeNotifications = (
   raw: unknown,
   planKey: string = PLAN_KEYS.basic,
+  organizationId?: string,
 ): NotificationPreferences => {
   const plan = entitlementsForPlanKey(planKey);
-  const base = defaultNotifications(planKey);
+  const base = defaultNotifications(planKey, organizationId);
   if (!raw || typeof raw !== "object") return base;
   const obj = raw as Record<string, unknown>;
   const events =
@@ -176,16 +204,54 @@ export const normalizeNotifications = (
     typeof events.deadlineRadar === "boolean"
       ? events.deadlineRadar
       : base.events.deadlineRadar;
+  const deliveryModeRaw =
+    typeof obj.emailDeliveryMode === "string"
+      ? obj.emailDeliveryMode.toUpperCase()
+      : null;
+  const emailDeliveryMode =
+    deliveryModeRaw === "IMMEDIATE" &&
+    (plan.immediateFollowedDevelopments || plan.immediateNewOpportunity)
+      ? "IMMEDIATE"
+      : "DIGEST";
+  const weeklySlot =
+    typeof obj.weeklyDigestWeekday === "number" &&
+    Number.isInteger(obj.weeklyDigestWeekday) &&
+    obj.weeklyDigestWeekday >= 0 &&
+    obj.weeklyDigestWeekday <= 6 &&
+    typeof obj.weeklyDigestHour === "string" &&
+    /^([01]\d|2[0-3]):00$/.test(obj.weeklyDigestHour)
+      ? {
+          weeklyDigestWeekday: obj.weeklyDigestWeekday,
+          weeklyDigestHour: obj.weeklyDigestHour,
+        }
+      : assignWeeklyDigestSlot(organizationId ?? "default");
+  const weeklyRecipient =
+    typeof obj.weeklyRecipient === "string" && obj.weeklyRecipient.includes("@")
+      ? obj.weeklyRecipient.trim().toLowerCase()
+      : null;
   return {
-    emailEnabled: typeof obj.emailEnabled === "boolean" ? obj.emailEnabled : base.emailEnabled,
+    emailEnabled:
+      typeof obj.emailEnabled === "boolean" ? obj.emailEnabled : base.emailEnabled,
     recipients: Array.isArray(obj.recipients)
-      ? obj.recipients.filter((v): v is string => typeof v === "string" && v.includes("@"))
+      ? obj.recipients.filter(
+          (v): v is string => typeof v === "string" && v.includes("@"),
+        )
       : base.recipients,
     digestHours: normalizeDigestHours(
       obj.digestHours,
-      plan.periodicScansPerDay,
+      plan.maxDigestHoursPerDay,
       planKey,
     ),
+    emailDeliveryMode,
+    weeklyEmailEnabled:
+      typeof obj.weeklyEmailEnabled === "boolean"
+        ? obj.weeklyEmailEnabled
+        : base.weeklyEmailEnabled,
+    weeklyRecipient,
+    weeklyDigestWeekday: weeklySlot.weeklyDigestWeekday,
+    weeklyDigestHour: weeklySlot.weeklyDigestHour,
+    weeklyLastSentAt:
+      typeof obj.weeklyLastSentAt === "string" ? obj.weeklyLastSentAt : null,
     events: {
       newOpportunity:
         typeof events.newOpportunity === "boolean"
@@ -225,10 +291,15 @@ const toView = (
   },
   orgName: string,
   planKey: string,
+  organizationId: string,
 ): OrgSettingsView => ({
   company: normalizeCompanyProfile(row.company, orgName),
   activities: normalizeActivities(row.activities),
-  notifications: normalizeNotifications(row.notifications, planKey),
+  notifications: normalizeNotifications(
+    row.notifications,
+    planKey,
+    organizationId,
+  ),
   onboardingStatus: row.onboardingStatus,
   onboardingMeta:
     row.onboardingMeta && typeof row.onboardingMeta === "object"
@@ -248,7 +319,7 @@ const ensureSettings = async (prisma: PrismaClient, organizationId: string) => {
       organizationId,
       company: { legalName: "", source: "MANUAL" },
       activities: [],
-      notifications: defaultNotifications(planKey),
+      notifications: defaultNotifications(planKey, organizationId),
       onboardingStatus: "NOT_STARTED",
     },
     include: { organization: { select: { name: true } } },
@@ -268,7 +339,7 @@ const toViewForOrg = async (
   orgName: string,
 ): Promise<OrgSettingsView> => {
   const planKey = await planKeyForOrganization(prisma, organizationId);
-  return toView(row, orgName, planKey);
+  return toView(row, orgName, planKey, organizationId);
 };
 
 export const getOrgSettings = async (
@@ -441,8 +512,13 @@ export const updateNotifications = async (
   );
   await ensureSettings(prisma, organizationId);
   const planKey = await planKeyForOrganization(prisma, organizationId);
-  const notifications = normalizeNotifications(input.notifications, planKey);
-  if (!notifications.digestHours.length) {
+  const plan = entitlementsForPlanKey(planKey);
+  const notifications = normalizeNotifications(
+    input.notifications,
+    planKey,
+    organizationId,
+  );
+  if (plan.emailCadence === "DIGEST_HOURS" && !notifications.digestHours.length) {
     throw badRequest("digest_hours_required");
   }
   const updated = await prisma.organizationSettings.update({

@@ -5,6 +5,7 @@ import { trackProductEventSafe } from "../ops/product-events.js";
 import { PLAN_KEYS, TRIAL_DURATION_MS } from "../plans/catalog.js";
 import { entitlementsForPlanKey } from "../plans/catalog.js";
 import { assertCanAddOrganizationMember } from "./entitlements.js";
+import { assignWeeklyDigestSlot } from "./weekly-digest-schedule.js";
 
 /** Max organizations a single user may create/own (anti trial-spam). Invites do not count. */
 export const MAX_OWNED_ORGANIZATIONS = 3;
@@ -59,6 +60,7 @@ export const createOrganization = async (
         role: "OWNER",
       },
     });
+    const weekly = assignWeeklyDigestSlot(organization.id);
     await tx.organizationSettings.create({
       data: {
         organizationId: organization.id,
@@ -74,7 +76,13 @@ export const createOrganization = async (
         notifications: {
           emailEnabled: true,
           recipients: [],
-          digestHours: ["08:00"],
+          digestHours: [],
+          emailDeliveryMode: "DIGEST",
+          weeklyEmailEnabled: true,
+          weeklyRecipient: null,
+          weeklyDigestWeekday: weekly.weeklyDigestWeekday,
+          weeklyDigestHour: weekly.weeklyDigestHour,
+          weeklyLastSentAt: null,
           events: {
             newOpportunity: true,
             relatedActOnFollowed: true,

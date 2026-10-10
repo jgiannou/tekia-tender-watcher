@@ -4,6 +4,10 @@ import { z } from "zod";
 import type { SlackClient } from "../../slack/client.js";
 import { PLAN_KEYS, TRIAL_DURATION_MS } from "../plans/catalog.js";
 import { getLogStats, getRecentLogs, getRecentRequests, opsLogger } from "./logger.js";
+import {
+  collectPipelineMetrics,
+  pipelineHealthSummary,
+} from "./pipeline-metrics.js";
 import { collectOpsStats, PAID_PLAN_KEYS } from "./stats.js";
 import {
   opsPasswordEnabled,
@@ -132,25 +136,49 @@ export const registerOpsAdminRoutes = (
 
   app.get("/admin/ops/health", async (c) => {
     let dbOk = false;
+    let pipelineSummary: ReturnType<typeof pipelineHealthSummary> | null = null;
     try {
       const { getPrisma } = await import("../../db/prisma.js");
-      await getPrisma().$queryRaw`SELECT 1`;
+      const prisma = getPrisma();
+      await prisma.$queryRaw`SELECT 1`;
       dbOk = true;
+      try {
+        const pipeline = await collectPipelineMetrics(prisma);
+        pipelineSummary = pipelineHealthSummary(pipeline);
+      } catch {
+        pipelineSummary = null;
+      }
     } catch {
       dbOk = false;
     }
+    const alertErrors = pipelineSummary?.alertLevels.error ?? 0;
     return c.json({
       data: {
-        ok: dbOk,
+        ok: dbOk && alertErrors === 0,
         service: "arc-tenders-api",
         db: dbOk,
         slackConfigured: Boolean(
           String(process.env.SLACK_WEBHOOK_URL || "").trim(),
         ),
         generatedAt: new Date().toISOString(),
+        pipeline: pipelineSummary,
         ...getLogStats(),
       },
     });
+  });
+
+  /** Full outbox / ingest / email / storage / PDF ops dashboard payload (no PII). */
+  app.get("/admin/ops/pipeline", async (c) => {
+    try {
+      const { getPrisma } = await import("../../db/prisma.js");
+      const data = await collectPipelineMetrics(getPrisma());
+      return c.json({ data });
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : String(error) },
+        500,
+      );
+    }
   });
 
   app.post("/admin/ops/stats/notify", async (c) => {

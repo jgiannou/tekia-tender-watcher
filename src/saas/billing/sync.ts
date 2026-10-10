@@ -85,8 +85,18 @@ export const applyStripeSubscription = async (
 
   const activeLike =
     billingStatus === "ACTIVE" || billingStatus === "TRIALING";
+  const previous = await prisma.subscription.findUnique({
+    where: { organizationId: input.organizationId },
+    select: { planKey: true },
+  });
 
-  return prisma.subscription.upsert({
+  const nextPlanKey = activeLike
+    ? planKey
+    : billingStatus === "CANCELED"
+      ? PLAN_KEYS.free
+      : PLAN_KEYS.free;
+
+  const subscription = await prisma.subscription.upsert({
     where: { organizationId: input.organizationId },
     create: {
       organizationId: input.organizationId,
@@ -94,7 +104,7 @@ export const applyStripeSubscription = async (
       stripeSubscriptionId: input.subscriptionId ?? null,
       stripePriceId,
       status: activeLike ? "ACTIVE" : billingStatus,
-      planKey: activeLike ? planKey : PLAN_KEYS.trial,
+      planKey: nextPlanKey,
       extraSeats: activeLike ? extraSeats : 0,
       cancelAtPeriodEnd: Boolean(input.cancelAtPeriodEnd),
       currentPeriodEnd: activeLike ? periodEnd : null,
@@ -111,7 +121,7 @@ export const applyStripeSubscription = async (
         : billingStatus === "CANCELED"
           ? "CANCELED"
           : billingStatus,
-      planKey: activeLike ? planKey : PLAN_KEYS.trial,
+      planKey: nextPlanKey,
       extraSeats: activeLike ? extraSeats : 0,
       cancelAtPeriodEnd:
         billingStatus === "CANCELED" ? false : Boolean(input.cancelAtPeriodEnd),
@@ -119,6 +129,32 @@ export const applyStripeSubscription = async (
       trialEndsAt: activeLike ? null : undefined,
     },
   });
+
+  const wasPaid =
+    previous?.planKey === PLAN_KEYS.basic ||
+    previous?.planKey === PLAN_KEYS.pro ||
+    previous?.planKey === PLAN_KEYS.trial;
+  if (!activeLike && wasPaid && nextPlanKey === PLAN_KEYS.free) {
+    const { onTransitionToFreeEmailPolicy } = await import(
+      "../services/plan-email-transition.js"
+    );
+    await onTransitionToFreeEmailPolicy(prisma, input.organizationId);
+  } else if (
+    activeLike &&
+    previous?.planKey === PLAN_KEYS.free &&
+    nextPlanKey !== PLAN_KEYS.free
+  ) {
+    const { onUpgradeFromFreeEmailPolicy } = await import(
+      "../services/plan-email-transition.js"
+    );
+    await onUpgradeFromFreeEmailPolicy(
+      prisma,
+      input.organizationId,
+      nextPlanKey,
+    );
+  }
+
+  return subscription;
 };
 
 export const syncSubscriptionFromStripe = async (

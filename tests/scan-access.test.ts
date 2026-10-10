@@ -24,12 +24,16 @@ describe("commercial plan catalog", () => {
 
   it("keeps Free tighter than Basic and Basic tighter than Pro", () => {
     expect(limitsForPlanKey(PLAN_KEYS.free).maxActiveWatchProfiles).toBe(1);
+    expect(limitsForPlanKey(PLAN_KEYS.free).maxDigestHoursPerDay).toBe(0);
+    expect(limitsForPlanKey(PLAN_KEYS.free).emailCadence).toBe("WEEKLY");
     expect(limitsForPlanKey(PLAN_KEYS.basic).periodicScansPerDay).toBe(2);
+    expect(limitsForPlanKey(PLAN_KEYS.basic).maxActiveWatchProfiles).toBe(5);
+    expect(limitsForPlanKey(PLAN_KEYS.basic).maxActiveFollowedTenders).toBe(30);
     expect(limitsForPlanKey(PLAN_KEYS.pro).periodicScansPerDay).toBe(6);
     expect(limitsForPlanKey(PLAN_KEYS.trial).periodicScansPerDay).toBe(
       limitsForPlanKey(PLAN_KEYS.pro).periodicScansPerDay,
     );
-    expect(BASIC_PLAN.maxActiveWatchProfiles).toBe(3);
+    expect(BASIC_PLAN.maxActiveWatchProfiles).toBe(5);
     expect(PRO_PLAN.maxActiveWatchProfiles).toBeGreaterThan(
       BASIC_PLAN.maxActiveWatchProfiles,
     );

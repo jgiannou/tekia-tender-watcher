@@ -92,8 +92,14 @@ export type OrganizationActivity = {
 export type NotificationPreferences = {
   emailEnabled: boolean;
   recipients: string[];
-  /** Europe/Athens HH:00 slots; capped by plan periodicScansPerDay. */
+  /** Europe/Athens HH:00 slots; capped by plan maxDigestHoursPerDay (empty on Free). */
   digestHours: string[];
+  emailDeliveryMode?: "DIGEST" | "IMMEDIATE";
+  weeklyEmailEnabled?: boolean;
+  weeklyRecipient?: string | null;
+  weeklyDigestWeekday?: number;
+  weeklyDigestHour?: string;
+  weeklyLastSentAt?: string | null;
   events: {
     newOpportunity: boolean;
     relatedActOnFollowed: boolean;
@@ -230,6 +236,11 @@ export type PriceMemory = {
   }>;
   thin: boolean;
   note: string | null;
+  coverage?: {
+    source: string;
+    complete: boolean;
+    descriptionEl: string;
+  };
 };
 
 export type ExpiringContractRow = {
@@ -245,6 +256,7 @@ export type ExpiringContractRow = {
 export type DiavgeiaLink = {
   ada: string;
   url: string;
+  subject?: string | null;
 };
 
 export type IngestStatus = {
@@ -355,13 +367,18 @@ export type BillingCatalogPlan = {
   maxActiveWatchProfiles: number;
   maxActiveFollowedTenders: number;
   periodicScansPerDay: number;
+  maxDigestHoursPerDay?: number;
   storageBytes: number;
   emailMode: "DIGEST" | "IMMEDIATE";
+  emailCadence?: "WEEKLY" | "DIGEST_HOURS";
   advancedWatchProfileFilters: boolean;
   participationChecklist?: boolean;
   expiringContractList?: boolean;
   priceMemory?: boolean;
   featuresEl?: string[];
+  footnoteEl?: string | null;
+  ctaEl?: string;
+  includesLabelEl?: string | null;
 };
 
 export type BillingCatalogResponse = {
@@ -397,11 +414,13 @@ export type SaasEntitlementsResponse = {
     maxActiveFollowedTenders: number;
     storageBytes: number;
     periodicScansPerDay: number;
+    maxDigestHoursPerDay?: number;
     manualProfileScansPerDay: number;
     includedSeats: number;
     maxSeatsSelfService: number;
     advancedWatchProfileFilters: boolean;
     emailMode: "DIGEST" | "IMMEDIATE";
+    emailCadence?: "WEEKLY" | "DIGEST_HOURS";
     deadlineRadar: boolean;
     participationChecklist?: boolean;
     expiringContractList?: boolean;
@@ -431,6 +450,7 @@ export type SaasEntitlementsResponse = {
       advancedWatchProfileFilters?: boolean;
       prioritySupport?: boolean;
       emailMode?: "DIGEST" | "IMMEDIATE";
+      emailCadence?: "WEEKLY" | "DIGEST_HOURS";
       deadlineRadar?: boolean;
       opportunityMatching?: boolean;
       matchScore?: boolean;
@@ -1651,6 +1671,57 @@ export const saasApi = {
       `/api/saas/tenders/${tenderId}/diavgeia`,
       { organizationId },
     ),
+  getSourcesStatus: (organizationId: string) =>
+    request<{
+      ted: { enabled: boolean; blocker: string | null; authRequired: boolean };
+      diavgeia: {
+        enabled: boolean;
+        blocker: string | null;
+        authRequired: boolean;
+        notes: string[];
+      };
+    }>("/api/saas/sources/status", { organizationId }),
+  searchTedNotices: (
+    organizationId: string,
+    params?: { q?: string; cpv?: string; page?: number; limit?: number },
+  ) => {
+    const query = new URLSearchParams();
+    if (params?.q) query.set("q", params.q);
+    if (params?.cpv) query.set("cpv", params.cpv);
+    if (params?.page != null) query.set("page", String(params.page));
+    if (params?.limit != null) query.set("limit", String(params.limit));
+    const suffix = query.toString() ? `?${query}` : "";
+    return request<{
+      notices: Array<{
+        publicationNumber: string;
+        title: string | null;
+        buyerName: string | null;
+        publicationDate: string | null;
+        url: string;
+        provenance: "ted";
+      }>;
+      totalNoticeCount: number | null;
+      blocker: string | null;
+    }>(`/api/saas/sources/ted/search${suffix}`, { organizationId });
+  },
+  searchDiavgeiaDecisions: (
+    organizationId: string,
+    params: { term: string; page?: number; size?: number },
+  ) => {
+    const query = new URLSearchParams({ term: params.term });
+    if (params.page != null) query.set("page", String(params.page));
+    if (params.size != null) query.set("size", String(params.size));
+    return request<{
+      decisions: Array<{
+        ada: string;
+        subject: string | null;
+        url: string;
+        provenance: "diavgeia";
+      }>;
+      blocker: string | null;
+    }>(`/api/saas/sources/diavgeia/search?${query}`, { organizationId });
+  },
+
   listExpiringContracts: (organizationId: string) =>
     request<{
       count: number;

@@ -6,6 +6,11 @@ import { Button } from "@/components/ui/button";
 import { MARKETING_SEO } from "@/lib/seo";
 import {
   COMPARISON_ROWS,
+  FAQ_EMAIL_WHEN,
+  FAQ_SUBMIT_OFFER,
+  FAQ_USES_AI,
+  FAQ_WEEKLY_DELAY,
+  INGEST_SPEED_HELP,
   MARKETING_PLANS,
   TRIAL_DAYS,
   formatEur,
@@ -18,7 +23,7 @@ const faqs = [
   },
   {
     q: "Μπορώ να υποβάλω προσφορά μέσα από το ARC Tenders;",
-    a: "Όχι. Υποβάλλετε την προσφορά σας με τον τρόπο που ορίζει η πρόσκληση ή η διακήρυξη. Στο ARC Tenders καταγράφετε την υποβολή και παρακολουθείτε τις εξελίξεις του διαγωνισμού.",
+    a: FAQ_SUBMIT_OFFER,
   },
   {
     q: "Μπορώ να ακυρώσω τη συνδρομή μου;",
@@ -30,15 +35,27 @@ const faqs = [
   },
   {
     q: "Τι συμβαίνει όταν λήξει η δοκιμή του Pro;",
-    a: "Αν δεν επιλέξετε συνδρομή Basic ή Pro, συνεχίζετε με το δωρεάν πακέτο. Η αναζήτηση στο ΚΗΜΔΗΣ παραμένει διαθέσιμη.",
+    a: "Η δοκιμή του Pro ολοκληρώθηκε. Συνεχίζετε με το δωρεάν πακέτο και έως μία εβδομαδιαία σύνοψη email.",
   },
   {
     q: "Μπορώ να προσθέσω περισσότερους χρήστες;",
     a: `Το Basic περιλαμβάνει 1 χρήστη και το Pro ${MARKETING_PLANS.pro.includedSeats} χρήστες. Στο Pro μπορείτε να προσθέσετε επιπλέον χρήστες με ${formatEur(MARKETING_PLANS.pro.extraSeatMonthlyEur!)} € ανά χρήστη τον μήνα, έως ${MARKETING_PLANS.pro.maxSeatsSelfService} χρήστες συνολικά.`,
   },
   {
-    q: "Πότε λαμβάνω ειδοποιήσεις;",
-    a: "Η συχνότητα των email εξαρτάται από το πακέτο σας. Στο δωρεάν πακέτο λαμβάνετε ένα συγκεντρωτικό email την ημέρα. Στο Basic επιλέγετε τις ώρες αποστολής, ενώ στο Pro λαμβάνετε άμεσα email για νέες εξελίξεις.",
+    q: "Πότε λαμβάνω email;",
+    a: FAQ_EMAIL_WHEN,
+  },
+  {
+    q: "Η εβδομαδιαία ενημέρωση καθυστερεί τα αποτελέσματά μου;",
+    a: FAQ_WEEKLY_DELAY,
+  },
+  {
+    q: "Χρησιμοποιεί AI η εφαρμογή;",
+    a: FAQ_USES_AI,
+  },
+  {
+    q: "Πόσο συχνά ελέγχεται το ΚΗΜΔΗΣ;",
+    a: INGEST_SPEED_HELP,
   },
 ] as const;
 

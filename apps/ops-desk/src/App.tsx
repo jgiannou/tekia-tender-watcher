@@ -4,6 +4,7 @@ import {
   createSandbox,
   fetchHealthOps,
   fetchLogs,
+  fetchPipeline,
   fetchProductEvents,
   fetchRequests,
   fetchStats,
@@ -18,6 +19,7 @@ import {
   type HealthOps,
   type LogEntry,
   type OpsStats,
+  type PipelineMetrics,
   type ProductEventEntry,
   type RequestEntry,
 } from "./api";
@@ -45,6 +47,34 @@ const statusClass = (status: number) => {
   return "s2";
 };
 
+const formatBytes = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024;
+    i += 1;
+  }
+  return `${value.toFixed(value >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+};
+
+const formatAge = (ms: number | null | undefined): string => {
+  if (ms == null || !Number.isFinite(ms)) return "—";
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m`;
+  return `${(ms / 3_600_000).toFixed(1)}h`;
+};
+
+const kvChips = (record: Record<string, number> | undefined) =>
+  Object.entries(record ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, value]) => (
+      <span className="chip" key={key}>
+        {key}: {value}
+      </span>
+    ));
+
 export const App = () => {
   const [activeEnv, setActiveEnv] = useState<EnvId>(() => loadActiveEnv());
   const [config, setConfig] = useState<ConnectionConfig>(() => loadConfig());
@@ -55,6 +85,7 @@ export const App = () => {
   const [productEvents, setProductEvents] = useState<ProductEventEntry[]>([]);
   const [productEventType, setProductEventType] = useState("all");
   const [health, setHealth] = useState<HealthOps | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [logLevel, setLogLevel] = useState("error_warn");
@@ -101,6 +132,7 @@ export const App = () => {
     setRequests([]);
     setProductEvents([]);
     setHealth(null);
+    setPipeline(null);
     setSavedNote(
       isElectron
         ? `${activePreset.label} saved on this Mac — reopen anytime.`
@@ -119,6 +151,7 @@ export const App = () => {
     setRequests([]);
     setProductEvents([]);
     setHealth(null);
+    setPipeline(null);
     setError(null);
     setDrill(null);
     setSavedNote(null);
@@ -142,11 +175,14 @@ export const App = () => {
           limit: 40,
           type: productEventType === "all" ? undefined : productEventType,
         }),
+        fetchPipeline(cfg),
       ]);
-      const [logsResult, requestsResult, healthResult, eventsResult] = settled;
+      const [logsResult, requestsResult, healthResult, eventsResult, pipelineResult] =
+        settled;
       setLogs(logsResult.status === "fulfilled" ? logsResult.value : []);
       setRequests(requestsResult.status === "fulfilled" ? requestsResult.value : []);
       setProductEvents(eventsResult.status === "fulfilled" ? eventsResult.value : []);
+      setPipeline(pipelineResult.status === "fulfilled" ? pipelineResult.value : null);
       setHealth(
         healthResult.status === "fulfilled"
           ? healthResult.value
@@ -167,7 +203,7 @@ export const App = () => {
       const failed = settled
         .map((r, i) =>
           r.status === "rejected"
-            ? (["logs", "requests", "health", "product-events"] as const)[i]
+            ? (["logs", "requests", "health", "product-events", "pipeline"] as const)[i]
             : null,
         )
         .filter(Boolean);
@@ -178,6 +214,7 @@ export const App = () => {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setHealth(null);
+      setPipeline(null);
     } finally {
       setLoading(false);
     }
@@ -512,6 +549,190 @@ export const App = () => {
                   : "—"}
               </div>
             </button>
+          </div>
+
+          <div className="section-head" style={{ marginTop: "1.25rem" }}>
+            <h2>Pipeline</h2>
+            <span>
+              {pipeline?.generatedAt
+                ? formatTime(pipeline.generatedAt)
+                : health?.pipeline
+                  ? "summary from /health"
+                  : "—"}
+            </span>
+          </div>
+
+          {(pipeline?.alerts.length || health?.pipeline?.alertCount) ? (
+            <div className="alert-stack fade-in" role="status" aria-label="Pipeline alerts">
+              {(pipeline?.alerts ?? []).map((alert) => (
+                <div key={alert.code} className={`pipeline-alert ${alert.level}`}>
+                  <strong>{alert.code}</strong>
+                  <span>{alert.messageEl}</span>
+                </div>
+              ))}
+              {!pipeline && health?.pipeline ? (
+                <div className="pipeline-alert warn">
+                  <strong>pipeline_summary</strong>
+                  <span>
+                    alerts {health.pipeline.alertCount} · outbox failed{" "}
+                    {health.pipeline.outboxFailed} · email failed 24h{" "}
+                    {health.pipeline.emailFailed24h}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="grid-stats fade-in pipeline-grid">
+            <div className="stat">
+              <div className="label">Outbox pending</div>
+              <div className="value">
+                {pipeline?.outbox.pending ?? health?.pipeline?.outboxPending ?? "—"}
+              </div>
+              <div className="sub">
+                due {pipeline?.outbox.dueNow ?? "—"} · lag{" "}
+                {formatAge(
+                  pipeline?.outbox.oldestPendingAgeMs ??
+                    health?.pipeline?.outboxLagMs,
+                )}{" "}
+                · stuck {pipeline?.outbox.stuckRunning ?? "—"}
+              </div>
+            </div>
+            <div className="stat">
+              <div className="label">Outbox failed</div>
+              <div className="value">
+                {pipeline?.outbox.failed ?? health?.pipeline?.outboxFailed ?? "—"}
+              </div>
+              <div className="sub">
+                process fail {pipeline?.outbox.process.failed ?? "—"} · retry{" "}
+                {pipeline?.outbox.process.retried ?? "—"} · ok{" "}
+                {pipeline?.outbox.process.succeeded ?? "—"}
+              </div>
+            </div>
+            <div className="stat">
+              <div className="label">Ingest freshness</div>
+              <div className="value">
+                {(pipeline?.ingest.fresh ?? health?.pipeline?.ingestFresh) === true
+                  ? "OK"
+                  : (pipeline?.ingest.fresh ?? health?.pipeline?.ingestFresh) === false
+                    ? "STALE"
+                    : "—"}
+              </div>
+              <div className="sub">
+                age{" "}
+                {formatAge(
+                  pipeline?.ingest.successAgeMs ??
+                    health?.pipeline?.ingestSuccessAgeMs,
+                )}
+                {pipeline?.ingest.completeness?.pageBudgetExhausted
+                  ? " · page budget hit"
+                  : ""}
+              </div>
+            </div>
+            <div className="stat">
+              <div className="label">Email 24h</div>
+              <div className="value">{pipeline?.email.sent24h ?? "—"}</div>
+              <div className="sub">
+                fail {pipeline?.email.failed24h ?? health?.pipeline?.emailFailed24h ?? "—"} ·
+                pending {pipeline?.email.pending24h ?? "—"} · skip{" "}
+                {pipeline?.email.skipped24h ?? "—"}
+              </div>
+            </div>
+            <div className="stat">
+              <div className="label">Storage used</div>
+              <div className="value">
+                {pipeline ? formatBytes(pipeline.storage.totalBytesUsed) : "—"}
+              </div>
+              <div className="sub">
+                {pipeline
+                  ? `${pipeline.storage.documentCount} files · ${pipeline.storage.orgsWithVault} orgs`
+                  : "—"}
+              </div>
+            </div>
+            <div className="stat">
+              <div className="label">PDF extract</div>
+              <div className="value">
+                {pipeline?.pdf.process.avgMs != null
+                  ? `${pipeline.pdf.process.avgMs}ms`
+                  : "—"}
+              </div>
+              <div className="sub">
+                n={pipeline?.pdf.process.count ?? "—"} · max{" "}
+                {pipeline?.pdf.process.maxMs ?? "—"}ms
+              </div>
+            </div>
+          </div>
+
+          <div className="panels pipeline-panels">
+            <section className="panel fade-in" aria-label="Outbox detail">
+              <div className="panel-toolbar">
+                <h3>Outbox</h3>
+                <span className="hint">
+                  process lag {formatAge(pipeline?.outbox.process.lastLagMs)}
+                </span>
+              </div>
+              <div className="panel-body">
+                <div className="chip-row">{kvChips(pipeline?.outbox.byStatus)}</div>
+                <div className="chip-row" style={{ marginTop: 8 }}>
+                  {kvChips(pipeline?.outbox.byType)}
+                </div>
+                {(pipeline?.outbox.recentFailed.length ?? 0) === 0 ? (
+                  <div className="empty" style={{ marginTop: 12 }}>
+                    No failed outbox jobs.
+                  </div>
+                ) : (
+                  <div className="mini-table" style={{ marginTop: 12 }}>
+                    {pipeline!.outbox.recentFailed.map((row) => (
+                      <div className="row" key={row.id}>
+                        <div className="ts">{formatTime(row.updatedAt)}</div>
+                        <div className="level error">{row.type}</div>
+                        <div className="msg">
+                          attempts {row.attempts}
+                          {row.lastError ? ` · ${row.lastError}` : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="panel fade-in" aria-label="Ingest and email detail">
+              <div className="panel-toolbar">
+                <h3>Ingest · Email · PDF</h3>
+              </div>
+              <div className="panel-body">
+                <p className="hint" style={{ marginTop: 0 }}>
+                  Last success:{" "}
+                  {pipeline?.ingest.lastSuccessAt
+                    ? formatTime(pipeline.ingest.lastSuccessAt)
+                    : "—"}
+                  {pipeline?.ingest.lastError
+                    ? ` · last error: ${pipeline.ingest.lastError.slice(0, 120)}`
+                    : ""}
+                </p>
+                {pipeline?.ingest.completeness?.noteEl ? (
+                  <p className="hint">{pipeline.ingest.completeness.noteEl}</p>
+                ) : null}
+                <div className="chip-row">
+                  <span className="chip">email 24h SENT {pipeline?.email.sent24h ?? 0}</span>
+                  <span className="chip">FAILED {pipeline?.email.failed24h ?? 0}</span>
+                  <span className="chip">PENDING {pipeline?.email.pending24h ?? 0}</span>
+                  <span className="chip">SKIPPED {pipeline?.email.skipped24h ?? 0}</span>
+                </div>
+                <div className="chip-row" style={{ marginTop: 8 }}>
+                  {kvChips(pipeline?.email.last7d)}
+                </div>
+                <div className="chip-row" style={{ marginTop: 8 }}>
+                  {kvChips(pipeline?.pdf.tendersByPdfStatus)}
+                  {kvChips(pipeline?.pdf.process.byStatus)}
+                </div>
+                <p className="hint" style={{ marginBottom: 0 }}>
+                  Storage root: {pipeline?.storage.root ?? "—"} ·{" "}
+                  {pipeline?.storage.noteEl ?? ""}
+                </p>
+              </div>
+            </section>
           </div>
 
           <div className="panels">

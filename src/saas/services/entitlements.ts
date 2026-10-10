@@ -20,15 +20,18 @@ export type OrganizationEntitlements = {
   maxActiveWatchProfiles: number;
   maxActiveFollowedTenders: number;
   storageBytes: number;
+  maxDigestHoursPerDay: number;
   periodicScansPerDay: number;
   manualProfileScansPerDay: number;
   includedSeats: number;
   maxSeatsSelfService: number;
   advancedWatchProfileFilters: boolean;
   emailMode: PlanEntitlements["emailMode"];
+  emailCadence: PlanEntitlements["emailCadence"];
   deadlineRadar: boolean;
   participationChecklist: boolean;
   expiringContractList: boolean;
+  awardHistory: boolean;
   priceMemory: boolean;
   companyVault: boolean;
   outreachWorkflow: boolean;
@@ -58,15 +61,18 @@ export const getOrganizationEntitlements = async (
       maxActiveWatchProfiles: scanAccess.limits.maxActiveWatchProfiles,
       maxActiveFollowedTenders: scanAccess.limits.maxActiveFollowedTenders,
       storageBytes: scanAccess.limits.storageBytes,
+      maxDigestHoursPerDay: scanAccess.limits.maxDigestHoursPerDay,
       periodicScansPerDay: scanAccess.limits.periodicScansPerDay,
       manualProfileScansPerDay: scanAccess.limits.manualProfileScansPerDay,
       includedSeats: scanAccess.limits.includedSeats,
       maxSeatsSelfService: scanAccess.limits.maxSeatsSelfService,
       advancedWatchProfileFilters: scanAccess.limits.advancedWatchProfileFilters,
       emailMode: scanAccess.limits.emailMode,
+      emailCadence: plan.emailCadence,
       deadlineRadar: plan.deadlineRadar,
       participationChecklist: plan.participationChecklist,
       expiringContractList: plan.expiringContractList,
+      awardHistory: plan.awardHistory,
       priceMemory: plan.priceMemory,
       companyVault: plan.companyVault,
       outreachWorkflow: plan.outreachWorkflow,
@@ -146,12 +152,17 @@ export const getEntitlementsView = async (
         advancedWatchProfileFilters: plan.advancedWatchProfileFilters,
         prioritySupport: plan.prioritySupport,
         emailMode: plan.emailMode,
+        emailCadence: plan.emailCadence,
+        immediateFollowedDevelopments: plan.immediateFollowedDevelopments,
+        immediateNewOpportunity: plan.immediateNewOpportunity,
         deadlineRadar: plan.deadlineRadar,
         participationChecklist: plan.participationChecklist,
         expiringContractList: plan.expiringContractList,
+        awardHistory: plan.awardHistory,
         priceMemory: plan.priceMemory,
       },
       positioningEl: plan.positioningEl,
+      featuresEl: plan.featuresEl,
     },
     catalog: publicPlans().map((entry) => ({
       key: entry.planKey,
@@ -167,7 +178,10 @@ export const getEntitlementsView = async (
       extraSeatPriceMonthlyEur: entry.extraSeatPriceMonthlyEur,
       maxActiveWatchProfiles: entry.maxActiveWatchProfiles,
       maxActiveFollowedTenders: entry.maxActiveFollowedTenders,
-      periodicScansPerDay: entry.periodicScansPerDay,
+      periodicScansPerDay: entry.maxDigestHoursPerDay,
+      maxDigestHoursPerDay: entry.maxDigestHoursPerDay,
+      emailCadence: entry.emailCadence,
+      featuresEl: entry.featuresEl,
     })),
     contactForMoreSeatsMessage: CONTACT_FOR_MORE_SEATS_EL,
   };
@@ -256,7 +270,8 @@ export const assertPlanFeature = async (
     | "tenderWorkspace"
     | "participationChecklist"
     | "expiringContractList"
-    | "priceMemory",
+    | "priceMemory"
+    | "awardHistory",
 ) => {
   const { plan } = await getOrganizationEntitlements(prisma, input);
   if (!plan[feature]) {

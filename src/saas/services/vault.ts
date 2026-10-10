@@ -34,7 +34,7 @@ let storageSingleton: DocumentStorageProvider | null = null;
 
 export const getDocumentStorage = (): DocumentStorageProvider => {
   if (!storageSingleton) {
-    storageSingleton = createLocalDocumentStorage();
+    storageSingleton = createLocalDocumentStorage(); // uses SAAS_STORAGE_DIR when set
   }
   return storageSingleton;
 };

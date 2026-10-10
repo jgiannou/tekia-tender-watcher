@@ -38,7 +38,7 @@ export const humanSaasError = (message: string): string => {
     return "Έχετε φτάσει το όριο ενεργών αποθηκευμένων αναζητήσεων.";
   }
   if (message.includes("followed_tender_limit")) {
-    return "Έχετε φτάσει το όριο παρακολουθούμενων διαγωνισμών για το πλάνο σας.";
+    return "Παρακολουθείτε ήδη 5 διαγωνισμούς. Με το Basic μπορείτε να παρακολουθείτε έως 30 διαγωνισμούς, να αποθηκεύετε έως 5 αναζητήσεις και να οργανώνετε τα δικαιολογητικά σας.";
   }
   if (message.includes("seat_limit_contact_sales")) {
     return "Χρειάζεστε περισσότερους από 20 χρήστες; Επικοινωνήστε μαζί μας.";
@@ -68,7 +68,7 @@ export const humanSaasError = (message: string): string => {
     return "Τα προχωρημένα φίλτρα (αρχή, προϋπολογισμός, ειδοποιήσεις ανά εξέλιξη) είναι διαθέσιμα στο Pro.";
   }
   if (message.includes("vault_storage_limit_reached")) {
-    return "Έχετε φτάσει το όριο αποθήκευσης του πλάνου. Αναβαθμίστε ή διαγράψτε αρχεία.";
+    return "Έχετε φτάσει το όριο αποθήκευσης του πακέτου. Αναβαθμίστε ή διαγράψτε αρχεία.";
   }
   if (message.includes("billing_not_configured")) {
     return "Η χρέωση δεν είναι ρυθμισμένη ακόμη. Ολοκληρώστε τα Stripe Price IDs.";

@@ -98,7 +98,7 @@ export const TrialBanner = () => {
         <div className="min-w-0 space-y-1">
           <p className="text-sm font-medium">Είστε στο δωρεάν πλάνο</p>
           <p className="text-sm text-muted-foreground">
-            Ίδια ταχύτητα εισαγωγής ΚΗΜΔΗΣ.{" "}
+            Αυτόματος έλεγχος του ΚΗΜΔΗΣ κάθε 2 λεπτά.{" "}
             {banner.canStartProTrial
               ? `Δοκιμάστε το Pro για ${TRIAL_DAYS} ημέρες χωρίς κάρτα, ή Basic από `
               : "Basic από "}

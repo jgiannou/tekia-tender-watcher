@@ -45,8 +45,17 @@ export const PricingCards = ({ mode, className }: PricingCardsProps) => {
             ) : null}
             <h3 className="text-lg font-semibold tracking-tight">{plan.name}</h3>
             <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground">
-              {priceWithTaxHint(plan.priceMonthlyEur)}
+              {key === "free"
+                ? "0 €"
+                : mode === "full"
+                  ? `${priceWithTaxHint(plan.priceMonthlyEur).replace(" / μήνα", "")} / μήνα`
+                  : priceWithTaxHint(plan.priceMonthlyEur)}
             </p>
+            {key !== "free" && mode === "full" ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                ή {plan.priceYearlyEur} € / έτος
+              </p>
+            ) : null}
             <p className="mt-2 text-sm text-muted-foreground">
               {mode === "teaser" ? plan.shortPositioningEl : plan.positioningEl}
             </p>
@@ -67,6 +76,15 @@ export const PricingCards = ({ mode, className }: PricingCardsProps) => {
                 </li>
               ))}
             </ul>
+            {"footnoteEl" in plan && plan.footnoteEl && mode === "full" ? (
+              <p className="mt-4 text-xs text-muted-foreground">{plan.footnoteEl}</p>
+            ) : null}
+            {key === "pro" && mode === "full" ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Περιλαμβάνονται 3 χρήστες. Κάθε επιπλέον χρήστης κοστίζει 2,49 € τον μήνα,
+                έως 20 χρήστες συνολικά. Ετήσια: 24,90 € τον χρόνο ανά επιπλέον χρήστη.
+              </p>
+            ) : null}
             <Button asChild className="mt-6 w-full" variant={featured ? "default" : "outline"}>
               <Link
                 to={
@@ -76,10 +94,11 @@ export const PricingCards = ({ mode, className }: PricingCardsProps) => {
                       ? "/signup?next=/app/subscription"
                       : "/signup"
                 }
+                aria-label={"ctaEl" in plan ? plan.ctaEl : plan.name}
               >
-                {key === "free"
-                  ? "Ξεκινήστε δωρεάν"
-                  : mode === "teaser"
+                {"ctaEl" in plan
+                  ? plan.ctaEl
+                  : key === "free"
                     ? "Ξεκινήστε δωρεάν"
                     : key === "pro"
                       ? `Δοκιμάστε το Pro για ${TRIAL_DAYS} ημέρες`

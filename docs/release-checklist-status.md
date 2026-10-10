@@ -100,6 +100,19 @@
 
 ---
 
+## 8. Πηγές TED / Διαύγεια + Phase 2/3 (2026-10-10)
+
+| Σημείο | Κατάσταση | Στοιχεία |
+|---|---|---|
+| TED Search API (χωρίς API key) | **Υλοποιημένο (opt-in)** | `TED_ENABLED=true` · πραγματικό `POST /v3/notices/search` · fixtures + unit tests · routes `/api/saas/sources/ted/*` · follow → `TED:{publicationNumber}` tender. **Δεν** είναι ακόμα μέρος της κύριας Discover/ΚΗΜΔΗΣ ροής ούτε shared-ingest. |
+| Διαύγεια ADA + search | **Μερικό** | `DIAVGEIA_ENABLED=true` για adapter routes · ADA fetch + luminapi search · enrichment ADAM→ADA παραμένει ενεργό και χωρίς flag. **Δεν** υπάρχει πλήρης συλλογή νέων πράξεων / saved search / inbox. |
+| Credentials blocker | **Λάθος (διορθώθηκε)** | Δεν περιμένουμε TED/Diavgeia credentials για δημόσια αναζήτηση/ανάγνωση. |
+| Checklist παραπομπές σελίδας | **Υλοποιημένο (fix)** | Χωρίς page splits → `page: null` (όχι ψεύτικη «σελίδα 1») · λήξη vault vs σήμερα **και** vs προθεσμία υποβολής. |
+| Ιστορικό κατακυρώσεων / price memory | **Μερικό** | Panel στο followed tender από τοπικά KIMDIS AWRD · `coverage.complete=false` + ελληνικό disclaimer. Όχι πλήρες δημόσιο ιστορικό TED/Διαύγεια. |
+| Πλήρης ροή πριν production | **Λείπει verification** | Weekly Free email, zero-news, outbox retries χωρίς διπλότυπα, plan change, trial expiry, πραγματικό PDF + storage μετά restart · μετά migrate/deploy. |
+
+---
+
 ## Προτεινόμενη σειρά (ενημερωμένη)
 
 1. **Ανοιχτά bugs / επανέλεγχος** — ascending sort date-range, reconcile matches, construction recall  
@@ -109,5 +122,6 @@
 5. **PDF human verify + vault versions**  
 6. **Production gates** — [prod-gates.md](./prod-gates.md) · staging restore + adversarial multi-org  
 7. **Plans/Stripe** — placeholders μόνο · UI αργότερα (€4.99 / €10)
+8. **TED/Diavgeia product surfacing** — opt-in adapters έτοιμα · ένταξη σε Discover/ingest + end-to-end QA πριν production
 
 Πηγή ιστορικού QA: [ARC-Tenders-ReQA-083982a.md](/Users/johngiannousis/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an/outputs/ARC-Tenders-ReQA-083982a.md)

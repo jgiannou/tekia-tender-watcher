@@ -988,7 +988,8 @@ const ensureOpportunityDigestAttention = async (
     },
   });
   await pruneAttentionEventsForOrg(prisma, input.organizationId);
-  queueAttentionEmail(prisma, event.id);
+  // Product email for opportunity digests is coalesced per org/hour in the
+  // hourly wave (flushOpportunityEmailDigests). In-app event stays here.
   return event;
 };
 
