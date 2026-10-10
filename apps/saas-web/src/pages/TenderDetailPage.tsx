@@ -957,10 +957,10 @@ export const TenderDetailPage = () => {
           {following && checklist ? (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Φάκελος συμμετοχής</CardTitle>
+                <CardTitle className="text-base">Έλεγχος δικαιολογητικών συμμετοχής</CardTitle>
                 <CardDescription>
-                  Από το PDF της διακήρυξης · σύγκριση με το Company Vault. Όχι σύσταση bid /
-                  no-bid.
+                  Εντοπίστε τα δικαιολογητικά που ζητά η προκήρυξη και ελέγξτε ποια έχετε ήδη
+                  αποθηκεύσει.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
@@ -1028,9 +1028,9 @@ export const TenderDetailPage = () => {
           {following && priceMemory ? (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Μνήμη τιμής</CardTitle>
+                <CardTitle className="text-base">Ιστορικό τιμών</CardTitle>
                 <CardDescription>
-                  Τελευταίοι ανάδοχοι για ίδιο CPV και περιοχή
+                  Δείτε προηγούμενες τιμές για να προετοιμάσετε την προσφορά σας
                   {priceMemory.cpv ? ` · ${priceMemory.cpv}` : ""}
                   {priceMemory.regionCode ? ` · ${priceMemory.regionCode}` : ""}.
                 </CardDescription>
