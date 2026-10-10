@@ -46,8 +46,26 @@ const expectedDevelopmentFor = (input: {
   relatedProcCount: number;
   recordType: string;
   monitoringActive: boolean;
+  referenceNumber?: string | null;
 }): WorkflowExpectedDevelopment => {
   if (!input.monitoringActive) return null;
+  const ref = input.referenceNumber ?? "";
+  if (ref.startsWith("TED:")) {
+    return {
+      code: "TED_UPDATES",
+      label: "Ενημερώσεις TED",
+      description:
+        "Παρακολουθούμε την ίδια δημοσίευση TED για αλλαγές προθεσμίας ή corrigenda.",
+    };
+  }
+  if (ref.startsWith("DIAVGEIA:")) {
+    return {
+      code: "DIAVGEIA",
+      label: "Πράξη Διαύγειας",
+      description:
+        "Αποθηκευμένη δημόσια πράξη Διαύγειας. Δεν ακολουθεί νήμα ΚΗΜΔΗΣ REQ→PROC.",
+    };
+  }
   if (input.hasSubmission) {
     return {
       code: "AWRD",
@@ -398,6 +416,7 @@ export const getOrganizationTenderWorkflow = async (
       relatedProcCount,
       recordType: organizationTender.tender.recordType,
       monitoringActive: organizationTender.monitoringActive,
+      referenceNumber: organizationTender.tender.referenceNumber,
     }),
     latestSubmission: organizationTender.submissions[0]
       ? {

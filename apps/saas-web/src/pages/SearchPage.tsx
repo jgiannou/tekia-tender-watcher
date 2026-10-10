@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { CpvCombobox } from "@/components/CpvCombobox";
 import { PdfAction } from "@/components/PdfAction";
+import { SourceBadge } from "@/components/SourceBadge";
 import { DateInput } from "@/components/ui/date-input";
 import { Pagination } from "@/components/Pagination";
 import { trackAnalyticsEvent } from "@/lib/analytics";
@@ -33,6 +34,15 @@ import {
   type WatchProfileInput,
 } from "@/lib/api";
 import { evaluateRegionGate, GREEK_NUTS2_REGIONS } from "@/lib/regions";
+
+type TedNoticeRow = {
+  publicationNumber: string;
+  title: string | null;
+  buyerName: string | null;
+  publicationDate: string | null;
+  url: string;
+  provenance: "ted";
+};
 
 const formatMoney = (value: number | null) =>
   value == null
@@ -228,6 +238,14 @@ export const SearchPage = () => {
   const [cpvSuggestions, setCpvSuggestions] = useState<
     Array<{ code: string; label: string }>
   >([]);
+  const [registryTab, setRegistryTab] = useState<"kimdis" | "ted">("kimdis");
+  const [tedEnabled, setTedEnabled] = useState(false);
+  const [tedBlocker, setTedBlocker] = useState<string | null>(null);
+  const [tedQuery, setTedQuery] = useState("");
+  const [tedLoading, setTedLoading] = useState(false);
+  const [tedError, setTedError] = useState<string | null>(null);
+  const [tedNotices, setTedNotices] = useState<TedNoticeRow[]>([]);
+  const [tedBusy, setTedBusy] = useState(false);
 
   useEffect(() => {
     setDraft(urlState);
@@ -240,7 +258,65 @@ export const SearchPage = () => {
       .watchSuggestions(activeOrganization.id)
       .then((result) => setCpvSuggestions(result.suggestions.cpvs ?? []))
       .catch(() => setCpvSuggestions([]));
+    void saasApi
+      .getSourcesStatus(activeOrganization.id)
+      .then((status) => {
+        setTedEnabled(status.ted.enabled);
+        setTedBlocker(status.ted.blocker);
+      })
+      .catch(() => {
+        setTedEnabled(false);
+        setTedBlocker("sources_status_unavailable");
+      });
   }, [activeOrganization?.id]);
+
+  const handleTedSearch = async () => {
+    if (!activeOrganization) return;
+    setTedLoading(true);
+    setTedError(null);
+    try {
+      const result = await saasApi.searchTedNotices(activeOrganization.id, {
+        q: tedQuery.trim() || undefined,
+        limit: 20,
+      });
+      if (result.blocker) {
+        setTedError(
+          result.blocker.includes("TED_ENABLED") || result.blocker.includes("ted_disabled")
+            ? "Το TED δεν είναι ενεργοποιημένο στον server (TED_ENABLED=true)."
+            : `Το TED δεν είναι διαθέσιμο αυτή τη στιγμή (${result.blocker}).`,
+        );
+        setTedNotices([]);
+        return;
+      }
+      setTedNotices(result.notices);
+    } catch (err) {
+      setTedError(err instanceof Error ? err.message : "Αποτυχία αναζήτησης TED");
+      setTedNotices([]);
+    } finally {
+      setTedLoading(false);
+    }
+  };
+
+  const handleFollowTed = async (notice: TedNoticeRow) => {
+    if (!activeOrganization) return;
+    setTedBusy(true);
+    try {
+      await saasApi.followTedNotice(activeOrganization.id, notice);
+      toast.success("Προστέθηκε στην Παρακολούθηση από TED");
+      trackAnalyticsEvent("tender_followed", {
+        content_type: "TED",
+        item_id: notice.publicationNumber,
+        source: "ted_search",
+      });
+      void navigate(
+        `/app/tenders/PROC/${encodeURIComponent(`TED:${notice.publicationNumber}`)}`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Αποτυχία παρακολούθησης TED");
+    } finally {
+      setTedBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!activeOrganization || !urlState.run) return;
@@ -392,20 +468,123 @@ export const SearchPage = () => {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Αναζήτηση στο ΚΗΜΔΗΣ</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">Αναζήτηση</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Αναζητήστε δημοσιεύσεις στο ΚΗΜΔΗΣ με τα κριτήριά σας. Τα αποτελέσματα δεν προστίθενται αυτόματα στις Ευκαιρίες.
+            Χειροκίνητη αναζήτηση σε ΚΗΜΔΗΣ ή TED. Για αυτόματη εύρεση, αποθηκεύστε κριτήρια με τις επιλεγμένες πηγές.
           </p>
         </div>
+        {registryTab === "kimdis" ? (
+          <Button
+            variant="outline"
+            onClick={() => void handleOpenSave()}
+            disabled={!urlState.run}
+          >
+            Αποθήκευση αναζήτησης
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
         <Button
-          variant="outline"
-          onClick={() => void handleOpenSave()}
-          disabled={!urlState.run}
+          variant={registryTab === "kimdis" ? "default" : "outline"}
+          onClick={() => setRegistryTab("kimdis")}
         >
-          Αποθήκευση αναζήτησης
+          ΚΗΜΔΗΣ
+        </Button>
+        <Button
+          variant={registryTab === "ted" ? "default" : "outline"}
+          onClick={() => setRegistryTab("ted")}
+        >
+          TED
         </Button>
       </div>
 
+      {registryTab === "ted" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              Αναζήτηση TED <SourceBadge system="ted" />
+            </CardTitle>
+            <CardDescription>
+              Επίσημο Search API χωρίς API key. Απαιτείται `TED_ENABLED=true` στον server.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!tedEnabled ? (
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                Το TED δεν είναι διαθέσιμο αυτή τη στιγμή
+                {tedBlocker ? ` (${tedBlocker})` : ""}. Ενεργοποιήστε
+                `TED_ENABLED=true` και επανεκκινήστε το API.
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Input
+                value={tedQuery}
+                onChange={(e) => setTedQuery(e.target.value)}
+                placeholder="Λέξεις στον τίτλο (π.χ. φόρτιση)"
+                className="min-w-[220px] flex-1"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleTedSearch();
+                }}
+                aria-label="Αναζήτηση TED"
+              />
+              <Button
+                disabled={!tedEnabled || tedLoading}
+                onClick={() => void handleTedSearch()}
+              >
+                {tedLoading ? "Αναζήτηση…" : "Αναζήτηση"}
+              </Button>
+            </div>
+            {tedError ? <ErrorState description={tedError} /> : null}
+            {tedNotices.length === 0 && !tedLoading && !tedError && tedEnabled ? (
+              <p className="text-sm text-muted-foreground">
+                Εκτελέστε αναζήτηση για δημοσιεύσεις TED (Ελλάδα).
+              </p>
+            ) : null}
+            <div className="space-y-3">
+              {tedNotices.map((notice) => (
+                <div
+                  key={notice.publicationNumber}
+                  className="rounded-md border border-border px-3 py-3"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <SourceBadge system="ted" />
+                    <span className="font-mono text-xs text-muted-foreground">
+                      TED:{notice.publicationNumber}
+                    </span>
+                  </div>
+                  <h3 className="mt-1 text-sm font-semibold leading-snug">
+                    {notice.title || "—"}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {notice.buyerName || "—"}
+                    {notice.publicationDate
+                      ? ` · ${formatDate(notice.publicationDate)}`
+                      : ""}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      disabled={tedBusy}
+                      onClick={() => void handleFollowTed(notice)}
+                    >
+                      Παρακολούθηση
+                    </Button>
+                    <Button size="sm" variant="outline" asChild>
+                      <a href={notice.url} target="_blank" rel="noreferrer">
+                        Επίσημη δημοσίευση
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {registryTab === "kimdis" ? (
+      <>
       <div className="flex gap-2">
         {(
           [
@@ -894,6 +1073,8 @@ export const SearchPage = () => {
           ) : null
         }
       />
+      </>
+      ) : null}
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent>

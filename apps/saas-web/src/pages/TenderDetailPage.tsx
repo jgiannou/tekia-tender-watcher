@@ -9,6 +9,7 @@ import { PdfAction } from "@/components/PdfAction";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { ScoreBadge } from "@/components/ScoreBadge";
+import { SourceBadge } from "@/components/SourceBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -692,8 +693,11 @@ export const TenderDetailPage = () => {
             <Badge variant={item.recordType === "REQ" ? "secondary" : "default"}>
               {item.recordType}
             </Badge>
+            <SourceBadge referenceNumber={item.adam} />
             <span className="font-mono text-xs text-muted-foreground">
-              ΑΔΑΜ {item.adam}
+              {item.adam.startsWith("TED:") || item.adam.startsWith("DIAVGEIA:")
+                ? item.adam
+                : `ΑΔΑΜ ${item.adam}`}
             </span>
             {diavgeia ? (
               <a
@@ -730,15 +734,28 @@ export const TenderDetailPage = () => {
             {item.finalSubmissionDate ? (
               <span>Προθεσμία υποβολής: {formatDate(item.finalSubmissionDate)}</span>
             ) : null}
-            <span>Πηγή: ΚΗΜΔΗΣ</span>
-            <a
-              href={item.publicKimdisUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="underline hover:text-foreground"
-            >
-              Άνοιγμα στο ΚΗΜΔΗΣ
-            </a>
+            <span>
+              Πηγή:{" "}
+              {item.adam.startsWith("TED:")
+                ? "TED"
+                : item.adam.startsWith("DIAVGEIA:")
+                  ? "Διαύγεια"
+                  : "ΚΗΜΔΗΣ"}
+            </span>
+            {item.publicKimdisUrl ? (
+              <a
+                href={item.publicKimdisUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="underline hover:text-foreground"
+              >
+                {item.adam.startsWith("TED:")
+                  ? "Άνοιγμα στο TED"
+                  : item.adam.startsWith("DIAVGEIA:")
+                    ? "Άνοιγμα στη Διαύγεια"
+                    : "Άνοιγμα στο ΚΗΜΔΗΣ"}
+              </a>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">

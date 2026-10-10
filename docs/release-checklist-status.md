@@ -104,12 +104,15 @@
 
 | Σημείο | Κατάσταση | Στοιχεία |
 |---|---|---|
-| TED Search API (χωρίς API key) | **Υλοποιημένο (opt-in)** | `TED_ENABLED=true` · πραγματικό `POST /v3/notices/search` · fixtures + unit tests · routes `/api/saas/sources/ted/*` · follow → `TED:{publicationNumber}` tender. **Δεν** είναι ακόμα μέρος της κύριας Discover/ΚΗΜΔΗΣ ροής ούτε shared-ingest. |
-| Διαύγεια ADA + search | **Μερικό** | `DIAVGEIA_ENABLED=true` για adapter routes · ADA fetch + luminapi search · enrichment ADAM→ADA παραμένει ενεργό και χωρίς flag. **Δεν** υπάρχει πλήρης συλλογή νέων πράξεων / saved search / inbox. |
+| TED Search API (χωρίς API key) | **Υλοποιημένο (opt-in)** | `TED_ENABLED=true` · `POST /v3/notices/search` · routes `/api/saas/sources/ted/*` · follow → `TED:{publicationNumber}` · live smoke `scripts/smoke-sources-live.mjs`. |
+| TED/Diavgeia σε αποθηκευμένες αναζητήσεις | **Υλοποιημένο (opt-in)** | `customFilters.dataSources` · φάσεις scan TED/Diavgeia στο `runWatchProfileScan` · dedupe `seenRefs` · partial errors όταν disabled · UI επιλογής πηγών στις Αποθηκευμένες αναζητήσεις. |
+| TED follow monitoring | **Υλοποιημένο (βασικό)** | `monitorTedFollowedNotices` στο shared-ingest · επανέλεγχος ίδιας δημοσίευσης · `DEADLINE_CHANGED` / ενημέρωση τίτλου · όχι ψεύτικα KIMDIS RELATED_*. |
+| Διαύγεια ADA + search | **Μερικό** | Adapter + scan όταν `DIAVGEIA_ENABLED` · enrichment ADAM→ADA χωρίς flag · όχι πλήρες inbox/συλλογή. |
+| UI προέλευσης | **Υλοποιημένο** | `SourceBadge` · Αναζήτηση tab TED · επίσημος σύνδεσμος · μηνύματα όταν πηγή disabled. |
 | Credentials blocker | **Λάθος (διορθώθηκε)** | Δεν περιμένουμε TED/Diavgeia credentials για δημόσια αναζήτηση/ανάγνωση. |
-| Checklist παραπομπές σελίδας | **Υλοποιημένο (fix)** | Χωρίς page splits → `page: null` (όχι ψεύτικη «σελίδα 1») · λήξη vault vs σήμερα **και** vs προθεσμία υποβολής. |
-| Ιστορικό κατακυρώσεων / price memory | **Μερικό** | Panel στο followed tender από τοπικά KIMDIS AWRD · `coverage.complete=false` + ελληνικό disclaimer. Όχι πλήρες δημόσιο ιστορικό TED/Διαύγεια. |
-| Πλήρης ροή πριν production | **Λείπει verification** | Weekly Free email, zero-news, outbox retries χωρίς διπλότυπα, plan change, trial expiry, πραγματικό PDF + storage μετά restart · μετά migrate/deploy. |
+| Checklist παραπομπές σελίδας | **Υλοποιημένο (fix)** | Χωρίς page splits → `page: null` · λήξη vault vs σήμερα **και** vs προθεσμία υποβολής. |
+| Ιστορικό κατακυρώσεων / price memory | **Μερικό (OK για v1)** | KIMDIS AWRD samples · `coverage.complete=false` · δεν μπλοκάρει launch. |
+| Πλήρης ροή πριν production | **Λείπει verification** | E2E search→follow→monitor→notify σε staging · weekly Free email · retries · plan/trial · PDF/storage/backup. |
 
 ---
 

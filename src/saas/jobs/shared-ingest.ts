@@ -252,6 +252,8 @@ export const runSharedKimdisIngest = async (
     await persistActs(prisma, items);
     await matchNewActs(prisma, items);
     await monitorFollowedThreads(prisma);
+    const { monitorTedFollowedNotices } = await import("./monitor-ted-notices.js");
+    await monitorTedFollowedNotices(prisma);
     await notifyUrgentDeadlines(prisma);
     await persistCheckpoints(
       prisma,

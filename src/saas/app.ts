@@ -1113,6 +1113,10 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     includeUnclassifiedRegion: z.boolean().optional(),
     skipSimilarCheck: z.boolean().optional(),
     source: z.enum(["MANUAL", "SAVED_FROM_SEARCH", "SETUP_RECOMMENDATION"]).optional(),
+    dataSources: z
+      .array(z.enum(["kimdis", "ted", "diavgeia"]))
+      .min(1)
+      .optional(),
   });
 
   app.get("/api/saas/opportunities", requireSession, async (c) => {

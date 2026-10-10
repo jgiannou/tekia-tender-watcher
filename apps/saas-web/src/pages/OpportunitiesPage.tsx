@@ -7,6 +7,7 @@ import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { ScoreBadge } from "@/components/ScoreBadge";
+import { SourceBadge } from "@/components/SourceBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,11 +106,15 @@ const sortOpportunities = (
 };
 
 const tenderPath = (opportunity: Opportunity) => {
+  const ref = opportunity.tender.referenceNumber;
+  if (ref.startsWith("TED:") || ref.startsWith("DIAVGEIA:")) {
+    return `/app/tenders/PROC/${encodeURIComponent(ref)}`;
+  }
   const type =
     opportunity.tender.recordType === "PROC" || opportunity.tender.recordType === "REQ"
       ? opportunity.tender.recordType
       : "REQ";
-  return `/app/tenders/${type}/${encodeURIComponent(opportunity.tender.referenceNumber)}`;
+  return `/app/tenders/${type}/${encodeURIComponent(ref)}`;
 };
 
 const formatMoney = (value: number | null) =>
@@ -543,6 +548,9 @@ export const OpportunitiesPage = () => {
                     <div className="flex flex-wrap items-center gap-2">
                       {isNew ? <Badge variant="default">Νέα</Badge> : null}
                       <Badge>{opportunity.tender.recordType}</Badge>
+                      <SourceBadge
+                        referenceNumber={opportunity.tender.referenceNumber}
+                      />
                       <span className="font-mono text-xs text-muted-foreground">
                         {opportunity.tender.referenceNumber}
                       </span>
