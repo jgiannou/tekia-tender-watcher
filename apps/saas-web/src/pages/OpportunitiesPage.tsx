@@ -19,12 +19,13 @@ import {
   type WatchProfile,
 } from "@/lib/api";
 import { trackAnalyticsEvent } from "@/lib/analytics";
+import { formatMatchReason } from "@/lib/matchReasons";
 import { cn } from "@/lib/utils";
 
 type OpportunitySort = "newest" | "oldest" | "score" | "deadline";
 
 const SORT_OPTIONS: Array<{ value: OpportunitySort; label: string }> = [
-  { value: "newest", label: "Νεότερα πρώτα" },
+  { value: "newest", label: "Πιο πρόσφατες πρώτα" },
   { value: "oldest", label: "Παλαιότερα πρώτα" },
   { value: "score", label: "Υψηλότερη συνάφεια" },
   { value: "deadline", label: "Κοντινότερη προθεσμία" },
@@ -268,7 +269,7 @@ export const OpportunitiesPage = () => {
       return;
     }
     if (profileScansBlocked) {
-      toast.error("Η χειροκίνητη σάρωση δεν είναι διαθέσιμη για τον λογαριασμό σας.");
+      toast.error("Ο χειροκίνητος έλεγχος δεν είναι διαθέσιμος για τον λογαριασμό σας.");
       return;
     }
     setScanBusy(true);
@@ -282,12 +283,12 @@ export const OpportunitiesPage = () => {
       );
       toast.success(
         scanTargets.length === 1
-          ? `Η σάρωση ξεκίνησε για «${scanTargets[0]?.name}».`
-          : `Ξεκίνησαν ${scanTargets.length} σαρώσεις.`,
+          ? `Ο έλεγχος ξεκίνησε για «${scanTargets[0]?.name}».`
+          : `Ξεκίνησαν ${scanTargets.length} έλεγχοι.`,
       );
       await load({ silent: true });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Αποτυχία σάρωσης");
+      toast.error(err instanceof Error ? err.message : "Αποτυχία ελέγχου");
     } finally {
       setScanBusy(false);
     }
@@ -302,7 +303,7 @@ export const OpportunitiesPage = () => {
         item_id: opportunity.tender.id,
         source: "opportunities",
       });
-      toast.success("Ο διαγωνισμός προστέθηκε στα Παρακολουθούμενα.");
+      toast.success("Ο διαγωνισμός προστέθηκε στην Παρακολούθηση.");
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Αποτυχία παρακολούθησης");
@@ -370,10 +371,10 @@ export const OpportunitiesPage = () => {
   const following = filtered.filter((o) => o.following).length;
 
   const scanButtonLabel = (() => {
-    if (scanBusy || anyTargetScanning) return "Σάρωση…";
-    if (profileFilter && filterProfileName) return `Σάρωση «${filterProfileName}»`;
-    if (scanTargets.length > 1) return `Σάρωση (${scanTargets.length})`;
-    return "Σάρωση";
+    if (scanBusy || anyTargetScanning) return "Έλεγχος…";
+    if (profileFilter && filterProfileName) return `Έλεγχος τώρα «${filterProfileName}»`;
+    if (scanTargets.length > 1) return `Έλεγχος τώρα (${scanTargets.length})`;
+    return "Έλεγχος τώρα";
   })();
 
   type EmptyVariant = "no-active" | "scanning" | "none-found";
@@ -422,9 +423,9 @@ export const OpportunitiesPage = () => {
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Ευκαιρίες</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Ό,τι βρήκαν αυτόματα οι αποθηκευμένες αναζητήσεις σας.
+            Δημοσιεύσεις που εντοπίστηκαν αυτόματα από τις αποθηκευμένες αναζητήσεις σας.
             {unreadNewCount > 0
-              ? ` · ${unreadNewCount} νέ${unreadNewCount === 1 ? "α" : "ες"} — περάστε πάνω ή ανοίξτε για να αφαιρεθεί η επισήμανση`
+              ? ` · ${unreadNewCount} νέ${unreadNewCount === 1 ? "α" : "ες"} ευκαιρί${unreadNewCount === 1 ? "α" : "ες"}. Η ένδειξη “Νέα” αφαιρείται όταν περάσετε τον δείκτη πάνω από την κάρτα ή ανοίξετε τις λεπτομέρειες.`
               : ""}
           </p>
         </div>
@@ -455,7 +456,7 @@ export const OpportunitiesPage = () => {
               scanTargets.length === 0 ||
               anyTargetScanning
             }
-            aria-label="Σάρωση αποθηκευμένων αναζητήσεων"
+            aria-label="Έλεγχος αποθηκευμένων αναζητήσεων"
           >
             {scanButtonLabel}
           </Button>
@@ -481,9 +482,9 @@ export const OpportunitiesPage = () => {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
-          ["Χωρίς παρακολούθηση", String(unfollowed)],
-          ["Υψηλή συνάφεια", String(highScore)],
-          ["Παρακολουθούμενα", String(following)],
+          ["Δεν παρακολουθούνται", String(unfollowed)],
+          ["Υψηλή συνάφεια με τα κριτήριά σας", String(highScore)],
+          ["Παρακολούθηση", String(following)],
           ["Ενεργές αναζητήσεις", String(enabledProfiles.length)],
         ].map(([label, value]) => (
           <Card key={label}>
@@ -510,10 +511,10 @@ export const OpportunitiesPage = () => {
             {emptyVariant === "no-active" ? (
               <div className="flex flex-wrap justify-center gap-2">
                 <Button asChild>
-                  <Link to="/app/saved-searches">Νέα Αποθηκευμένη Αναζήτηση</Link>
+                  <Link to="/app/saved-searches">Νέα αποθηκευμένη αναζήτηση</Link>
                 </Button>
                 <Button variant="outline" asChild>
-                  <Link to="/app/search">Αναζήτηση ΚΗΜΔΗΣ</Link>
+                  <Link to="/app/search">Αναζήτηση στο ΚΗΜΔΗΣ</Link>
                 </Button>
               </div>
             ) : null}
@@ -562,7 +563,7 @@ export const OpportunitiesPage = () => {
                       </span>
                       {opportunity.tender.finalSubmissionDate ? (
                         <span>
-                          Καταληκτική:{" "}
+                          Προθεσμία υποβολής:{" "}
                           {formatDate(opportunity.tender.finalSubmissionDate)}
                         </span>
                       ) : null}
@@ -570,7 +571,7 @@ export const OpportunitiesPage = () => {
                     {profilesMatched.length ? (
                       <div className="space-y-1 text-xs text-muted-foreground">
                         <div>
-                          Βρέθηκε από: {profilesMatched.map((p) => p.name).join(" · ")}
+                          Αναζήτηση: {profilesMatched.map((p) => p.name).join(" · ")}
                         </div>
                         <ul className="space-y-0.5">
                           {[
@@ -578,13 +579,13 @@ export const OpportunitiesPage = () => {
                           ]
                             .slice(0, 4)
                             .map((reason) => (
-                              <li key={reason}>✓ {reason}</li>
+                              <li key={reason}>✓ {formatMatchReason(reason)}</li>
                             ))}
                         </ul>
                       </div>
                     ) : opportunity.watchProfile ? (
                       <div className="text-xs text-muted-foreground">
-                        Βρέθηκε από: {opportunity.watchProfile.name}
+                        Αναζήτηση: {opportunity.watchProfile.name}
                       </div>
                     ) : null}
                   </div>
@@ -600,7 +601,7 @@ export const OpportunitiesPage = () => {
                         to={tenderPath(opportunity)}
                         onClick={() => void handleMarkSeen(opportunity)}
                       >
-                        Άνοιγμα
+                        Προβολή λεπτομερειών
                       </Link>
                     </Button>
                     {!opportunity.following ? (

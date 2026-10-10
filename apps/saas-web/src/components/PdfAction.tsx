@@ -13,7 +13,7 @@ type PdfActionProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 /** Text "PDF" control for opening the official document preview. */
 export const PdfAction = ({
-  label = "Προεπισκόπηση PDF",
+  label = "Προβολή PDF",
   className,
   ...props
 }: PdfActionProps) => (
@@ -27,7 +27,7 @@ export const PdfAction = ({
         className={cn("h-8 shrink-0 px-2.5 font-semibold tracking-wide", className)}
         {...props}
       >
-        PDF
+        Προβολή PDF
       </Button>
     </TooltipTrigger>
     <TooltipContent>{label}</TooltipContent>

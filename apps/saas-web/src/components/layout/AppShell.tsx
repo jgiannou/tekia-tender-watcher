@@ -65,12 +65,13 @@ const navSections: NavSection[] = [
     items: [{ to: "/app", label: "Επισκόπηση", icon: LayoutDashboard, end: true }],
   },
   {
-    title: "Ανακάλυψη",
+    title: "Εύρεση διαγωνισμών",
     items: [
-      { to: "/app/search", label: "Αναζήτηση ΚΗΜΔΗΣ", icon: FileSearch },
+      { to: "/app/search", label: "Αναζήτηση στο ΚΗΜΔΗΣ", icon: FileSearch },
       { to: "/app/opportunities", label: "Ευκαιρίες", icon: Radar },
-      { to: "/app/monitoring", label: "Παρακολουθούμενα", icon: Binoculars },
-      { to: "/app/expiring-contracts", label: "Λήγουσες συμβάσεις", icon: FileText },
+      { to: "/app/monitoring", label: "Παρακολούθηση", icon: Binoculars },
+      { to: "/app/expiring-contracts", label: "Συμβάσεις που λήγουν", icon: FileText },
+      { to: "/app/saved-searches", label: "Αποθηκευμένες αναζητήσεις", icon: Bookmark },
     ],
   },
   {
@@ -78,12 +79,6 @@ const navSections: NavSection[] = [
     items: [
       { to: "/app/submissions", label: "Υποβολές", icon: Send },
       { to: "/app/documents", label: "Έγγραφα", icon: FolderOpen },
-    ],
-  },
-  {
-    title: "Παρακολούθηση",
-    items: [
-      { to: "/app/saved-searches", label: "Αποθηκευμένες Αναζητήσεις", icon: Bookmark },
     ],
   },
   {
@@ -114,14 +109,14 @@ const prefetchRoute = (to: string) => {
 const titleForPath = (pathname: string): string => {
   if (pathname.startsWith("/app/settings")) return "Ρυθμίσεις";
   if (pathname.startsWith("/app/setup")) return "Ρύθμιση επιχείρησης";
-  if (pathname.startsWith("/app/search")) return "Αναζήτηση ΚΗΜΔΗΣ";
-  if (pathname.startsWith("/app/tenders/")) return "Πράξη ΚΗΜΔΗΣ";
+  if (pathname.startsWith("/app/search")) return "Αναζήτηση στο ΚΗΜΔΗΣ";
+  if (pathname.startsWith("/app/tenders/")) return "Δημοσίευση στο ΚΗΜΔΗΣ";
   if (pathname.startsWith("/app/opportunities")) return "Ευκαιρίες";
-  if (pathname.startsWith("/app/monitoring")) return "Παρακολουθούμενα";
+  if (pathname.startsWith("/app/monitoring")) return "Παρακολούθηση";
   if (pathname.startsWith("/app/submissions")) return "Υποβολές";
   if (pathname.startsWith("/app/documents")) return "Έγγραφα";
-  if (pathname.startsWith("/app/saved-searches")) return "Αποθηκευμένες Αναζητήσεις";
-  if (pathname.startsWith("/app/expiring-contracts")) return "Λήγουσες συμβάσεις";
+  if (pathname.startsWith("/app/saved-searches")) return "Αποθηκευμένες αναζητήσεις";
+  if (pathname.startsWith("/app/expiring-contracts")) return "Συμβάσεις που λήγουν";
   if (pathname.startsWith("/app/notifications")) return "Ειδοποιήσεις";
   if (pathname.startsWith("/app/subscription")) return "Συνδρομή";
   return "Επισκόπηση";

@@ -43,7 +43,7 @@ const statusLabel = (status: VaultDocument["status"]) => {
     case "EXPIRED":
       return "Ληγμένο";
     default:
-      return "Χωρίς λήξη";
+      return "Χωρίς ημερομηνία λήξης";
   }
 };
 
@@ -252,7 +252,7 @@ export const DocumentsPage = () => {
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Έγγραφα</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Company Vault — επαναχρησιμοποιήσιμα έγγραφα οργανισμού για κάθε διαγωνισμό.
+            Αποθηκεύστε και οργανώστε τα έγγραφα της εταιρείας σας για χρήση στους διαγωνισμούς που συμμετέχετε.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -286,7 +286,7 @@ export const DocumentsPage = () => {
           </Button>
           <Button onClick={() => setUploadOpen(true)}>
             <Plus className="h-4 w-4" />
-            Μεταφόρτωση
+            Ανέβασμα εγγράφου
           </Button>
         </div>
       </div>
@@ -312,7 +312,7 @@ export const DocumentsPage = () => {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Φάκελοι</CardTitle>
-            <CardDescription>Προεπιλεγμένη δομή προμηθειών</CardDescription>
+            <CardDescription>Οργάνωση εγγράφων ανά κατηγορία</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1">
             {rootFolders.map((folder) => (
@@ -376,7 +376,7 @@ export const DocumentsPage = () => {
             <EmptyState
               title="Κενός φάκελος"
               description="Δεν υπάρχουν ακόμη έγγραφα σε αυτή την κατηγορία."
-              actionLabel="Μεταφόρτωση εγγράφου"
+              actionLabel="Ανέβασμα εγγράφου"
               onAction={() => setUploadOpen(true)}
             />
           ) : (
@@ -390,7 +390,7 @@ export const DocumentsPage = () => {
                       <th className="px-4 py-3 font-medium">Κατάσταση</th>
                       <th className="px-4 py-3 font-medium">Έκδοση</th>
                       <th className="px-4 py-3 font-medium">Λήξη</th>
-                      <th className="px-4 py-3 font-medium">Ενημέρωση</th>
+                      <th className="px-4 py-3 font-medium">Τελευταία ενημέρωση</th>
                       <th className="px-4 py-3 font-medium" />
                     </tr>
                   </thead>

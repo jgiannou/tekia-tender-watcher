@@ -141,7 +141,7 @@ describe("SaaS request → outreach → submission workflow", () => {
       tenderId: proc.id,
     });
     expect(afterFollow.nextAction.code).toBe("START_PREPARATION");
-    expect(afterFollow.nextAction.label).toBe("Έναρξη προετοιμασίας");
+    expect(afterFollow.nextAction.label).toBe("Προετοιμασία προσφοράς");
 
     await startPreparation(prisma, {
       userId: user.id,

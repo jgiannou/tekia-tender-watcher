@@ -658,7 +658,7 @@ export const SetupPage = () => {
             <div className="flex flex-wrap gap-2 pt-2">
               <Button onClick={() => navigate("/app")}>Μετάβαση στην Επισκόπηση</Button>
               <Button variant="outline" onClick={() => navigate("/app/search")}>
-                Αναζήτηση ΚΗΜΔΗΣ
+                Αναζήτηση στο ΚΗΜΔΗΣ
               </Button>
             </div>
           </CardContent>

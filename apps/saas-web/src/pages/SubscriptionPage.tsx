@@ -20,6 +20,12 @@ import {
 import { humanSaasError } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
+const formatSubscriptionPrice = (amount: number | null | undefined) => {
+  if (amount == null) return "—";
+  if (amount === 0) return "0 €";
+  return `${amount.toLocaleString("el-GR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+};
+
 export const SubscriptionPage = () => {
   const { activeOrganization, user } = useSessionContext();
   const [params] = useSearchParams();
@@ -220,13 +226,12 @@ export const SubscriptionPage = () => {
           </p>
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Συνδρομή</h1>
           <p className="text-sm text-white/90 md:text-base">
-            Ξεκινάτε στο Free. Basic για επιλεγμένη παρακολούθηση. Pro για συστηματική
-            κάλυψη, περισσότερες σαρώσεις και ομάδα — ή δοκιμάστε Pro για 7 ημέρες χωρίς
-            κάρτα.
+            Επιλέξτε το πακέτο που ταιριάζει στις ανάγκες σας. Ξεκινήστε δωρεάν ή δοκιμάστε
+            το Pro για 7 ημέρες, χωρίς κάρτα.
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-semibold">
-              Πλάνο: {currentLabel}
+              Το πακέτο σας: {currentLabel}
             </span>
             {status?.trialEndsAt && status.planKey === "trial" ? (
               <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs">
@@ -250,7 +255,7 @@ export const SubscriptionPage = () => {
                 disabled={busyKey === "portal" || busyKey === "cancel"}
                 onClick={() => void handlePortal()}
               >
-                {busyKey === "portal" ? "Άνοιγμα…" : "Διαχείριση χρέωσης"}
+                {busyKey === "portal" ? "Άνοιγμα…" : "Διαχείριση πληρωμών"}
               </Button>
               {!status.cancelAtPeriodEnd ? (
                 <Button
@@ -279,9 +284,10 @@ export const SubscriptionPage = () => {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Επιλέξτε πλάνο</h2>
+          <h2 className="text-lg font-semibold">Επιλέξτε πακέτο</h2>
           <p className="text-sm text-muted-foreground">
-            Τιμές χωρίς ΦΠΑ. Ετήσια = 10× μηνιαία (2 μήνες δώρο).
+            Οι τιμές δεν περιλαμβάνουν ΦΠΑ. Με ετήσια χρέωση πληρώνετε για 10 μήνες και
+            χρησιμοποιείτε την υπηρεσία για 12.
           </p>
         </div>
         <div className="inline-flex rounded-lg border border-border bg-card p-1">
@@ -297,7 +303,7 @@ export const SubscriptionPage = () => {
               )}
               onClick={() => setInterval(value)}
             >
-              {value === "monthly" ? "Μηνιαία" : "Ετήσια"}
+              {value === "monthly" ? "Μηνιαία χρέωση" : "Ετήσια χρέωση"}
             </button>
           ))}
         </div>
@@ -310,17 +316,17 @@ export const SubscriptionPage = () => {
             <CardDescription>{free.positioningEl || free.positioning}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <p className="text-2xl font-semibold">€0</p>
+            <p className="text-2xl font-semibold">0 €</p>
             <ul className="space-y-1.5 text-muted-foreground">
               {(free.featuresEl ?? []).map((feature) => (
                 <li key={feature}>• {feature}</li>
               ))}
             </ul>
             {status?.planKey === "free" ? (
-              <Badge variant="success">Τρέχον πλάνο</Badge>
+              <Badge variant="success">Το πακέτο σας</Badge>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Η εγγραφή ξεκινά εδώ. Δεν απαιτείται κάρτα.
+                Δωρεάν χρήση, χωρίς κάρτα.
               </p>
             )}
           </CardContent>
@@ -374,7 +380,7 @@ export const SubscriptionPage = () => {
                 <CardDescription>{plan.positioningEl || plan.positioning}</CardDescription>
                 <div className="pt-2">
                   <span className="text-3xl font-semibold tracking-tight">
-                    {amount == null ? "—" : `€${amount}`}
+                    {formatSubscriptionPrice(amount)}
                   </span>
                   <span className="ml-1 text-sm text-muted-foreground">
                     {interval === "annual" ? "/ έτος" : "/ μήνα"}
@@ -394,7 +400,7 @@ export const SubscriptionPage = () => {
                 {plan.key === "pro" ? (
                   <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
                     <div className="flex items-center justify-between text-sm">
-                      <label htmlFor="extra-seats">Έξτρα θέσεις</label>
+                      <label htmlFor="extra-seats">Επιπλέον χρήστες</label>
                       <span className="font-medium">{extraSeats}</span>
                     </div>
                     <input
@@ -405,15 +411,18 @@ export const SubscriptionPage = () => {
                       value={extraSeats}
                       onChange={(e) => setExtraSeats(Number(e.target.value))}
                       className="w-full accent-[var(--arc-primary)]"
-                      aria-label="Έξτρα θέσεις Pro"
+                      aria-label="Επιπλέον χρήστες Pro"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Συμπεριλαμβάνονται {plan.includedSeats}. Έξτρα{" "}
-                      {interval === "annual"
-                        ? `€${plan.extraSeatAnnualEur ?? 24.9}`
-                        : `€${plan.extraSeatMonthlyEur ?? 2.49}`}{" "}
-                      / θέση. Σύνολο θέσεων: {plan.includedSeats + extraSeats}/{seatCap}.
-                      {isCurrent ? ` Τώρα: ${plan.includedSeats + currentExtra}.` : null}
+                      Περιλαμβάνονται {plan.includedSeats} χρήστες. Κάθε επιπλέον χρήστης
+                      κοστίζει{" "}
+                      {formatSubscriptionPrice(
+                        interval === "annual"
+                          ? plan.extraSeatAnnualEur ?? 24.9
+                          : plan.extraSeatMonthlyEur ?? 2.49,
+                      )}{" "}
+                      τον μήνα. Επιλεγμένο σύνολο: {plan.includedSeats + extraSeats}{" "}
+                      χρήστες. Μέγιστο όριο: {seatCap}.
                     </p>
                     {needsStripeCheckout ? (
                       <p className="text-xs text-amber-700 dark:text-amber-300">
@@ -462,7 +471,7 @@ export const SubscriptionPage = () => {
                           : plan.key === "pro" && onProTrial
                             ? "Αγορά Pro"
                             : isCurrent
-                              ? "Τρέχον πλάνο"
+                              ? "Το πακέτο σας"
                               : canTryPro
                                 ? "Αγορά Pro χωρίς δοκιμή"
                                 : `Επιλογή ${plan.labelEl}`}
@@ -476,15 +485,16 @@ export const SubscriptionPage = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Free + δοκιμή Pro</CardTitle>
+          <CardTitle className="text-base">Δωρεάν πακέτο και δοκιμή Pro</CardTitle>
           <CardDescription>
-            Η εγγραφή ξεκινά στο Free (χωρίς κάρτα, χωρίς λήξη). Χωριστά μπορείτε να
-            δοκιμάσετε το Pro για 7 ημέρες — δεν αντικαθιστά το Free. Μετά τη λήξη
-            επιστρέφετε στο Free ή επιλέγετε Basic/Pro.
+            Με την εγγραφή σας αποκτάτε το δωρεάν πακέτο, χωρίς κάρτα και χωρίς χρονικό
+            περιορισμό. Μπορείτε να δοκιμάσετε το Pro για 7 ημέρες. Αν δεν επιλέξετε
+            συνδρομή, μετά τη δοκιμή συνεχίζετε με το δωρεάν πακέτο.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          Χρειάζεστε βοήθεια για τιμολόγηση ή &gt;20 χρήστες;{" "}
+          Χρειάζεστε βοήθεια με την τιμολόγηση ή πρόσβαση για περισσότερους από 20
+          χρήστες;{" "}
           <a
             className="font-medium text-primary underline-offset-4 hover:underline"
             href="mailto:contact@tekia.gr?subject=ARC%20Tenders%20-%20billing"

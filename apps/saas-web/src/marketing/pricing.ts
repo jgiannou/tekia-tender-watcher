@@ -15,7 +15,7 @@ export const MARKETING_PLANS = {
     priceMonthlyEur: 0,
     priceYearlyEur: 0,
     positioningEl:
-      "Βρίσκεις και παρακολουθείς λίγους διαγωνισμούς, με την ίδια ταχύτητα εισαγωγής με τα επί πληρωμή πλάνα.",
+      "Ξεκινήστε την αναζήτηση και παρακολουθήστε έως 5 διαγωνισμούς δωρεάν.",
     shortPositioningEl: "Ίδια ταχύτητα εισαγωγής. Χωρίς κάρτα.",
     includedSeats: 1,
     maxSeatsSelfService: 1,
@@ -23,7 +23,7 @@ export const MARKETING_PLANS = {
     maxActiveWatchProfiles: 1,
     maxActiveFollowedTenders: 5,
     storageLabel: "—",
-    emailLabel: "1 ομαδικό email / ημέρα",
+    emailLabel: "1 συγκεντρωτικό email την ημέρα",
     emailShort: "1 email / ημέρα",
     emailTable: "1 digest / ημέρα",
     advancedFilters: false,
@@ -32,21 +32,21 @@ export const MARKETING_PLANS = {
     includesLabel: null as string | null,
     teaserBullets: [
       "1 χρήστης",
-      "1 Αποθηκευμένη Αναζήτηση",
-      "5 παρακολουθήσεις",
-      "Ειδοποίηση εντός 5 λεπτών",
+      "1 αποθηκευμένη αναζήτηση",
+      "Έως 5 διαγωνισμοί σε παρακολούθηση",
+      "Ενημέρωση εντός 5 λεπτών",
       "Φίλτρο περιφέρειας",
     ],
     fullBullets: [
       "1 χρήστης",
-      "1 ενεργή Αποθηκευμένη Αναζήτηση",
-      "5 ενεργές παρακολουθήσεις",
-      "Ίδια ταχύτητα εισαγωγής ΚΗΜΔΗΣ (εντός 5 λεπτών)",
-      "Push και in-app ειδοποιήσεις",
-      "1 ομαδικό email / ημέρα",
+      "1 ενεργή αποθηκευμένη αναζήτηση",
+      "Έως 5 διαγωνισμοί σε παρακολούθηση",
+      "Ενημέρωση δεδομένων από το ΚΗΜΔΗΣ εντός 5 λεπτών, όπως σε όλα τα πακέτα",
+      "Ειδοποιήσεις push και ειδοποιήσεις μέσα στην εφαρμογή",
+      "1 συγκεντρωτικό email την ημέρα",
       "Φίλτρο περιφέρειας",
-      "Οθόνη νήματος: αίτημα → πρόσκληση → προθεσμία → κατακύρωση",
-      "Αναζήτηση ΚΗΜΔΗΣ",
+      "Προβολή της πορείας και του ιστορικού κάθε διαγωνισμού",
+      "Αναζήτηση στο ΚΗΜΔΗΣ",
     ],
   },
   basic: {
@@ -55,7 +55,7 @@ export const MARKETING_PLANS = {
     priceMonthlyEur: 4.99,
     priceYearlyEur: 49,
     positioningEl:
-      "Για επαγγελματίες και μικρές επιχειρήσεις που θέλουν να βρίσκουν και να παρακολουθούν επιλεγμένες δημόσιες ευκαιρίες.",
+      "Για επαγγελματίες και μικρές επιχειρήσεις που αναζητούν δημόσιους διαγωνισμούς και οργανώνουν τη συμμετοχή τους.",
     shortPositioningEl: "Για επαγγελματίες και μικρές επιχειρήσεις.",
     includedSeats: 1,
     maxSeatsSelfService: 1,
@@ -63,7 +63,7 @@ export const MARKETING_PLANS = {
     maxActiveWatchProfiles: 3,
     maxActiveFollowedTenders: 20,
     storageLabel: "250 MB",
-    emailLabel: "Digest email — επιλογή ωρών",
+    emailLabel: "Συγκεντρωτικά email στις ώρες που επιλέγετε",
     emailShort: "digest · επιλογή ωρών",
     emailTable: "Digest · επιλογή ωρών",
     advancedFilters: false,
@@ -71,23 +71,23 @@ export const MARKETING_PLANS = {
     deadlineRadar: false,
     includesLabel: "Όλα από το Δωρεάν, και επιπλέον:",
     teaserBullets: [
-      "3 Αποθηκευμένες Αναζητήσεις",
+      "3 αποθηκευμένες αναζητήσεις",
       "20 παρακολουθήσεις",
       "250 MB Company Vault",
       "Φάκελος συμμετοχής από PDF",
-      "Λήγουσες συμβάσεις + μνήμη τιμής",
+      "Συμβάσεις που λήγουν + μνήμη τιμής",
     ],
     fullBullets: [
-      "3 ενεργές Αποθηκευμένες Αναζητήσεις",
+      "3 ενεργές αποθηκευμένες αναζητήσεις",
       "20 ενεργές παρακολουθήσεις",
       "Company Vault — 250 MB",
       "Καταγραφή Εκδήλωσης Ενδιαφέροντος",
       "Tender Workspace",
       "Καταγραφή Υποβολής",
       "Φάκελος συμμετοχής από PDF + σύγκριση με vault",
-      "Λήγουσες συμβάσεις με ένα κλικ Παρακολούθηση",
+      "Συμβάσεις που λήγουν με ένα κλικ παρακολούθηση",
       "Μνήμη τιμής στον διαγωνισμό",
-      "Digest email — επιλέγετε ώρες (Europe/Athens)",
+      "Συγκεντρωτικά email στις ώρες που επιλέγετε (Europe/Athens)",
     ],
   },
   pro: {
@@ -97,7 +97,7 @@ export const MARKETING_PLANS = {
     priceMonthlyEur: 9.99,
     priceYearlyEur: 99,
     positioningEl:
-      "Για επιχειρήσεις που παρακολουθούν συστηματικά δημόσιες συμβάσεις και χρειάζονται μεγαλύτερη κάλυψη και συνεργασία ομάδας.",
+      "Για επιχειρήσεις που παρακολουθούν περισσότερους διαγωνισμούς και συνεργάζονται ως ομάδα.",
     shortPositioningEl: "Για συστηματική κάλυψη και ομάδα.",
     includedSeats: 3,
     maxSeatsSelfService: 20,
@@ -105,7 +105,7 @@ export const MARKETING_PLANS = {
     maxActiveWatchProfiles: 15,
     maxActiveFollowedTenders: 100,
     storageLabel: "2 GB",
-    emailLabel: "Άμεσα email + Deadline radar",
+    emailLabel: "Άμεσες ειδοποιήσεις + Deadline radar",
     emailShort: "άμεσα email + Deadline radar",
     emailTable: "Άμεσα · Deadline radar",
     advancedFilters: true,
@@ -113,21 +113,21 @@ export const MARKETING_PLANS = {
     deadlineRadar: true,
     includesLabel: "Όλα από το Basic, και επιπλέον:",
     teaserBullets: [
-      "3 χρήστες περιλαμβάνονται (+€2,49 / επιπλέον)",
-      "15 Αποθηκευμένες Αναζητήσεις",
+      "3 χρήστες περιλαμβάνονται (+2,49 € / επιπλέον)",
+      "15 αποθηκευμένες αναζητήσεις",
       "100 παρακολουθήσεις",
       "2 GB Vault",
-      "Άμεσα email + Deadline radar",
+      "Άμεσες ειδοποιήσεις + Deadline radar",
     ],
     fullBullets: [
-      "3 χρήστες περιλαμβάνονται (+€2,49 / επιπλέον · έως 20)",
-      "15 ενεργές Αποθηκευμένες Αναζητήσεις",
+      "3 χρήστες περιλαμβάνονται (+2,49 € / επιπλέον · έως 20)",
+      "15 ενεργές αποθηκευμένες αναζητήσεις",
       "100 ενεργές παρακολουθήσεις",
       "Company Vault — 2 GB",
-      "Άμεσα email για νέες εξελίξεις",
-      "Deadline radar — επερχόμενες προθεσμίες",
-      "Προηγμένα φίλτρα Αποθηκευμένων Αναζητήσεων",
-      "Priority support",
+      "Άμεσες ειδοποιήσεις μέσω email για νέες εξελίξεις",
+      "Συγκεντρωτική προβολή επερχόμενων προθεσμιών",
+      "Προηγμένα φίλτρα αποθηκευμένων αναζητήσεων",
+      "Εξυπηρέτηση κατά προτεραιότητα",
     ],
   },
 } as const;
@@ -141,8 +141,8 @@ export const formatEur = (amount: number): string =>
   });
 
 export const priceWithTaxHint = (amount: number): string => {
-  if (amount === 0) return "€0";
-  const base = `€${formatEur(amount)} / μήνα`;
+  if (amount === 0) return "0 €";
+  const base = `${formatEur(amount)} € / μήνα`;
   const tax = PRICING_TAX_LABEL.trim();
   return tax ? `${base} ${tax}` : base;
 };
@@ -154,14 +154,14 @@ export const COMPARISON_ROWS: Array<{
   pro: string;
 }> = [
   { label: "Χρήστες", free: "1", basic: "1", pro: "3 περιλαμβάνονται" },
-  { label: "Αποθηκευμένες Αναζητήσεις", free: "1", basic: "3", pro: "15" },
-  { label: "Ενεργές Παρακολουθήσεις", free: "5", basic: "20", pro: "100" },
+  { label: "Αποθηκευμένες αναζητήσεις", free: "1", basic: "3", pro: "15" },
+  { label: "Ενεργές παρακολουθήσεις", free: "5", basic: "20", pro: "100" },
   { label: "Ταχύτητα εισαγωγής", free: "≤5 λεπτά", basic: "≤5 λεπτά", pro: "≤5 λεπτά" },
   { label: "Φίλτρο περιφέρειας", free: "✓", basic: "✓", pro: "✓" },
-  { label: "Οθόνη νήματος", free: "✓", basic: "✓", pro: "✓" },
+  { label: "Πορεία διαγωνισμού", free: "✓", basic: "✓", pro: "✓" },
   { label: "Company Vault", free: "—", basic: "250 MB", pro: "2 GB" },
   { label: "Φάκελος συμμετοχής", free: "—", basic: "✓", pro: "✓" },
-  { label: "Λήγουσες συμβάσεις", free: "Πλήθος", basic: "Λίστα + follow", pro: "Λίστα + follow" },
+  { label: "Συμβάσεις που λήγουν", free: "Πλήθος", basic: "Λίστα + follow", pro: "Λίστα + follow" },
   { label: "Μνήμη τιμής", free: "—", basic: "✓", pro: "✓" },
   {
     label: "Email",

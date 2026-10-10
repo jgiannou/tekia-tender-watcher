@@ -10,7 +10,12 @@ type ScoreBadgeProps = {
 
 export const ScoreBadge = ({ score, label, className }: ScoreBadgeProps) => {
   const value = Math.round(Number.isFinite(score) ? score : 0);
-  const text = label ? `${value}% ${label}` : `${value}%`;
+  const text =
+    label === "συνάφεια"
+      ? `Συνάφεια με τα κριτήριά σας: ${value}%`
+      : label
+        ? `${value}% ${label}`
+        : `${value}%`;
   return (
     <Badge
       variant="secondary"

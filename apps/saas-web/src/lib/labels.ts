@@ -83,10 +83,10 @@ export const humanSaasError = (message: string): string => {
     return "Δεν υπάρχει ακόμη πελάτης χρέωσης — επιλέξτε πρώτα ένα πλάνο.";
   }
   if (message.includes("email_not_verified")) {
-    return "Επιβεβαιώστε το email σας για σαρώσεις αποθηκευμένων αναζητήσεων. Η χειροκίνητη αναζήτηση ΚΗΜΔΗΣ παραμένει διαθέσιμη.";
+    return "Επιβεβαιώστε το email σας για ελέγχους αποθηκευμένων αναζητήσεων. Η χειροκίνητη αναζήτηση ΚΗΜΔΗΣ παραμένει διαθέσιμη.";
   }
   if (message.includes("trial_expired")) {
-    return "Η δοκιμαστική περίοδος έληξε. Αναβαθμίστε το πλάνο για περιοδικές σαρώσεις.";
+    return "Η δοκιμαστική περίοδος έληξε. Αναβαθμίστε το πακέτο για περιοδικούς ελέγχους.";
   }
   if (message.includes("pro_trial_already_used")) {
     return "Η δοκιμή Pro έχει ήδη χρησιμοποιηθεί για αυτόν τον οργανισμό. Επιλέξτε Basic ή Pro.";
@@ -98,17 +98,17 @@ export const humanSaasError = (message: string): string => {
     return "Υπάρχει ήδη ενεργή συνδρομή πληρωμής για αυτόν τον οργανισμό.";
   }
   if (message.includes("periodic_scan_quota_exceeded")) {
-    return "Έχετε εξαντλήσει τις περιοδικές σαρώσεις για σήμερα.";
+    return "Έχετε εξαντλήσει τους περιοδικούς ελέγχους για σήμερα.";
   }
   if (message.includes("manual_scan_quota_exceeded")) {
-    return "Έχετε εξαντλήσει τις χειροκίνητες σαρώσεις προφίλ για σήμερα.";
+    return "Έχετε εξαντλήσει τους χειροκίνητους ελέγχους για σήμερα.";
   }
   if (
     message.includes("subscription_inactive") ||
     message.includes("manual_scan_blocked") ||
     message.includes("periodic_scan_blocked")
   ) {
-    return "Οι σαρώσεις αποθηκευμένων αναζητήσεων δεν είναι διαθέσιμες για τον τρέχοντα λογαριασμό.";
+    return "Οι έλεγχοι αποθηκευμένων αναζητήσεων δεν είναι διαθέσιμοι για τον τρέχοντα λογαριασμό.";
   }
   if (message.includes("watch_profile_requires_keywords_or_cpvs")) {
     return "Απαιτείται τουλάχιστον μία λέξη-κλειδί ή CPV.";

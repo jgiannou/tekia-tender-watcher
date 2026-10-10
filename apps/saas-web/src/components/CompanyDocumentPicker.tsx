@@ -30,7 +30,7 @@ const statusLabel = (status: VaultDocument["status"]) => {
     case "EXPIRED":
       return "Ληγμένο";
     default:
-      return "Δεν λήγει";
+      return "Χωρίς ημερομηνία λήξης";
   }
 };
 

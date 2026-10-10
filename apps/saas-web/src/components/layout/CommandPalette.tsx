@@ -22,12 +22,12 @@ import {
 
 const items = [
   { label: "Επισκόπηση", to: "/app", icon: LayoutDashboard },
-  { label: "Αναζήτηση ΚΗΜΔΗΣ", to: "/app/search", icon: FileSearch },
+  { label: "Αναζήτηση στο ΚΗΜΔΗΣ", to: "/app/search", icon: FileSearch },
   { label: "Ευκαιρίες", to: "/app/opportunities", icon: Radar },
-  { label: "Παρακολουθούμενα", to: "/app/monitoring", icon: Binoculars },
+  { label: "Παρακολούθηση", to: "/app/monitoring", icon: Binoculars },
   { label: "Υποβολές", to: "/app/submissions", icon: Send },
   { label: "Έγγραφα", to: "/app/documents", icon: FolderOpen },
-  { label: "Αποθηκευμένες Αναζητήσεις", to: "/app/saved-searches", icon: Bookmark },
+  { label: "Αποθηκευμένες αναζητήσεις", to: "/app/saved-searches", icon: Bookmark },
   { label: "Ρύθμιση επιχείρησης", to: "/app/setup", icon: Sparkles },
   { label: "Ρυθμίσεις", to: "/app/settings", icon: Settings },
 ] as const;

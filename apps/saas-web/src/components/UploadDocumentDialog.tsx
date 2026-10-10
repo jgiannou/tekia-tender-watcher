@@ -111,9 +111,9 @@ export const UploadDocumentDialog = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Μεταφόρτωση εγγράφου</DialogTitle>
+          <DialogTitle>Ανέβασμα εγγράφου</DialogTitle>
           <DialogDescription>
-            Μεταφορτώστε PDF ή DOCX μία φορά — θα είναι διαθέσιμο σε κάθε διαγωνισμό.
+            Ανεβάστε ένα αρχείο PDF ή DOCX για να το χρησιμοποιείτε στους φακέλους συμμετοχής σας.
           </DialogDescription>
         </DialogHeader>
 
@@ -135,7 +135,7 @@ export const UploadDocumentDialog = ({
           >
             <Upload className="mx-auto mb-2 h-5 w-5 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              Σύρετε αρχείο εδώ ή επιλέξτε PDF / DOCX
+              Σύρετε εδώ ένα αρχείο PDF ή DOCX ή επιλέξτε το από τη συσκευή σας.
             </p>
             <Button
               type="button"
@@ -159,7 +159,7 @@ export const UploadDocumentDialog = ({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="doc-name">Όνομα</Label>
+            <Label htmlFor="doc-name">Όνομα εγγράφου</Label>
             <Input
               id="doc-name"
               value={name}
@@ -222,7 +222,7 @@ export const UploadDocumentDialog = ({
           </div>
 
           <div className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-            <Label htmlFor="no-expiry">Δεν λήγει</Label>
+            <Label htmlFor="no-expiry">Χωρίς ημερομηνία λήξης</Label>
             <Switch
               id="no-expiry"
               checked={noExpiry}
@@ -248,7 +248,7 @@ export const UploadDocumentDialog = ({
               Ακύρωση
             </Button>
             <Button disabled={submitting} onClick={() => void handleSubmit()}>
-              {submitting ? "Μεταφόρτωση…" : "Μεταφόρτωση"}
+              {submitting ? "Ανέβασμα…" : "Ανέβασμα"}
             </Button>
           </div>
         </div>

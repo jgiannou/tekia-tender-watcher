@@ -947,6 +947,8 @@ export type KimdisSearchItem = {
   publicKimdisUrl: string;
   officialPdfUrl: string;
   openState: "OPEN" | "CLOSED" | "CANCELLED" | "UNKNOWN";
+  /** Official KIMDIS NUTS code (often NUTS 3); may be null when unclassified. */
+  nutsCode?: string | null;
 };
 
 export type KimdisSearchFilters = {

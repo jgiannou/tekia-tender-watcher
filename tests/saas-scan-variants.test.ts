@@ -192,7 +192,7 @@ describe("SaaS watch-match scoring", () => {
     // 35 body keyword + 8 actionable (παροχή υπηρεσιών) + 4 budget scale
     expect(result.score).toBe(47);
     expect(result.breakdown.keywords).toBe(35);
-    expect(result.reasons.some((r) => r.includes("στο κείμενο"))).toBe(true);
+    expect(result.reasons.some((r) => r.includes("Το κείμενο περιέχει"))).toBe(true);
   });
 
   it("does not punish keyword-only multi-topic title hits", () => {
@@ -252,7 +252,7 @@ describe("SaaS watch-match scoring", () => {
     expect(result.score).toBe(76);
     expect(result.breakdown.signals).toEqual(["early", "keywords", "work"]);
     expect(result.reasons.some((r) => r.includes("Πρώιμο αίτημα"))).toBe(true);
-    expect(result.reasons.some((r) => r.includes("λέξη-κλειδί στον τίτλο"))).toBe(
+    expect(result.reasons.some((r) => r.includes("Ο τίτλος περιέχει τον όρο"))).toBe(
       true,
     );
   });

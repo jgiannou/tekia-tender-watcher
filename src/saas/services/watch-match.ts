@@ -496,8 +496,8 @@ export const scoreKimdisItemAgainstProfile = (
       keywordPoints += pts;
       reasons.push(
         inTitle
-          ? `λέξη-κλειδί «${kw.trim()}» στον τίτλο`
-          : `λέξη-κλειδί «${kw.trim()}» στο κείμενο`,
+          ? `Ο τίτλος περιέχει τον όρο «${kw.trim()}».`
+          : `Το κείμενο περιέχει τον όρο «${kw.trim()}».`,
       );
     } else if (extraClusters < POINTS.maxExtraClusters) {
       extraClusters += 1;
@@ -505,8 +505,8 @@ export const scoreKimdisItemAgainstProfile = (
       keywordPoints += pts;
       reasons.push(
         inTitle
-          ? `επιπλέον θέμα «${kw.trim()}» στον τίτλο`
-          : `επιπλέον θέμα «${kw.trim()}» στο κείμενο`,
+          ? `Ο τίτλος περιέχει επίσης τον όρο «${kw.trim()}».`
+          : `Το κείμενο περιέχει επίσης τον όρο «${kw.trim()}».`,
       );
     }
   }
@@ -554,8 +554,8 @@ export const scoreKimdisItemAgainstProfile = (
         companyPoints += pts;
         reasons.push(
           inTitle
-            ? `θέμα εταιρείας «${hintKw}» στον τίτλο`
-            : `θέμα εταιρείας «${hintKw}» στο κείμενο`,
+            ? `Ο τίτλος σχετίζεται με δραστηριότητα της εταιρείας («${hintKw}»).`
+            : `Το κείμενο σχετίζεται με δραστηριότητα της εταιρείας («${hintKw}»).`,
         );
         break;
       }
@@ -596,7 +596,7 @@ export const scoreKimdisItemAgainstProfile = (
     if (firstKeywordInTitle) {
       score += POINTS.earlyReqTitleKeyword;
       breakdown.filters += POINTS.earlyReqTitleKeyword;
-      reasons.push("Αίτημα με λέξη-κλειδί στον τίτλο");
+      reasons.push("Αίτημα με όρο αναζήτησης στον τίτλο");
     }
   }
 

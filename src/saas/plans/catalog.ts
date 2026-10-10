@@ -113,7 +113,7 @@ export const BASIC_PLAN: PlanEntitlements = {
   expiringContractList: true,
   priceMemory: true,
   positioningEl:
-    "Για επαγγελματίες και μικρές επιχειρήσεις που θέλουν να βρίσκουν και να παρακολουθούν επιλεγμένες δημόσιες ευκαιρίες.",
+    "Για επαγγελματίες και μικρές επιχειρήσεις που αναζητούν δημόσιους διαγωνισμούς και οργανώνουν τη συμμετοχή τους.",
 };
 
 export const FREE_PLAN: PlanEntitlements = {
@@ -125,7 +125,7 @@ export const FREE_PLAN: PlanEntitlements = {
   positioning:
     "Discover and follow a few Greek public tenders, with the same ingest speed as paid plans.",
   positioningEl:
-    "Βρίσκεις και παρακολουθείς λίγους διαγωνισμούς, με την ίδια ταχύτητα εισαγωγής με τα επί πληρωμή πλάνα.",
+    "Ξεκινήστε την αναζήτηση και παρακολουθήστε έως 5 διαγωνισμούς δωρεάν.",
   priceMonthlyEur: 0,
   priceYearlyEur: 0,
   maxActiveWatchProfiles: 1,
@@ -186,7 +186,7 @@ export const PRO_PLAN: PlanEntitlements = {
   expiringContractList: true,
   priceMemory: true,
   positioningEl:
-    "Για επιχειρήσεις που παρακολουθούν συστηματικά δημόσιες συμβάσεις και χρειάζονται μεγαλύτερη κάλυψη και ομάδα.",
+    "Για επιχειρήσεις που παρακολουθούν περισσότερους διαγωνισμούς και συνεργάζονται ως ομάδα.",
 };
 
 /** 7-day Pro preview. Does not replace the non-expiring Free plan. */

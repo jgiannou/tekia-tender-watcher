@@ -109,15 +109,13 @@ export const SubmissionsPage = () => {
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Υποβολές</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Καταγεγραμμένες τυπικές υποβολές που δηλώσατε εσείς — όχι αυτόματη αποστολή από
-          την εφαρμογή. Η παρακολούθηση αποτελέσματος συνεχίζεται μέχρι να επιβεβαιώσετε
-          WON/LOST.
+          Οι προσφορές που έχετε υποβάλει και καταγράψει στην εφαρμογή. Το ARC Tenders παρακολουθεί τις εξελίξεις μέχρι να καταγράψετε το αποτέλεσμα. Η υποβολή της προσφοράς γίνεται εκτός της εφαρμογής.
         </p>
       </div>
       {rows.length === 0 ? (
         <EmptyState
-          title="Δεν υπάρχουν υποβολές ακόμη"
-          description="Όταν καταγράψετε επίσημη υποβολή σε διαγωνισμό που παρακολουθείτε, θα εμφανιστεί εδώ."
+          title="Δεν έχετε καταγράψει υποβολές ακόμη"
+          description="Ανοίξτε έναν διαγωνισμό που παρακολουθείτε και καταγράψτε την υποβολή της προσφοράς σας. Θα εμφανιστεί εδώ."
         />
       ) : (
         <Card>
@@ -181,7 +179,7 @@ export const SubmissionsPage = () => {
                     </>
                   ) : null}
                   <Button size="sm" variant="outline" asChild>
-                    <Link to={tenderHref(row)}>Άνοιγμα</Link>
+                    <Link to={tenderHref(row)}>Προβολή λεπτομερειών</Link>
                   </Button>
                 </div>
               </div>

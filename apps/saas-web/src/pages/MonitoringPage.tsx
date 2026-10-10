@@ -11,11 +11,11 @@ import { saasApi, type MonitoringPipelineRow } from "@/lib/api";
 const FILTERS: Array<{ id: string; label: string }> = [
   { id: "ALL", label: "Όλα" },
   { id: "FOLLOWING", label: "Παρακολουθούνται" },
-  { id: "OUTREACH_SENT", label: "Ενδιαφέρον καταγεγραμμένο" },
+  { id: "OUTREACH_SENT", label: "Εκδήλωση ενδιαφέροντος" },
   { id: "WAITING_PROC", label: "Αναμονή πρόσκλησης" },
   { id: "PREPARING", label: "Προετοιμασία" },
-  { id: "SUBMITTED", label: "Υποβλήθηκαν" },
-  { id: "NEW_DEVELOPMENT", label: "Νέα εξέλιξη" },
+  { id: "SUBMITTED", label: "Με υποβολή προσφοράς" },
+  { id: "NEW_DEVELOPMENT", label: "Με νέες εξελίξεις" },
   { id: "COMPLETED", label: "Ολοκληρωμένα" },
 ];
 
@@ -23,6 +23,14 @@ const formatDay = (value?: string | null) => {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("el-GR");
+};
+
+const formatNextActionLine = (code: string, label: string) => {
+  if (code === "WAIT_PROC") return label;
+  if (code === "RECORD_OUTREACH" || code === "START_PREPARATION") {
+    return `Επόμενη ενέργεια: ${label}`;
+  }
+  return `Επόμενο: ${label}`;
 };
 
 const tenderHref = (row: MonitoringPipelineRow) => {
@@ -77,10 +85,9 @@ export const MonitoringPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Παρακολουθούμενα</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">Παρακολούθηση</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Οι διαγωνισμοί που δηλώσατε ότι σας ενδιαφέρουν — από την εκδήλωση ενδιαφέροντος
-          έως την υποβολή και το αποτέλεσμα.
+          Παρακολουθήστε τις εξελίξεις και οργανώστε τις ενέργειές σας για τους διαγωνισμούς που σας ενδιαφέρουν.
         </p>
       </div>
 
@@ -99,9 +106,11 @@ export const MonitoringPage = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Ενεργά νήματα</CardTitle>
+          <CardTitle>Διαγωνισμοί σε παρακολούθηση</CardTitle>
           <CardDescription>
-            {filtered.length} από {rows.length} παρακολουθούμενα
+            {filtered.length === rows.length
+              ? `Εμφανίζονται ${rows.length} από ${rows.length} διαγωνισμοί.`
+              : `Εμφανίζονται ${filtered.length} από ${rows.length} διαγωνισμοί.`}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -119,7 +128,7 @@ export const MonitoringPage = () => {
                   ? `Δεν υπάρχουν νέες επίσημες εξελίξεις στα ${rows.length} παρακολουθούμενα.`
                   : rows.length > 0
                     ? "Δοκιμάστε άλλο φίλτρο ή ανοίξτε έναν διαγωνισμό από τη λίστα «Όλα»."
-                    : "Από την Αναζήτηση ή τις Ευκαιρίες πατήστε «Παρακολούθηση» για να μπει εδώ ο διαγωνισμός."
+                    : "Από την Αναζήτηση ή τις Ευκαιρίες πατήστε «Έναρξη παρακολούθησης» για να μπει εδώ ο διαγωνισμός."
               }
             />
           ) : (
@@ -148,11 +157,11 @@ export const MonitoringPage = () => {
                     <div className="flex flex-wrap gap-2 text-xs">
                       <Badge variant="outline">Στάδιο: {row.stageLabel}</Badge>
                       <Badge variant={row.monitoringActive ? "success" : "outline"}>
-                        Παρακολούθηση: {row.monitoringActive ? "Ενεργό" : "Ανενεργό"}
+                        {row.monitoringActive ? "Ενεργή παρακολούθηση" : "Ανενεργή παρακολούθηση"}
                       </Badge>
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      Επόμενο: {row.nextAction.label}
+                      {formatNextActionLine(row.nextAction.code, row.nextAction.label)}
                     </div>
                     {row.latestDevelopment ? (
                       <div className="text-sm text-primary">{row.latestDevelopment}</div>
@@ -164,7 +173,7 @@ export const MonitoringPage = () => {
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button size="sm" variant="outline" asChild>
-                      <Link to={tenderHref(row)}>Άνοιγμα</Link>
+                      <Link to={tenderHref(row)}>Προβολή λεπτομερειών</Link>
                     </Button>
                   </div>
                 </div>

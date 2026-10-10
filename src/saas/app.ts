@@ -811,7 +811,7 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       lastStartedAt: status.lastStartedAt,
       fresh: status.fresh,
       labelEl: status.lastSuccessAt
-        ? `Τελευταίος επιτυχής έλεγχος στις ${new Date(status.lastSuccessAt).toLocaleString("el-GR", { timeZone: "Europe/Athens" })}`
+        ? `Τελευταίος έλεγχος: ${new Date(status.lastSuccessAt).toLocaleString("el-GR", { timeZone: "Europe/Athens", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`
         : "Δεν έχει ολοκληρωθεί ακόμη έλεγχος ΚΗΜΔΗΣ",
     });
   });

@@ -97,7 +97,7 @@ const ProductVisual = () => (
     aria-hidden
   >
     <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-      Νήμα διαγωνισμού
+      Πορεία διαγωνισμού
     </p>
     <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">
       Από το πρωτογενές αίτημα μέχρι την κατακύρωση

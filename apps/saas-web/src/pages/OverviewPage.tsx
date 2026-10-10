@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 import { attentionEventHref } from "@/lib/attention-routing";
+import { formatMatchReason } from "@/lib/matchReasons";
 
 const OVERVIEW_OPPORTUNITY_PAGE_SIZE = 3;
 
@@ -146,7 +147,7 @@ export const OverviewPage = () => {
         item_id: opportunity.tender.id,
         source: "overview",
       });
-      toast.success("Ο διαγωνισμός προστέθηκε στα Παρακολουθούμενα.");
+      toast.success("Ο διαγωνισμός προστέθηκε στην Παρακολούθηση.");
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Αποτυχία παρακολούθησης");
@@ -204,25 +205,25 @@ export const OverviewPage = () => {
       label: "Νέες ευκαιρίες",
       value: overview.metrics.newOpportunities,
       href: "/app/opportunities",
-      hint: "Ευκαιρίες που δεν παρακολουθούνται ακόμη",
+      hint: "Ευκαιρίες που δεν έχετε προσθέσει στην παρακολούθηση",
     },
     {
-      label: "Παρακολουθούμενα",
+      label: "Παρακολούθηση",
       value: overview.metrics.monitoringActive,
       href: "/app/monitoring",
-      hint: "Ενεργά νήματα παρακολούθησης",
+      hint: "Διαγωνισμοί που παρακολουθείτε",
     },
     {
       label: "Προθεσμίες",
       value: overview.metrics.deadlinesSoon,
       href: "/app/monitoring",
-      hint: "Καταληκτικές εντός 7 ημερών",
+      hint: "Προθεσμίες υποβολής τις επόμενες 7 ημέρες",
     },
     {
       label: "Υποβολές",
       value: overview.metrics.submissionsActive,
       href: "/app/submissions",
-      hint: "Τυπικές υποβολές σε παρακολούθηση",
+      hint: "Υποβολές για τις οποίες παρακολουθείτε το αποτέλεσμα",
     },
   ];
 
@@ -237,14 +238,16 @@ export const OverviewPage = () => {
             {isBrandNew
               ? "Δημιουργήστε την πρώτη αποθηκευμένη αναζήτηση ή εξερευνήστε το ΚΗΜΔΗΣ."
               : nextActions.length > 0
-                ? `${nextActions.length} ενέργειες χρειάζονται την προσοχή σας.`
+                ? nextActions.length === 1
+                  ? "Έχετε 1 εκκρεμή ενέργεια."
+                  : `Έχετε ${nextActions.length} εκκρεμείς ενέργειες.`
                 : "Δεν υπάρχουν ενέργειες που απαιτούν την προσοχή σας."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => navigate("/app/search")}>Αναζήτηση ΚΗΜΔΗΣ</Button>
+          <Button onClick={() => navigate("/app/search")}>Αναζήτηση στο ΚΗΜΔΗΣ</Button>
           <Button variant="outline" onClick={() => navigate("/app/saved-searches")}>
-            Νέα Αποθηκευμένη Αναζήτηση
+            Νέα αποθηκευμένη αναζήτηση
           </Button>
         </div>
       </div>
@@ -277,7 +280,9 @@ export const OverviewPage = () => {
         <Card>
           <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
             <span>
-              {expiringCount} συμβάσεις λήγουν στον χώρο σου (3–9 μήνες).
+              {expiringCount === 1
+                ? "1 σύμβαση σχετική με τη δραστηριότητά σας λήγει σε 3–9 μήνες."
+                : `${expiringCount} συμβάσεις σχετικές με τη δραστηριότητά σας λήγουν σε 3–9 μήνες.`}
             </span>
             <Button size="sm" variant="outline" asChild>
               <Link to="/app/expiring-contracts">Προβολή</Link>
@@ -296,10 +301,10 @@ export const OverviewPage = () => {
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
             <Button onClick={() => navigate("/app/saved-searches")}>
-              Νέα Αποθηκευμένη Αναζήτηση
+              Νέα αποθηκευμένη αναζήτηση
             </Button>
             <Button variant="outline" onClick={() => navigate("/app/search")}>
-              Αναζήτηση ΚΗΜΔΗΣ
+              Αναζήτηση στο ΚΗΜΔΗΣ
             </Button>
             <Button variant="ghost" onClick={() => navigate("/app/documents")}>
               Έγγραφα εταιρείας
@@ -333,11 +338,11 @@ export const OverviewPage = () => {
                 <div className="min-w-0">
                   <CardTitle className="text-base">Νέες ευκαιρίες</CardTitle>
                   <CardDescription>
-                    Από τις αποθηκευμένες αναζητήσεις σας.
+                    Νέα αποτελέσματα από τις αποθηκευμένες αναζητήσεις σας.
                   </CardDescription>
                 </div>
                 <Button variant="ghost" size="sm" asChild>
-                  <Link to="/app/opportunities">Όλες</Link>
+                  <Link to="/app/opportunities">Όλες οι ευκαιρίες</Link>
                 </Button>
               </CardHeader>
               <CardContent className="min-w-0 space-y-3 p-4 pt-0 sm:p-5 sm:pt-0">
@@ -364,7 +369,7 @@ export const OverviewPage = () => {
                                   .then(() => load({ silent: true }))
                               }
                             >
-                              Αναγνώστηκε
+                              Σήμανση ως αναγνωσμένο
                             </Button>
                           ) : null}
                         </div>
@@ -428,7 +433,7 @@ export const OverviewPage = () => {
                               >
                                 {isExpiredDeadline(opportunity.tender.finalSubmissionDate)
                                   ? "Έληξε: "
-                                  : "Καταληκτική: "}
+                                  : "Προθεσμία υποβολής: "}
                                 {formatDate(opportunity.tender.finalSubmissionDate)}
                               </span>
                             ) : null}
@@ -436,10 +441,10 @@ export const OverviewPage = () => {
                           {whyReasons.length > 0 ? (
                             <div className="space-y-0.5 break-words text-xs text-muted-foreground">
                               <div className="font-medium text-foreground/80">
-                                Γιατί το βλέπετε
+                                Γιατί εμφανίζεται στις ευκαιρίες σας
                               </div>
                               {whyReasons.map((reason) => (
-                                <div key={reason}>· {reason}</div>
+                                <div key={reason}>· {formatMatchReason(reason)}</div>
                               ))}
                             </div>
                           ) : null}
@@ -448,7 +453,7 @@ export const OverviewPage = () => {
                               onClick={() => setPdfPreview(opportunity)}
                             />
                             <Button size="sm" variant="outline" asChild>
-                              <Link to={tenderPath(opportunity)}>Άνοιγμα</Link>
+                              <Link to={tenderPath(opportunity)}>Προβολή λεπτομερειών</Link>
                             </Button>
                             {!opportunity.following ? (
                               <Button
@@ -482,11 +487,11 @@ export const OverviewPage = () => {
                   <div>
                     <CardTitle className="text-base">Επόμενες ενέργειες</CardTitle>
                     <CardDescription>
-                      Αποφάσεις και ενέργειες που περιμένουν εσάς.
+                      Εκκρεμότητες στους διαγωνισμούς που παρακολουθείτε.
                     </CardDescription>
                   </div>
                   <Button variant="ghost" size="sm" asChild>
-                    <Link to="/app/monitoring">Παρακολουθούμενα</Link>
+                    <Link to="/app/monitoring">Παρακολούθηση</Link>
                   </Button>
                 </CardHeader>
                 <CardContent className="space-y-2">
@@ -517,7 +522,7 @@ export const OverviewPage = () => {
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
                 <div>
-                  <CardTitle className="text-base">Παρακολουθούμενα</CardTitle>
+                  <CardTitle className="text-base">Παρακολούθηση</CardTitle>
                   <CardDescription>
                     Πού βρισκόμαστε και τι περιμένουμε.
                   </CardDescription>
@@ -564,7 +569,7 @@ export const OverviewPage = () => {
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
                 <div>
-                  <CardTitle className="text-base">Αυτόματες Αναζητήσεις</CardTitle>
+                  <CardTitle className="text-base">Αποθηκευμένες αναζητήσεις</CardTitle>
                   <CardDescription className="mt-1">
                     {overview.watchUsage.active} από{" "}
                     {overview.entitlements.maxActiveWatchProfiles} ενεργές · τελευταίος
@@ -572,8 +577,8 @@ export const OverviewPage = () => {
                     αντιστοίχιση {formatRelative(overview.latestMatchAt)}
                     {failedScanCount > 0
                       ? failedScanCount === 1
-                        ? " · 1 αποτυχημένη σάρωση"
-                        : ` · ${failedScanCount} αποτυχημένες σαρώσεις`
+                        ? " · 1 αποτυχημένος έλεγχος"
+                        : ` · ${failedScanCount} αποτυχημένοι έλεγχοι`
                       : ""}
                   </CardDescription>
                 </div>

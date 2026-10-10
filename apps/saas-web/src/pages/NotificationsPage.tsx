@@ -80,7 +80,7 @@ export const NotificationsPage = () => {
         <EmptyState
           title="Καμία ειδοποίηση"
           description="Όταν εντοπιστούν σχετικές εξελίξεις σε παρακολουθούμενα, θα εμφανιστούν εδώ."
-          actionLabel="Παρακολουθούμενα"
+          actionLabel="Παρακολούθηση"
           onAction={() => navigate("/app/monitoring")}
         />
       ) : (

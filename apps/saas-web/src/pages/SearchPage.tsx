@@ -31,6 +31,7 @@ import {
   type KimdisSearchItem,
   type WatchProfileInput,
 } from "@/lib/api";
+import { evaluateRegionGate, GREEK_NUTS2_REGIONS } from "@/lib/regions";
 
 const formatMoney = (value: number | null) =>
   value == null
@@ -72,6 +73,8 @@ type SearchFormState = {
   finalFrom: string;
   finalTo: string;
   signer: string;
+  regions: string[];
+  includeUnclassifiedRegion: boolean;
   sort: "date_desc" | "date_asc";
   page: number;
   run: boolean;
@@ -107,6 +110,8 @@ const parseState = (params: URLSearchParams): SearchFormState => {
     finalFrom: params.get("finalFrom") ?? "",
     finalTo: params.get("finalTo") ?? "",
     signer: params.get("signer") ?? "",
+    regions: params.getAll("region").filter(Boolean),
+    includeUnclassifiedRegion: params.get("includeUnclassified") === "1",
     sort: params.get("sort") === "date_asc" ? "date_asc" : "date_desc",
     page: Math.max(1, Number(params.get("page") ?? "1") || 1),
     run: params.get("run") === "1",
@@ -138,6 +143,12 @@ const toSearchParams = (state: SearchFormState): URLSearchParams => {
   if (state.type === "PROC" && state.finalFrom) params.set("finalFrom", state.finalFrom);
   if (state.type === "PROC" && state.finalTo) params.set("finalTo", state.finalTo);
   if (state.signer.trim()) params.set("signer", state.signer.trim());
+  for (const region of state.regions) {
+    if (region) params.append("region", region);
+  }
+  if (state.regions.length > 0 && state.includeUnclassifiedRegion) {
+    params.set("includeUnclassified", "1");
+  }
   if (state.sort !== "date_desc") params.set("sort", state.sort);
   if (state.page > 1) params.set("page", String(state.page));
   if (state.run) params.set("run", "1");
@@ -179,7 +190,10 @@ const activeCriteriaSummary = (state: SearchFormState): string => {
           : state.dateTo
             ? `έως ${state.dateTo}`
             : "τελευταίες 30 ημέρες",
-    state.sort === "date_asc" ? "παλαιότερα πρώτα" : "νεότερα πρώτα",
+    state.sort === "date_asc" ? "παλαιότερα πρώτα" : "πιο πρόσφατες πρώτα",
+    state.regions.length
+      ? `περιφέρειες: ${state.regions.length}`
+      : null,
   ].filter(Boolean);
   return parts.join(" · ");
 };
@@ -280,13 +294,27 @@ export const SearchPage = () => {
     maxBudget: urlState.amountMax ? Number(urlState.amountMax) : null,
     dateFrom: urlState.dateFrom || null,
     dateTo: urlState.dateTo || null,
+    regions: urlState.regions,
+    includeUnclassifiedRegion: urlState.includeUnclassifiedRegion,
     source: "SAVED_FROM_SEARCH",
     skipSimilarCheck,
   });
 
+  const visibleItems = useMemo(() => {
+    if (urlState.regions.length === 0) return items;
+    return items.filter(
+      (item) =>
+        evaluateRegionGate(
+          item.nutsCode,
+          urlState.regions,
+          urlState.includeUnclassifiedRegion,
+        ) === "ok",
+    );
+  }, [items, urlState.regions, urlState.includeUnclassifiedRegion]);
+
   const handleOpenSave = async () => {
     if (!activeOrganization) return;
-    const defaultName = urlState.q.trim() || "Αναζήτηση ΚΗΜΔΗΣ";
+    const defaultName = urlState.q.trim() || "Αναζήτηση στο ΚΗΜΔΗΣ";
     setSaveName(defaultName);
     setSimilarProfiles([]);
     setSaveOpen(true);
@@ -310,7 +338,7 @@ export const SearchPage = () => {
         buildWatchInput(saveName.trim(), skipSimilarCheck),
       );
       trackAnalyticsEvent("watch_profile_created", { source: "SAVED_FROM_SEARCH" });
-      toast.success("Η αποθηκευμένη αναζήτηση δημιουργήθηκε. Ξεκίνησε αρχική σάρωση.");
+      toast.success("Η αποθηκευμένη αναζήτηση δημιουργήθηκε. Ξεκίνησε αρχικός έλεγχος.");
       setSaveOpen(false);
     } catch (err) {
       toast.error(
@@ -330,7 +358,7 @@ export const SearchPage = () => {
         item_id: item.adam,
         source: "search",
       });
-      toast.success("Ο διαγωνισμός προστέθηκε στα Παρακολουθούμενα.", {
+      toast.success("Ο διαγωνισμός προστέθηκε στην Παρακολούθηση.", {
         action: {
           label: "Προβολή παρακολουθούμενων",
           onClick: () => navigate("/app/monitoring"),
@@ -356,9 +384,9 @@ export const SearchPage = () => {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Αναζήτηση ΚΗΜΔΗΣ</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">Αναζήτηση στο ΚΗΜΔΗΣ</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Χειροκίνητη εξερεύνηση. Τα αποτελέσματα δεν γίνονται αυτόματα Ευκαιρίες.
+            Αναζητήστε δημοσιεύσεις στο ΚΗΜΔΗΣ με τα κριτήριά σας. Τα αποτελέσματα δεν προστίθενται αυτόματα στις Ευκαιρίες.
           </p>
         </div>
         <Button
@@ -392,16 +420,16 @@ export const SearchPage = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>Κριτήρια</CardTitle>
+          <CardTitle>Κριτήρια αναζήτησης</CardTitle>
           <CardDescription>
             {draft.type === "REQ"
-              ? "Πρωτογενή / εγκεκριμένα αιτήματα / εγκρίσεις"
+              ? "Επιλέξτε τύπο αιτήματος και συμπληρώστε τα κριτήρια αναζήτησης."
               : "Προσκλήσεις, προκηρύξεις και διακηρύξεις"}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="title">Τίτλος / λέξη αναζήτησης</Label>
+            <Label htmlFor="title">Λέξεις στον τίτλο</Label>
             <Input
               id="title"
               value={draft.q}
@@ -431,7 +459,7 @@ export const SearchPage = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label>Κωδ. Αναθέτουσας Αρχής</Label>
+              <Label>Κωδικός αναθέτουσας αρχής</Label>
               <Input
                 value={draft.authority}
                 onChange={(e) =>
@@ -498,7 +526,7 @@ export const SearchPage = () => {
               </div>
             )}
             <div className="space-y-2">
-              <Label>Καταχώριση από</Label>
+              <Label>Ημερομηνία καταχώρισης από</Label>
               <DateInput
                 disabled={draft.allHistory}
                 value={draft.dateFrom}
@@ -509,11 +537,11 @@ export const SearchPage = () => {
                     dateFrom,
                   }))
                 }
-                aria-label="Καταχώριση από"
+                aria-label="Ημερομηνία καταχώρισης από"
               />
             </div>
             <div className="space-y-2">
-              <Label>Καταχώριση έως</Label>
+              <Label>Ημερομηνία καταχώρισης έως</Label>
               <DateInput
                 disabled={draft.allHistory}
                 value={draft.dateTo}
@@ -524,7 +552,7 @@ export const SearchPage = () => {
                     dateTo,
                   }))
                 }
-                aria-label="Καταχώριση έως"
+                aria-label="Ημερομηνία καταχώρισης έως"
               />
             </div>
             <div className="flex items-end pb-2 md:col-span-2 lg:col-span-3">
@@ -548,11 +576,16 @@ export const SearchPage = () => {
                     });
                   }}
                 />
-                Αναζήτηση όλου του ιστορικού (μπορεί να επιστρέψει χιλιάδες αποτελέσματα)
+                Αναζήτηση σε όλες τις ημερομηνίες
               </label>
+              {draft.allHistory ? (
+                <p className="text-xs text-muted-foreground md:col-span-2 lg:col-span-3">
+                  Η αναζήτηση μπορεί να εμφανίσει μεγάλο αριθμό αποτελεσμάτων.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
-              <Label>Ποσό από</Label>
+              <Label>Ελάχιστο ποσό (€)</Label>
               <Input
                 type="number"
                 value={draft.amountMin}
@@ -562,7 +595,7 @@ export const SearchPage = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label>Ποσό έως</Label>
+              <Label>Μέγιστο ποσό (€)</Label>
               <Input
                 type="number"
                 value={draft.amountMax}
@@ -570,6 +603,60 @@ export const SearchPage = () => {
                   setDraft((prev) => ({ ...prev, amountMax: e.target.value }))
                 }
               />
+            </div>
+            <div className="space-y-2 md:col-span-2 lg:col-span-3">
+              <Label>Περιφέρειες</Label>
+              <p className="text-xs text-muted-foreground">
+                Καμία επιλογή = όλη η Ελλάδα. Ταίριασμα μόνο από επίσημο πεδίο NUTS του ΚΗΜΔΗΣ.
+              </p>
+              <div className="grid max-h-40 grid-cols-1 gap-1.5 overflow-y-auto rounded-md border border-border px-3 py-2 sm:grid-cols-2 lg:grid-cols-3">
+                {GREEK_NUTS2_REGIONS.map((region) => {
+                  const selected = draft.regions.includes(region.code);
+                  return (
+                    <label
+                      key={region.code}
+                      className="flex cursor-pointer items-center gap-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5"
+                        checked={selected}
+                        onChange={() => {
+                          setDraft((prev) => {
+                            const next = selected
+                              ? prev.regions.filter((code) => code !== region.code)
+                              : [...prev.regions, region.code];
+                            return {
+                              ...prev,
+                              regions: next,
+                              includeUnclassifiedRegion:
+                                next.length === 0 ? false : prev.includeUnclassifiedRegion,
+                            };
+                          });
+                        }}
+                        aria-label={region.label}
+                      />
+                      <span>{region.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              {draft.regions.length > 0 ? (
+                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={draft.includeUnclassifiedRegion}
+                    onChange={(e) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        includeUnclassifiedRegion: e.target.checked,
+                      }))
+                    }
+                    aria-label="Συμπερίληψη χωρίς δηλωμένη περιοχή"
+                  />
+                  Συμπερίληψη δημοσιεύσεων χωρίς δηλωμένη περιοχή
+                </label>
+              ) : null}
             </div>
           </div>
 
@@ -580,7 +667,7 @@ export const SearchPage = () => {
           {showAdvanced ? (
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
-                <Label>Αποφαινόμενο όργανο (κωδ.)</Label>
+                <Label>Κωδικός αποφαινόμενου οργάνου</Label>
                 <Input
                   value={draft.signer}
                   onChange={(e) =>
@@ -591,23 +678,23 @@ export const SearchPage = () => {
               {draft.type === "PROC" ? (
                 <>
                   <div className="space-y-2">
-                    <Label>Καταληκτική από</Label>
+                    <Label>Προθεσμία υποβολής από</Label>
                     <DateInput
                       value={draft.finalFrom}
                       onChange={(finalFrom) =>
                         setDraft((prev) => ({ ...prev, finalFrom }))
                       }
-                      aria-label="Καταληκτική από"
+                      aria-label="Προθεσμία υποβολής από"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Καταληκτική έως</Label>
+                    <Label>Προθεσμία υποβολής έως</Label>
                     <DateInput
                       value={draft.finalTo}
                       onChange={(finalTo) =>
                         setDraft((prev) => ({ ...prev, finalTo }))
                       }
-                      aria-label="Καταληκτική έως"
+                      aria-label="Προθεσμία υποβολής έως"
                     />
                   </div>
                 </>
@@ -655,6 +742,9 @@ export const SearchPage = () => {
               {items.length > 0
                 ? ` · ${items.length} ανά σελίδα`
                 : ` · έως ${KIMDIS_PAGE_SIZE} ανά σελίδα`}
+              {urlState.regions.length > 0 && items.length > 0
+                ? ` · ${visibleItems.length} στην επιλεγμένη περιφέρεια`
+                : null}
             </div>
             <div className="flex items-center gap-2">
               <Label htmlFor="sort" className="text-xs text-muted-foreground">
@@ -666,21 +756,25 @@ export const SearchPage = () => {
                 onChange={(e) =>
                   handleSortChange(e.target.value as "date_desc" | "date_asc")
                 }
-                className="w-44"
+                className="w-48"
               >
-                <option value="date_desc">Νεότερα πρώτα</option>
+                <option value="date_desc">Πιο πρόσφατες πρώτα</option>
                 <option value="date_asc">Παλαιότερα πρώτα</option>
               </Select>
             </div>
           </div>
 
-          {!loading && items.length === 0 ? (
+          {!loading && visibleItems.length === 0 ? (
             <EmptyState
               title="Δεν βρέθηκαν αποτελέσματα"
-              description="Δοκιμάστε διαφορετικά κριτήρια ή ευρύτερο διάστημα ημερομηνιών."
+              description={
+                urlState.regions.length > 0 && items.length > 0
+                  ? "Υπάρχουν αποτελέσματα από το ΚΗΜΔΗΣ, αλλά κανένα δεν ταιριάζει στις επιλεγμένες περιφέρειες σε αυτή τη σελίδα."
+                  : "Δοκιμάστε διαφορετικά κριτήρια ή ευρύτερο διάστημα ημερομηνιών."
+              }
             />
           ) : (
-            items.map((item) => (
+            visibleItems.map((item) => (
               <Card key={item.adam}>
                 <CardContent className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-start md:justify-between">
                   <div className="min-w-0 space-y-2">
@@ -724,7 +818,7 @@ export const SearchPage = () => {
                         Καταχώριση: {formatDate(item.submissionDate || item.signedDate)}
                       </span>
                       {item.finalSubmissionDate ? (
-                        <span>Καταληκτική: {formatDate(item.finalSubmissionDate)}</span>
+                        <span>Προθεσμία υποβολής: {formatDate(item.finalSubmissionDate)}</span>
                       ) : null}
                       {item.contractTypeLabel ? <span>{item.contractTypeLabel}</span> : null}
                     </div>
@@ -744,7 +838,7 @@ export const SearchPage = () => {
                       <Link
                         to={`/app/tenders/${item.recordType}/${encodeURIComponent(item.adam)}`}
                       >
-                        Άνοιγμα
+                        Προβολή λεπτομερειών
                       </Link>
                     </Button>
                     <Button size="sm" onClick={() => void handleFollow(item)}>
@@ -795,7 +889,7 @@ export const SearchPage = () => {
           <DialogHeader>
             <DialogTitle>Αποθήκευση αναζήτησης</DialogTitle>
             <DialogDescription>
-              Δημιουργεί αποθηκευμένη αναζήτηση και ξεκινά αρχική σάρωση (~30 ημερών) για Ευκαιρίες.
+              Δημιουργεί αποθηκευμένη αναζήτηση και ξεκινά αρχικό έλεγχο (~30 ημερών) για Ευκαιρίες.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

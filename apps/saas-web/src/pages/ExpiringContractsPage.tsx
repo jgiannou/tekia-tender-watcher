@@ -71,17 +71,17 @@ export const ExpiringContractsPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Λήγουσες συμβάσεις</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">Συμβάσεις που λήγουν</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Συμβάσεις που τελειώνουν σε 3–9 μήνες στον χώρο σας (ΚΑΔ → CPV και περιοχή).
+          Συμβάσεις που λήγουν σε 3–9 μήνες και σχετίζονται με τη δραστηριότητα και την περιοχή σας.
         </p>
       </div>
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">{count} συμβάσεις λήγουν στον χώρο σου</CardTitle>
+          <CardTitle className="text-base">{count === 1 ? "1 σύμβαση σχετική με τη δραστηριότητά σας λήγει σε 3–9 μήνες." : `${count} συμβάσεις σχετικές με τη δραστηριότητά σας λήγουν σε 3–9 μήνες.`}</CardTitle>
           <CardDescription>
-            Όχι πίνακας αγοράς — μόνο πιθανές επαναπροκηρύξεις για παρακολούθηση.
+            Παρακολουθήστε αυτές τις συμβάσεις για ενδεχόμενη νέα προκήρυξη μετά τη λήξη τους.
           </CardDescription>
         </CardHeader>
         <CardContent>

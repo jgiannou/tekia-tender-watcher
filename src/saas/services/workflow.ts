@@ -74,7 +74,7 @@ const expectedDevelopmentFor = (input: {
 const pipelineLabel = (stage: PipelineStage): string => {
   switch (stage) {
     case "OUTREACH_SENT":
-      return "Εκδήλωση ενδιαφέροντος καταγράφηκε";
+      return "Εκδήλωση ενδιαφέροντος";
     case "PREPARING":
       return "Προετοιμασία";
     case "SUBMITTED":
@@ -130,7 +130,7 @@ export const resolveNextAction = (input: {
   if (procReady && (input.following || input.relatedProcCount > 0)) {
     return {
       code: "START_PREPARATION",
-      label: "Έναρξη προετοιμασίας",
+      label: "Προετοιμασία προσφοράς",
       description:
         input.recordType === "PROC"
           ? "Ενεργή πρόσκληση — ετοιμάστε τον φάκελο και καταγράψτε την υποβολή."
@@ -140,7 +140,7 @@ export const resolveNextAction = (input: {
   if (input.hasOutreach || input.pipelineStage === "OUTREACH_SENT") {
     return {
       code: "WAIT_PROC",
-      label: "Αναμονή επίσημης πρόσκλησης",
+      label: "Αναμένεται η δημοσίευση πρόσκλησης.",
       description: "Παρακολουθούμε το ΚΗΜΔΗΣ για σχετική επίσημη πρόσκληση.",
     };
   }
@@ -154,14 +154,14 @@ export const resolveNextAction = (input: {
   if (input.following) {
     return {
       code: "MONITOR",
-      label: "Παρακολούθηση ενεργή",
+      label: "Ενεργή παρακολούθηση",
       description: "Παρακολουθούμε εξελίξεις στο ΚΗΜΔΗΣ.",
     };
   }
   return {
     code: "FOLLOW",
     label: "Παρακολούθηση",
-    description: "Δηλώστε ενδιαφέρον για να ξεκινήσει η παρακολούθηση νήματος.",
+    description: "Προσθέστε τον διαγωνισμό στην παρακολούθηση για να ενημερώνεστε για νέες εξελίξεις.",
   };
 };
 

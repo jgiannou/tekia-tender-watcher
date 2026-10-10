@@ -37,6 +37,7 @@ import {
   type VaultDocument,
 } from "@/lib/api";
 import { outreachMethodLabel, submissionMethodLabel } from "@/lib/labels";
+import { formatMatchReason } from "@/lib/matchReasons";
 
 const formatMoney = (value: number | null) =>
   value == null
@@ -251,7 +252,7 @@ export const TenderDetailPage = () => {
         item_id: item.adam,
         source: "tender",
       });
-      toast.success("Προστέθηκε στα Παρακολουθούμενα. Η παρακολούθηση είναι ενεργή.");
+      toast.success("Προστέθηκε στην Παρακολούθηση. Η παρακολούθηση είναι ενεργή.");
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Αποτυχία παρακολούθησης");
@@ -533,7 +534,7 @@ export const TenderDetailPage = () => {
         documentIds: outreachDocs.map((doc) => doc.id),
       });
       toast.success(
-        "Καταγράφηκε. Προστέθηκε αυτόματα στα Παρακολουθούμενα — παρακολουθούμε για επίσημη πρόσκληση.",
+        "Καταγράφηκε. Προστέθηκε αυτόματα στην Παρακολούθηση — παρακολουθούμε για επίσημη πρόσκληση.",
       );
       setOutreachOpen(false);
       setOutreachDocs([]);
@@ -659,7 +660,7 @@ export const TenderDetailPage = () => {
     }
     if (!following) {
       return {
-        label: "Παρακολούθηση",
+        label: "Έναρξη παρακολούθησης",
         onClick: () => void handleFollow(),
       };
     }
@@ -727,7 +728,7 @@ export const TenderDetailPage = () => {
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span>Καταχώριση: {formatDate(item.submissionDate || item.signedDate)}</span>
             {item.finalSubmissionDate ? (
-              <span>Καταληκτική: {formatDate(item.finalSubmissionDate)}</span>
+              <span>Προθεσμία υποβολής: {formatDate(item.finalSubmissionDate)}</span>
             ) : null}
             <span>Πηγή: ΚΗΜΔΗΣ</span>
             <a
@@ -759,13 +760,13 @@ export const TenderDetailPage = () => {
             </Button>
           ) : null}
           {!following &&
-          primaryAction?.label !== "Παρακολούθηση" ? (
+          primaryAction?.label !== "Έναρξη παρακολούθησης" ? (
             <Button
               variant="outline"
               disabled={busy}
               onClick={() => void handleFollow()}
             >
-              Παρακολούθηση
+              Έναρξη παρακολούθησης
             </Button>
           ) : null}
           {following ? (
@@ -783,7 +784,7 @@ export const TenderDetailPage = () => {
               disabled={busy}
               onClick={() => void handleDismiss()}
             >
-              {isDeadlineExpired ? "Σήμανση ως ληγμένο" : "Απόκρυψη από ευκαιρίες"}
+              {isDeadlineExpired ? "Σήμανση ως ληγμένο" : "Απόκρυψη από τις Ευκαιρίες"}
             </Button>
           ) : null}
         </div>
@@ -792,10 +793,9 @@ export const TenderDetailPage = () => {
       {/* Living procurement thread */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Νήμα διαγωνισμού</CardTitle>
+          <CardTitle className="text-base">Πορεία διαγωνισμού</CardTitle>
           <CardDescription>
-            Πρωτογενές αίτημα → πρόσκληση → προθεσμία → κατακύρωση. Οι ενέργειες της εταιρείας
-            φαίνονται χωριστά στο ιστορικό.
+            Δείτε τα στάδια του διαγωνισμού. Οι δικές σας ενέργειες καταγράφονται στο ιστορικό παρακάτω.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -814,7 +814,7 @@ export const TenderDetailPage = () => {
                   done: item.recordType === "PROC" || relatedProcs.length > 0,
                 },
                 {
-                  label: "Προθεσμία",
+                  label: "Προθεσμία υποβολής",
                   done: Boolean(item.finalSubmissionDate),
                 },
                 {
@@ -1074,8 +1074,7 @@ export const TenderDetailPage = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Ιστορικό {kind.genitive}</CardTitle>
               <CardDescription>
-                Μόνο γεγονότα που έχουν συμβεί — επίσημες πράξεις ΚΗΜΔΗΣ και ενέργειες της
-                εταιρείας.
+                Οι δημοσιεύσεις στο ΚΗΜΔΗΣ και οι ενέργειες που έχετε καταγράψει, με χρονολογική σειρά.
               </CardDescription>
             </CardHeader>
             <CardContent className="max-h-72 space-y-3 overflow-y-auto pr-1">
@@ -1136,7 +1135,7 @@ export const TenderDetailPage = () => {
           {/* Company state — always visible */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Κατάσταση εταιρείας</CardTitle>
+              <CardTitle className="text-base">Η συμμετοχή σας</CardTitle>
               <CardDescription>
                 Τι έχουμε κάνει εμείς και τι περιμένουμε από το ΚΗΜΔΗΣ.
               </CardDescription>
@@ -1145,7 +1144,7 @@ export const TenderDetailPage = () => {
               {!following ? (
                 <p className="text-muted-foreground">
                   Δεν παρακολουθείται ακόμη. Ξεκινήστε με εκδήλωση ενδιαφέροντος ή
-                  πατήστε Παρακολούθηση.
+                  πατήστε Έναρξη παρακολούθησης.
                 </p>
               ) : (
                 <>
@@ -1326,8 +1325,8 @@ export const TenderDetailPage = () => {
           {matchMeta?.matchedProfiles?.length ? (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Γιατί το βλέπετε</CardTitle>
-                <CardDescription>Αποθηκευμένες αναζητήσεις που ταίριαξαν.</CardDescription>
+                <CardTitle className="text-base">Γιατί εμφανίζεται στις ευκαιρίες σας</CardTitle>
+                <CardDescription>Εντοπίστηκε από τις παρακάτω αποθηκευμένες αναζητήσεις.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 {matchMeta.matchedProfiles.map((profile) => (
@@ -1338,7 +1337,7 @@ export const TenderDetailPage = () => {
                     </div>
                     <ul className="mt-1 space-y-1 text-muted-foreground">
                       {profile.reasons.map((reason) => (
-                        <li key={reason}>✓ {reason}</li>
+                        <li key={reason}>✓ {formatMatchReason(reason)}</li>
                       ))}
                     </ul>
                   </div>
@@ -1362,11 +1361,11 @@ export const TenderDetailPage = () => {
               </div>
               <div>Καταχώριση: {formatDate(item.submissionDate || item.signedDate)}</div>
               {item.finalSubmissionDate ? (
-                <div>Καταληκτική: {formatDate(item.finalSubmissionDate)}</div>
+                <div>Προθεσμία υποβολής: {formatDate(item.finalSubmissionDate)}</div>
               ) : null}
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button variant="outline" size="sm" onClick={() => setPdfOpen(true)}>
-                  Προεπισκόπηση PDF
+                  Προβολή PDF
                 </Button>
                 <Button variant="outline" size="sm" asChild>
                   <a href={item.publicKimdisUrl} target="_blank" rel="noreferrer">

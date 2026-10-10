@@ -77,7 +77,7 @@ const notificationLabel = (value?: string) => {
     case "IMMEDIATE":
       return "Άμεσο email";
     default:
-      return "Χρησιμοποιεί προεπιλογές οργανισμού";
+      return "Σύμφωνα με τις ρυθμίσεις της εταιρείας σας";
   }
 };
 
@@ -98,21 +98,21 @@ const humanScanError = (error?: string | null) => {
     return "απαιτείται επιβεβαίωση email — μέχρι τότε μόνο χειροκίνητη αναζήτηση ΚΗΜΔΗΣ";
   }
   if (error === "trial_expired" || error.includes("trial_expired")) {
-    return "έληξε η δοκιμαστική περίοδος — αναβαθμίστε για σαρώσεις";
+    return "έληξε η δοκιμαστική περίοδος — αναβαθμίστε για ελέγχους";
   }
   if (error.includes("periodic_scan_quota") || error.includes("manual_scan_quota")) {
-    return "έχετε φτάσει το ημερήσιο όριο σαρώσεων";
+    return "έχετε φτάσει το ημερήσιο όριο ελέγχων";
   }
   if (error === "kimdis_not_configured") return "το ΚΗΜΔΗΣ δεν ήταν διαθέσιμο";
   if (error === "scan_timeout" || error.includes("scan_timeout")) {
-    return "έληξε το χρονικό όριο σάρωσης (3 λεπτά) — δοκιμάστε Επανάληψη";
+    return "έληξε το χρονικό όριο ελέγχου (3 λεπτά) — δοκιμάστε Επανάληψη";
   }
   if (
     error === "scan_interrupted" ||
     error === "scan_interrupted_restart" ||
     error.includes("scan_interrupted")
   ) {
-    return "η σάρωση διακόπηκε (επανεκκίνηση ή μεγάλος χρόνος) — δοκιμάστε Επανάληψη";
+    return "ο έλεγχος διακόπηκε (επανεκκίνηση ή μεγάλος χρόνος) — δοκιμάστε Επανάληψη";
   }
   if (error.includes("Foreign key") || error.includes("watchProfileId_fkey")) {
     return "εσωτερικό σφάλμα συσχέτισης προφίλ — δοκιμάστε Επανάληψη";
@@ -137,23 +137,23 @@ const scanLabel = (profile: WatchProfile) => {
         ? null
         : Math.max(0, Math.round((Date.now() - started) / 1000));
       return elapsedSec == null
-        ? "Σάρωση σε εξέλιξη…"
+        ? "Έλεγχος σε εξέλιξη…"
         : elapsedSec < 60
-          ? `Σάρωση σε εξέλιξη… (${elapsedSec} δευτ.)`
-          : `Σάρωση σε εξέλιξη… (${Math.round(elapsedSec / 60)} λεπ.)`;
+          ? `Έλεγχος σε εξέλιξη… (${elapsedSec} δευτ.)`
+          : `Έλεγχος σε εξέλιξη… (${Math.round(elapsedSec / 60)} λεπ.)`;
     }
     case "FAILED":
       return profile.scanError
-        ? `Αποτυχία σάρωσης · ${humanScanError(profile.scanError)}`
-        : "Αποτυχία σάρωσης";
+        ? `Αποτυχία ελέγχου · ${humanScanError(profile.scanError)}`
+        : "Αποτυχία ελέγχου";
     case "COMPLETED": {
       if (!evaluated) return "Ολοκληρώθηκε · χωρίς αποτελέσματα";
-      const base = `${evaluated} αντιστοιχίσεις`;
+      const base = `${evaluated} αποτελέσματα`;
       if (newCount == null) return base;
-      return `${base} · ${newCount} νέες`;
+      return `${base} · ${newCount} νέ${newCount === 1 ? "ο" : "α"}`;
     }
     default:
-      return "Εκκρεμεί σάρωση";
+      return "Εκκρεμεί έλεγχος";
   }
 };
 
@@ -372,8 +372,8 @@ export const SavedSearchesPage = () => {
         trackAnalyticsEvent("watch_profile_created", { source: "MANUAL" });
         toast.success(
           profileScansBlocked
-            ? "Η αποθηκευμένη αναζήτηση δημιουργήθηκε · η σάρωση θα ξεκινήσει όταν το επιτρέπει ο λογαριασμός"
-            : "Η αποθηκευμένη αναζήτηση δημιουργήθηκε · ξεκίνησε αρχική σάρωση",
+            ? "Η αποθηκευμένη αναζήτηση δημιουργήθηκε · ο έλεγχος θα ξεκινήσει όταν το επιτρέπει ο λογαριασμός"
+            : "Η αποθηκευμένη αναζήτηση δημιουργήθηκε · ξεκίνησε αρχικός έλεγχος",
         );
       }
       setEditForm(null);
@@ -444,10 +444,10 @@ export const SavedSearchesPage = () => {
           saasApi.scanWatchProfile(activeOrganization.id, profile.id),
         ),
       );
-      toast.success("Ξεκίνησε η επανάληψη σαρώσεων");
+      toast.success("Ξεκίνησε η επανάληψη ελέγχων");
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Αποτυχία σάρωσης");
+      toast.error(err instanceof Error ? err.message : "Αποτυχία ελέγχου");
     } finally {
       setBusy(false);
     }
@@ -458,7 +458,7 @@ export const SavedSearchesPage = () => {
     const state = (profile.scanState ?? "").toUpperCase();
     const force = canForceRetryStuckScan(profile);
     if ((state === "PENDING" || state === "RUNNING") && !force) {
-      toast.message("Η σάρωση είναι ήδη σε εξέλιξη");
+      toast.message("Ο έλεγχος είναι ήδη σε εξέλιξη");
       return;
     }
     try {
@@ -466,11 +466,11 @@ export const SavedSearchesPage = () => {
         force,
       });
       toast.success(
-        force ? "Επανεκκίνηση κολλημένης σάρωσης…" : "Η σάρωση ξεκίνησε",
+        force ? "Επανεκκίνηση κολλημένου ελέγχου…" : "Ο έλεγχος ξεκίνησε",
       );
       await load();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Αποτυχία σάρωσης");
+      toast.error(err instanceof Error ? err.message : "Αποτυχία ελέγχου");
     }
   };
 
@@ -489,23 +489,23 @@ export const SavedSearchesPage = () => {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Αποθηκευμένες Αναζητήσεις</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">Αποθηκευμένες αναζητήσεις</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Οι αναζητήσεις που εκτελούμε αυτόματα για την εταιρεία σας.
+            Η εφαρμογή ελέγχει αυτόματα το ΚΗΜΔΗΣ με τα κριτήριά σας και εμφανίζει τα νέα αποτελέσματα στις Ευκαιρίες.
           </p>
           <p className="mt-2 text-sm font-medium">
-            {activeCount} / {maxActive} ενεργές
+            Ενεργές αναζητήσεις: {activeCount} από {maxActive}
           </p>
         </div>
-        <Button onClick={openCreate}>Νέα Αποθηκευμένη Αναζήτηση</Button>
+        <Button onClick={openCreate}>Νέα αποθηκευμένη αναζήτηση</Button>
       </div>
 
       {runningScanProfiles.length > 0 ? (
         <Card className="border-primary/40 bg-primary/5">
           <CardContent className="py-3 text-sm">
             {runningScanProfiles.length === 1
-              ? "1 σάρωση σε εξέλιξη…"
-              : `${runningScanProfiles.length} σαρώσεις σε εξέλιξη…`}
+              ? "1 έλεγχος σε εξέλιξη…"
+              : `${runningScanProfiles.length} έλεγχοι σε εξέλιξη…`}
           </CardContent>
         </Card>
       ) : null}
@@ -515,11 +515,11 @@ export const SavedSearchesPage = () => {
           <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
             <span>
               {pendingInitialProfiles.length === 1
-                ? "1 αναζήτηση εκκρεμεί αρχική σάρωση."
-                : `${pendingInitialProfiles.length} αναζητήσεις εκκρεμούν αρχική σάρωση.`}
+                ? "1 αναζήτηση εκκρεμεί αρχικό έλεγχο."
+                : `${pendingInitialProfiles.length} αναζητήσεις εκκρεμούν αρχικό έλεγχο.`}
             </span>
             <Button size="sm" disabled={busy} onClick={() => void handleRunPendingScans()}>
-              {busy ? "Σάρωση…" : "Εκτέλεση σαρώσεων"}
+              {busy ? "Έλεγχος…" : "Έλεγχος τώρα"}
             </Button>
           </CardContent>
         </Card>
@@ -531,8 +531,8 @@ export const SavedSearchesPage = () => {
             <div className="min-w-0 space-y-1">
               <div>
                 {failedScanProfiles.length === 1
-                  ? "Η τελευταία σάρωση απέτυχε."
-                  : `${failedScanProfiles.length} αναζητήσεις απέτυχαν στην τελευταία σάρωση.`}
+                  ? "Ο τελευταίος έλεγχος απέτυχε."
+                  : `${failedScanProfiles.length} αναζητήσεις απέτυχαν στον τελευταίο έλεγχο.`}
               </div>
               {failedScanProfiles.slice(0, 2).map((profile) => (
                 <div key={profile.id} className="text-xs text-muted-foreground">
@@ -547,7 +547,7 @@ export const SavedSearchesPage = () => {
               ))}
             </div>
             <Button size="sm" disabled={busy} onClick={() => void handleRunPendingScans()}>
-              {busy ? "Σάρωση…" : "Επανάληψη"}
+              {busy ? "Έλεγχος…" : "Επανάληψη"}
             </Button>
           </CardContent>
         </Card>
@@ -557,20 +557,20 @@ export const SavedSearchesPage = () => {
         <Card className="border-amber-500/30 bg-amber-500/5">
           <CardContent className="space-y-1 py-3 text-sm">
             <p className="font-medium text-foreground">
-              {scanAccess.status === "unverified"
-                ? "Σαρώσεις σε αναμονή επιβεβαίωσης email"
+                {scanAccess.status === "unverified"
+                ? "Έλεγχοι σε αναμονή επιβεβαίωσης email"
                 : scanAccess.status === "trial_expired"
                   ? "Η δοκιμή έληξε"
-                  : "Σαρώσεις προσωρινά μη διαθέσιμες"}
+                  : "Έλεγχοι προσωρινά μη διαθέσιμοι"}
             </p>
             <p className="text-muted-foreground">
               {humanSaasError(scanAccess.blockCode ?? "manual_scan_blocked")} Η
               χειροκίνητη αναζήτηση ΚΗΜΔΗΣ παραμένει διαθέσιμη.
               {scanAccess.status === "trial"
-                ? ` Δοκιμή: έως ${scanAccess.limits.periodicScansPerDay} περιοδική σάρωση/ημέρα.`
+                ? ` Δοκιμή: έως ${scanAccess.limits.periodicScansPerDay} αυτόματους ελέγχους/ημέρα.`
                 : ""}
               {scanAccess.status === "active"
-                ? ` Πλάνο: έως ${scanAccess.limits.periodicScansPerDay} περιοδικές σαρώσεις/ημέρα.`
+                ? ` Πακέτο: έως ${scanAccess.limits.periodicScansPerDay} αυτόματους ελέγχους/ημέρα.`
                 : ""}
             </p>
           </CardContent>
@@ -582,13 +582,9 @@ export const SavedSearchesPage = () => {
       (scanAccess.status === "trial" || scanAccess.status === "active") ? (
         <Card className="border-border/80">
           <CardContent className="py-3 text-sm text-muted-foreground">
-            {scanAccess.status === "trial" ? "Δοκιμαστική περίοδος" : "Ενεργό πλάνο"}
-            {" · "}
-            περιοδικές σαρώσεις σήμερα {scanAccess.usage.periodic}/
-            {scanAccess.limits.periodicScansPerDay}
-            {" · "}
-            χειροκίνητες {scanAccess.usage.manual}/
-            {scanAccess.limits.manualProfileScansPerDay}
+            Σημερινοί έλεγχοι: {scanAccess.usage.periodic} από{" "}
+            {scanAccess.limits.periodicScansPerDay} αυτόματους · {scanAccess.usage.manual}{" "}
+            από {scanAccess.limits.manualProfileScansPerDay} χειροκίνητους
             {scanAccess.trialEndsAt
               ? ` · δοκιμή έως ${new Date(scanAccess.trialEndsAt).toLocaleDateString("el-GR")}`
               : ""}
@@ -623,7 +619,7 @@ export const SavedSearchesPage = () => {
       {profiles.length === 0 ? (
         <EmptyState
           title="Καμία αποθηκευμένη αναζήτηση"
-          description="Χωρίς ενεργή αποθηκευμένη αναζήτηση οι αυτόματες ευκαιρίες παραμένουν κενές. Μπορείτε να αποθηκεύσετε κριτήρια από την Αναζήτηση ΚΗΜΔΗΣ."
+          description="Χωρίς ενεργή αποθηκευμένη αναζήτηση οι αυτόματες ευκαιρίες παραμένουν κενές. Μπορείτε να αποθηκεύσετε κριτήρια από την Αναζήτηση στο ΚΗΜΔΗΣ."
         />
       ) : (
         <div className="space-y-3">
@@ -640,7 +636,7 @@ export const SavedSearchesPage = () => {
                       <CardDescription className="mt-1">
                         {scanLabel(profile)}
                         {profile.scanState === "COMPLETED" && profile.scanPartial
-                          ? ` · μερική σάρωση (${humanScanError(profile.scanError)})`
+                          ? ` · μερικός έλεγχος (${humanScanError(profile.scanError)})`
                           : ""}
                       </CardDescription>
                     </div>
@@ -657,15 +653,15 @@ export const SavedSearchesPage = () => {
                             !canForceRetryStuckScan(profile))
                         }
                         onClick={() => void handleRescan(profile)}
-                        aria-label={`Σάρωση για ${profile.name}`}
+                        aria-label={`Έλεγχος τώρα για ${profile.name}`}
                       >
                         {((profile.scanState ?? "").toUpperCase() === "RUNNING" ||
                           (profile.scanState ?? "").toUpperCase() === "PENDING") &&
                         !canForceRetryStuckScan(profile)
-                          ? "Σάρωση…"
+                          ? "Έλεγχος…"
                           : canForceRetryStuckScan(profile)
                             ? "Επανεκκίνηση"
-                            : "Σάρωση"}
+                            : "Έλεγχος τώρα"}
                       </Button>
                       <IconAction label="Προβολή" onClick={() => setViewProfile(profile)}>
                         <Eye />
@@ -705,7 +701,7 @@ export const SavedSearchesPage = () => {
                           >
                             {canForceRetryStuckScan(profile)
                               ? "Επανεκκίνηση (κολλημένη)"
-                              : "Επανασάρωση"}
+                              : "Επανάληψη ελέγχου"}
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>
                             <Link to={`/app/opportunities?profile=${encodeURIComponent(profile.id)}`}>
@@ -736,15 +732,15 @@ export const SavedSearchesPage = () => {
                       {(recordTypes.length ? recordTypes : ["REQ", "PROC"]).join(" + ")}
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Τρόπος αντιστοίχισης: </span>
+                      <span className="text-muted-foreground">Αντιστοίχιση αποτελεσμάτων: </span>
                       {matchingLabel(profile.matchingMode)}
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Τελευταία σάρωση: </span>
+                      <span className="text-muted-foreground">Τελευταίος έλεγχος: </span>
                       {formatRelative(profile.lastScannedAt)}
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Αντιστοιχίσεις: </span>
+                      <span className="text-muted-foreground">Αποτελέσματα: </span>
                       {profile.matchCount ?? 0}
                     </div>
                     <div>
@@ -816,7 +812,7 @@ export const SavedSearchesPage = () => {
               </DialogHeader>
               <div className="space-y-2 text-sm">
                 <div>Κατάσταση: {viewProfile.enabled ? "Ενεργή" : "Σε παύση"}</div>
-                <div>Αντιστοίχιση: {matchingLabel(viewProfile.matchingMode)}</div>
+                <div>Αντιστοίχιση αποτελεσμάτων: {matchingLabel(viewProfile.matchingMode)}</div>
                 <div>
                   Λέξεις-κλειδιά: {asStringArray(viewProfile.keywords).join(", ") || "—"}
                 </div>
@@ -851,10 +847,10 @@ export const SavedSearchesPage = () => {
                     {((viewProfile.scanState ?? "").toUpperCase() === "RUNNING" ||
                       (viewProfile.scanState ?? "").toUpperCase() === "PENDING") &&
                     !canForceRetryStuckScan(viewProfile)
-                      ? "Σάρωση…"
+                      ? "Έλεγχος…"
                       : canForceRetryStuckScan(viewProfile)
                         ? "Επανεκκίνηση"
-                        : "Σάρωση"}
+                        : "Έλεγχος τώρα"}
                   </Button>
                   <Button size="sm" onClick={() => openEdit(viewProfile)}>
                     Επεξεργασία
@@ -879,10 +875,10 @@ export const SavedSearchesPage = () => {
             <>
               <DialogHeader>
                 <DialogTitle>
-                  {editForm.id ? "Επεξεργασία αναζήτησης" : "Νέα Αποθηκευμένη Αναζήτηση"}
+                  {editForm.id ? "Επεξεργασία αναζήτησης" : "Νέα αποθηκευμένη αναζήτηση"}
                 </DialogTitle>
                 <DialogDescription>
-                  Οι αλλαγές κριτηρίων ενεργοποιούν επαναξιολόγηση / σάρωση.
+                  Οι αλλαγές κριτηρίων ενεργοποιούν επαναξιολόγηση / έλεγχο.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
@@ -1123,7 +1119,7 @@ export const SavedSearchesPage = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="date-from">Καταχώριση από</Label>
+                    <Label htmlFor="date-from">Ημερομηνία καταχώρισης από</Label>
                     <DateInput
                       id="date-from"
                       value={editForm.dateFrom ?? ""}
@@ -1132,11 +1128,11 @@ export const SavedSearchesPage = () => {
                           prev ? { ...prev, dateFrom: dateFrom || null } : prev,
                         )
                       }
-                      aria-label="Καταχώριση από"
+                      aria-label="Ημερομηνία καταχώρισης από"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="date-to">Καταχώριση έως</Label>
+                    <Label htmlFor="date-to">Ημερομηνία καταχώρισης έως</Label>
                     <DateInput
                       id="date-to"
                       value={editForm.dateTo ?? ""}
@@ -1145,13 +1141,13 @@ export const SavedSearchesPage = () => {
                           prev ? { ...prev, dateTo: dateTo || null } : prev,
                         )
                       }
-                      aria-label="Καταχώριση έως"
+                      aria-label="Ημερομηνία καταχώρισης έως"
                     />
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Μπορείτε να ορίσετε μόνο «από», μόνο «έως», ή και τις δύο. Αν δεν ορίσετε
-                  ημερομηνίες, η σάρωση χρησιμοποιεί τις τελευταίες 30 ημέρες.
+                  ημερομηνίες, ο έλεγχος χρησιμοποιεί τις τελευταίες 30 ημέρες.
                 </p>
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setEditForm(null)}>
