@@ -57,6 +57,10 @@ describe("watch scan sources", () => {
     );
     expect(match.qualifies).toBe(true);
     expect(match.reasons.some((row) => /TED/i.test(row))).toBe(true);
+    expect(item.budgetWithoutVat).toBe(250000);
+    expect(item.nutsCode).toBe("EL531");
+    expect(item.contractTypeLabel).toBe("Υπηρεσίες");
+    expect(item.finalSubmissionDate).toMatch(/^2026-03-15/);
   });
 
   it("records ted_disabled when TED_ENABLED is off", async () => {

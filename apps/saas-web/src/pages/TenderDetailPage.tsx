@@ -726,13 +726,17 @@ export const TenderDetailPage = () => {
           >
             {formatMoney(item.budgetWithoutVat)}
             <span className="ml-2 align-middle text-sm font-medium text-muted-foreground">
-              χωρίς ΦΠΑ
+              {item.adam.startsWith("TED:") ? "εκτιμώμενη αξία" : "χωρίς ΦΠΑ"}
             </span>
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span>Καταχώριση: {formatDate(item.submissionDate || item.signedDate)}</span>
             {item.finalSubmissionDate ? (
               <span>Προθεσμία υποβολής: {formatDate(item.finalSubmissionDate)}</span>
+            ) : null}
+            {item.contractTypeLabel ? <span>{item.contractTypeLabel}</span> : null}
+            {item.nutsCode ? (
+              <span className="font-mono">NUTS {item.nutsCode}</span>
             ) : null}
             <span>
               Πηγή:{" "}
@@ -1394,22 +1398,61 @@ export const TenderDetailPage = () => {
               <div className="text-lg font-semibold tabular-nums">
                 Αξία: {formatMoney(item.budgetWithoutVat)}
                 <span className="ml-1 text-xs font-normal text-muted-foreground">
-                  χωρίς ΦΠΑ
+                  {item.adam.startsWith("TED:")
+                    ? "εκτιμώμενη"
+                    : "χωρίς ΦΠΑ"}
                 </span>
               </div>
               <div>Καταχώριση: {formatDate(item.submissionDate || item.signedDate)}</div>
               {item.finalSubmissionDate ? (
                 <div>Προθεσμία υποβολής: {formatDate(item.finalSubmissionDate)}</div>
               ) : null}
+              {item.contractTypeLabel ? (
+                <div>Είδος: {item.contractTypeLabel}</div>
+              ) : null}
+              {item.nutsCode ? (
+                <div className="font-mono text-xs">NUTS {item.nutsCode}</div>
+              ) : null}
+              {item.cpvs?.length ? (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {item.cpvs.slice(0, 6).map((code) => (
+                    <Badge key={code} variant="outline" className="font-mono">
+                      {code}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
               <div className="flex flex-wrap gap-2 pt-1">
-                <Button variant="outline" size="sm" onClick={() => setPdfOpen(true)}>
-                  Προβολή PDF
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <a href={item.publicKimdisUrl} target="_blank" rel="noreferrer">
-                    ΚΗΜΔΗΣ
-                  </a>
-                </Button>
+                {item.adam.startsWith("TED:") || item.adam.startsWith("DIAVGEIA:") ? (
+                  item.officialPdfUrl || item.publicKimdisUrl ? (
+                    <Button variant="outline" size="sm" asChild>
+                      <a
+                        href={item.officialPdfUrl || item.publicKimdisUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {item.adam.startsWith("TED:")
+                          ? "Έγγραφο TED"
+                          : "Έγγραφο Διαύγειας"}
+                      </a>
+                    </Button>
+                  ) : null
+                ) : (
+                  <Button variant="outline" size="sm" onClick={() => setPdfOpen(true)}>
+                    Προβολή PDF
+                  </Button>
+                )}
+                {item.publicKimdisUrl ? (
+                  <Button variant="outline" size="sm" asChild>
+                    <a href={item.publicKimdisUrl} target="_blank" rel="noreferrer">
+                      {item.adam.startsWith("TED:")
+                        ? "TED"
+                        : item.adam.startsWith("DIAVGEIA:")
+                          ? "Διαύγεια"
+                          : "ΚΗΜΔΗΣ"}
+                    </a>
+                  </Button>
+                ) : null}
               </div>
             </CardContent>
           </Card>

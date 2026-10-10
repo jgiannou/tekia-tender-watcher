@@ -40,8 +40,26 @@ type TedNoticeRow = {
   title: string | null;
   buyerName: string | null;
   publicationDate: string | null;
+  noticeType?: string | null;
+  cpvs?: string[];
+  deadline?: string | null;
+  estimatedValue?: number | null;
+  currency?: string | null;
+  nutsCode?: string | null;
+  placeCity?: string | null;
+  contractNature?: string | null;
   url: string;
+  pdfUrl?: string | null;
   provenance: "ted";
+};
+
+const tedContractNatureLabel = (nature?: string | null): string | null => {
+  if (!nature) return null;
+  const key = nature.trim().toLowerCase();
+  if (key === "supplies") return "Προμήθειες";
+  if (key === "services") return "Υπηρεσίες";
+  if (key === "works") return "Έργα";
+  return nature.trim();
 };
 
 const formatMoney = (value: number | null) =>
@@ -671,6 +689,34 @@ export const SearchPage = () => {
                       ? ` · ${formatDate(notice.publicationDate)}`
                       : ""}
                   </p>
+                  <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                    <span>
+                      Αξία:{" "}
+                      {formatMoney(
+                        typeof notice.estimatedValue === "number"
+                          ? notice.estimatedValue
+                          : null,
+                      )}
+                    </span>
+                    {notice.deadline ? (
+                      <span>Προθεσμία: {formatDate(notice.deadline)}</span>
+                    ) : null}
+                    {tedContractNatureLabel(notice.contractNature) ? (
+                      <span>{tedContractNatureLabel(notice.contractNature)}</span>
+                    ) : null}
+                    {notice.nutsCode ? (
+                      <span className="font-mono">{notice.nutsCode}</span>
+                    ) : null}
+                  </div>
+                  {notice.cpvs?.length ? (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {notice.cpvs.slice(0, 4).map((code) => (
+                        <Badge key={code} variant="outline" className="font-mono">
+                          {code}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button
                       size="sm"

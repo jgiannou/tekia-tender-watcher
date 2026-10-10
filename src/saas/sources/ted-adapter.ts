@@ -2,6 +2,7 @@
  * TED Search API adapter (official, unauthenticated).
  * POST https://api.ted.europa.eu/v3/notices/search — no API key required.
  * @see https://docs.ted.europa.eu/api/latest/search.html
+ * @see https://docs.ted.europa.eu/ODS/latest/reuse/field-list.html
  */
 
 export type TedNoticeRef = {
@@ -12,6 +13,17 @@ export type TedNoticeRef = {
   noticeType: string | null;
   cpvs: string[];
   deadline: string | null;
+  /** Estimated procedure value (BT-27), EUR when available. Maps to budgetWithoutVat. */
+  estimatedValue: number | null;
+  currency: string | null;
+  /** NUTS place of performance (prefer subdiv, else first EL* from place-of-performance). */
+  nutsCode: string | null;
+  placeCity: string | null;
+  /** eForms contract nature: supplies | services | works */
+  contractNature: string | null;
+  buyerCity: string | null;
+  buyerCountry: string | null;
+  noticeSubtype: string | null;
   url: string;
   pdfUrl: string | null;
   provenance: "ted";
@@ -33,14 +45,30 @@ export type TedSearchResult = {
 
 const DEFAULT_BASE = "https://api.ted.europa.eu";
 const SEARCH_PATH = "/v3/notices/search";
+
+/** Fields needed for in-app tender pages (parity with KIMDIS key fields). */
 const DEFAULT_FIELDS = [
   "publication-number",
   "notice-title",
   "buyer-name",
   "publication-date",
   "notice-type",
+  "notice-subtype",
   "classification-cpv",
   "deadline-receipt-tender-date-lot",
+  "estimated-value-proc",
+  "estimated-value-cur-proc",
+  "estimated-value-lot",
+  "estimated-value-cur-lot",
+  "total-value",
+  "total-value-cur",
+  "place-of-performance",
+  "place-of-performance-subdiv-proc",
+  "place-of-performance-city-proc",
+  "place-of-performance-country-proc",
+  "contract-nature-main-proc",
+  "organisation-city-buyer",
+  "organisation-country-buyer",
 ] as const;
 
 export const getTedAdapterStatus = (): TedAdapterStatus => {
@@ -96,21 +124,94 @@ const pickLink = (
   return null;
 };
 
-const asCpvList = (value: unknown): string[] => {
+const asStringList = (value: unknown): string[] => {
+  if (typeof value === "string" && value.trim()) return [value.trim()];
   if (!Array.isArray(value)) return [];
   return value
     .map((row) => String(row ?? "").trim())
-    .filter(Boolean)
-    .slice(0, 24);
+    .filter(Boolean);
 };
 
+const asCpvList = (value: unknown): string[] =>
+  [...new Set(asStringList(value))].slice(0, 24);
+
 const asDeadline = (value: unknown): string | null => {
-  if (typeof value === "string" && value.trim()) return value.trim();
+  const list = asStringList(value);
+  return list[0] ?? null;
+};
+
+const asNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value.replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
   if (Array.isArray(value)) {
-    const first = value.find((row) => typeof row === "string" && row.trim());
-    return typeof first === "string" ? first.trim() : null;
+    for (const row of value) {
+      const n = asNumber(row);
+      if (n != null) return n;
+    }
   }
   return null;
+};
+
+const asCurrency = (value: unknown): string | null => {
+  const list = asStringList(value);
+  const cur = list[0]?.toUpperCase() ?? null;
+  return cur && /^[A-Z]{3}$/.test(cur) ? cur : null;
+};
+
+/** Prefer procedure estimate, then lot sum/first, then total-value. */
+export const pickTedEstimatedValue = (
+  notice: Record<string, unknown>,
+): { value: number | null; currency: string | null } => {
+  const proc = asNumber(notice["estimated-value-proc"]);
+  if (proc != null) {
+    return {
+      value: proc,
+      currency: asCurrency(notice["estimated-value-cur-proc"]) ?? "EUR",
+    };
+  }
+  const lots = asStringList(notice["estimated-value-lot"])
+    .map((row) => asNumber(row))
+    .filter((n): n is number => n != null);
+  if (lots.length > 0) {
+    const sum = lots.reduce((a, b) => a + b, 0);
+    return {
+      value: sum,
+      currency: asCurrency(notice["estimated-value-cur-lot"]) ?? "EUR",
+    };
+  }
+  const total = asNumber(notice["total-value"]);
+  if (total != null) {
+    return {
+      value: total,
+      currency: asCurrency(notice["total-value-cur"]) ?? "EUR",
+    };
+  }
+  return { value: null, currency: null };
+};
+
+/** First Greek NUTS code (EL…) from subdiv or place-of-performance. */
+export const pickTedNutsCode = (notice: Record<string, unknown>): string | null => {
+  const subdiv = asStringList(notice["place-of-performance-subdiv-proc"]);
+  const place = asStringList(notice["place-of-performance"]);
+  for (const code of [...subdiv, ...place]) {
+    const clean = code.trim().toUpperCase();
+    if (/^EL[A-Z0-9]{1,3}$/.test(clean)) return clean;
+  }
+  return null;
+};
+
+export const tedContractNatureLabel = (
+  nature: string | null | undefined,
+): string | null => {
+  if (!nature) return null;
+  const key = nature.trim().toLowerCase();
+  if (key === "supplies") return "Προμήθειες";
+  if (key === "services") return "Υπηρεσίες";
+  if (key === "works") return "Έργα";
+  return nature.trim();
 };
 
 const escapeExpertToken = (raw: string): string =>
@@ -199,6 +300,11 @@ export const parseTedSearchResponse = (
     const html =
       pickLink(notice.links, "html") ||
       `https://ted.europa.eu/en/notice/-/detail/${encodeURIComponent(publicationNumber)}`;
+    const { value, currency } = pickTedEstimatedValue(notice);
+    const natureRaw =
+      typeof notice["contract-nature-main-proc"] === "string"
+        ? notice["contract-nature-main-proc"].trim()
+        : null;
     notices.push({
       publicationNumber,
       title: pickLocalized(notice["notice-title"]),
@@ -211,8 +317,19 @@ export const parseTedSearchResponse = (
         typeof notice["notice-type"] === "string"
           ? notice["notice-type"]
           : null,
+      noticeSubtype:
+        typeof notice["notice-subtype"] === "string"
+          ? notice["notice-subtype"]
+          : null,
       cpvs: asCpvList(notice["classification-cpv"]),
       deadline: asDeadline(notice["deadline-receipt-tender-date-lot"]),
+      estimatedValue: value,
+      currency,
+      nutsCode: pickTedNutsCode(notice),
+      placeCity: asStringList(notice["place-of-performance-city-proc"])[0] ?? null,
+      contractNature: natureRaw,
+      buyerCity: asStringList(notice["organisation-city-buyer"])[0] ?? null,
+      buyerCountry: asStringList(notice["organisation-country-buyer"])[0] ?? null,
       url: html,
       pdfUrl: pickLink(notice.links, "pdf"),
       provenance: "ted",

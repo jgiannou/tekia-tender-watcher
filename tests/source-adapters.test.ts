@@ -13,7 +13,10 @@ import {
   buildTedExpertQuery,
   getTedAdapterStatus,
   parseTedSearchResponse,
+  pickTedEstimatedValue,
+  pickTedNutsCode,
   searchTedNotices,
+  tedContractNatureLabel,
 } from "../src/saas/sources/ted-adapter.js";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -64,6 +67,23 @@ describe("TED adapter", () => {
     expect(first.url).toMatch(/^https:\/\/ted\.europa\.eu\//);
     expect(first.provenance).toBe("ted");
     expect(first.cpvs.length).toBeGreaterThan(0);
+    expect(first.estimatedValue).toBe(250000);
+    expect(first.currency).toBe("EUR");
+    expect(first.nutsCode).toBe("EL531");
+    expect(first.contractNature).toBe("services");
+    expect(first.deadline).toMatch(/^2026-03-15/);
+    expect(tedContractNatureLabel("supplies")).toBe("Προμήθειες");
+    expect(
+      pickTedEstimatedValue({
+        "estimated-value-lot": ["100", "50"],
+        "estimated-value-cur-lot": ["EUR"],
+      }).value,
+    ).toBe(150);
+    expect(
+      pickTedNutsCode({
+        "place-of-performance": ["GRC", "EL30"],
+      }),
+    ).toBe("EL30");
   });
 
   it("builds expert queries without inventing keywords", () => {
