@@ -178,6 +178,8 @@ export type WatchProfile = {
   regions?: unknown;
   includeUnclassifiedRegion?: boolean;
   unclassifiedRegionCount?: number;
+  dataSources?: Array<"kimdis" | "ted" | "diavgeia">;
+  lastSourceFetchedAt?: string | null;
   createdAt: string;
   updatedAt?: string;
 };
@@ -202,6 +204,7 @@ export type WatchProfileInput = {
   includeUnclassifiedRegion?: boolean;
   source?: "MANUAL" | "SAVED_FROM_SEARCH" | "SETUP_RECOMMENDATION";
   skipSimilarCheck?: boolean;
+  dataSources?: Array<"kimdis" | "ted" | "diavgeia">;
 };
 
 export type ParticipationChecklist = {
@@ -1697,13 +1700,39 @@ export const saasApi = {
         title: string | null;
         buyerName: string | null;
         publicationDate: string | null;
+        noticeType?: string | null;
+        cpvs?: string[];
+        deadline?: string | null;
         url: string;
+        pdfUrl?: string | null;
         provenance: "ted";
       }>;
       totalNoticeCount: number | null;
       blocker: string | null;
     }>(`/api/saas/sources/ted/search${suffix}`, { organizationId });
   },
+  followTedNotice: (
+    organizationId: string,
+    notice: {
+      publicationNumber: string;
+      title?: string | null;
+      buyerName?: string | null;
+      publicationDate?: string | null;
+      noticeType?: string | null;
+      cpvs?: string[];
+      deadline?: string | null;
+      url: string;
+      pdfUrl?: string | null;
+    },
+  ) =>
+    request<{
+      tender: { id: string; referenceNumber: string };
+      organizationTender: { id: string };
+    }>("/api/saas/sources/ted/follow", {
+      method: "POST",
+      organizationId,
+      body: JSON.stringify({ notice }),
+    }),
   searchDiavgeiaDecisions: (
     organizationId: string,
     params: { term: string; page?: number; size?: number },

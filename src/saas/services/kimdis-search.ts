@@ -358,6 +358,13 @@ export const getKimdisRecordByAdam = async (
       where: { referenceNumber: adam },
     });
     if (local) {
+      // TED / Διαύγεια and other local-only rows: serve from DB without upstream.
+      if (
+        local.referenceNumber.startsWith("TED:") ||
+        local.referenceNumber.startsWith("DIAVGEIA:")
+      ) {
+        return kimdisItemFromTender(local);
+      }
       const localType =
         local.recordType === "PROC" ? "PROC" : local.recordType === "REQ" ? "REQ" : null;
       if (!localType || localType === input.recordType) {

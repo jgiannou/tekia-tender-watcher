@@ -354,13 +354,19 @@ const budgetScaleReason = (points: number): string | null => {
 export const scoreKimdisItemAgainstProfile = (
   criteria: WatchProfileCriteria,
   item: KimdisSearchItem,
-  profileLabel?: { id: string; name: string },
+  profileLabel?: {
+    id: string;
+    name: string;
+    /** Non-KIMDIS items skip NUTS hard-fail and use source-aware recordTypes. */
+    sourceSystem?: "kimdis" | "ted" | "diavgeia";
+  },
 ): WatchMatchResult => {
   const reasons: string[] = [];
   const matchedKeywords: string[] = [];
   const matchedCpvs: string[] = [];
   const breakdown = emptyBreakdown();
   let score = 0;
+  const sourceSystem = profileLabel?.sourceSystem ?? "kimdis";
 
   const empty = (
     overrides: Partial<WatchMatchResult> = {},
@@ -379,15 +385,29 @@ export const scoreKimdisItemAgainstProfile = (
   const recordTypes = criteria.recordTypes.length
     ? criteria.recordTypes
     : ["REQ", "PROC"];
-  if (!recordTypes.includes(item.recordType)) {
+  if (sourceSystem === "ted" || sourceSystem === "diavgeia") {
+    // External notices are scored as PROC-shaped; allow when profile watches PROC.
+    if (!recordTypes.includes("PROC") && !recordTypes.includes(item.recordType)) {
+      return empty();
+    }
+  } else if (!recordTypes.includes(item.recordType)) {
     return empty();
   }
-  const regionGate = evaluateRegionGate(
-    item.nutsCode,
-    criteria.regions ?? [],
-    criteria.includeUnclassifiedRegion ?? false,
-  );
-  if (regionGate !== "ok") return empty();
+  // TED / Διαύγεια lack official NUTS — do not hard-reject on region filters.
+  if (sourceSystem === "kimdis") {
+    const regionGate = evaluateRegionGate(
+      item.nutsCode,
+      criteria.regions ?? [],
+      criteria.includeUnclassifiedRegion ?? false,
+    );
+    if (regionGate !== "ok") return empty();
+  } else if (sourceSystem === "ted" || sourceSystem === "diavgeia") {
+    reasons.push(
+      sourceSystem === "ted"
+        ? "Πηγή: TED (χωρίς NUTS ΚΗΜΔΗΣ)"
+        : "Πηγή: Διαύγεια",
+    );
+  }
 
   const description = item.description?.trim() ?? "";
   const haystackRaw = `${item.title} ${item.contractingAuthority} ${description}`;

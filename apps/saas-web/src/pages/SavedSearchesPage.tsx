@@ -104,6 +104,18 @@ const humanScanError = (error?: string | null) => {
     return "έχετε φτάσει το ημερήσιο όριο ελέγχων";
   }
   if (error === "kimdis_not_configured") return "το ΚΗΜΔΗΣ δεν ήταν διαθέσιμο";
+  if (error.includes("ted_disabled") || error.includes("TED_ENABLED")) {
+    return "το TED δεν είναι ενεργοποιημένο (TED_ENABLED=true)";
+  }
+  if (error.includes("diavgeia_disabled") || error.includes("DIAVGEIA_ENABLED")) {
+    return "η Διαύγεια δεν είναι ενεργοποιημένη (DIAVGEIA_ENABLED=true)";
+  }
+  if (error.startsWith("ted_http_") || error === "ted_request_failed") {
+    return "αποτυχία επικοινωνίας με το TED — δοκιμάστε ξανά";
+  }
+  if (error.startsWith("diavgeia_http_") || error === "diavgeia_request_failed") {
+    return "αποτυχία επικοινωνίας με τη Διαύγεια — δοκιμάστε ξανά";
+  }
   if (error === "scan_timeout" || error.includes("scan_timeout")) {
     return "έληξε το χρονικό όριο ελέγχου (3 λεπτά) — δοκιμάστε Επανάληψη";
   }
@@ -175,6 +187,7 @@ const emptyForm = (): WatchProfileInput & { id?: string } => ({
   regions: [],
   includeUnclassifiedRegion: false,
   enabled: true,
+  dataSources: ["kimdis"],
 });
 
 const activeLimitMessage = (max: number) =>
@@ -202,6 +215,10 @@ const profileToForm = (profile: WatchProfile): WatchProfileInput & { id: string 
   regions: asStringArray(profile.regions),
   includeUnclassifiedRegion: Boolean(profile.includeUnclassifiedRegion),
   enabled: profile.enabled,
+  dataSources:
+    profile.dataSources && profile.dataSources.length > 0
+      ? profile.dataSources
+      : ["kimdis"],
 });
 
 export const SavedSearchesPage = () => {
@@ -491,7 +508,7 @@ export const SavedSearchesPage = () => {
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Αποθηκευμένες αναζητήσεις</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Η εφαρμογή ελέγχει αυτόματα το ΚΗΜΔΗΣ με τα κριτήριά σας και εμφανίζει τα νέα αποτελέσματα στις Ευκαιρίες.
+            Η εφαρμογή ελέγχει αυτόματα τις επιλεγμένες πηγές (ΚΗΜΔΗΣ / TED / Διαύγεια) και εμφανίζει τα νέα αποτελέσματα στις Ευκαιρίες.
           </p>
           <p className="mt-2 text-sm font-medium">
             Ενεργές αναζητήσεις: {activeCount} από {maxActive}
@@ -637,6 +654,15 @@ export const SavedSearchesPage = () => {
                         {scanLabel(profile)}
                         {profile.scanState === "COMPLETED" && profile.scanPartial
                           ? ` · μερικός έλεγχος (${humanScanError(profile.scanError)})`
+                          : ""}
+                        {" · πηγές: "}
+                        {(profile.dataSources ?? ["kimdis"])
+                          .map((s) =>
+                            s === "ted" ? "TED" : s === "diavgeia" ? "Διαύγεια" : "ΚΗΜΔΗΣ",
+                          )
+                          .join(", ")}
+                        {profile.lastSourceFetchedAt
+                          ? ` · ενημέρωση πηγών ${formatRelative(profile.lastSourceFetchedAt)}`
                           : ""}
                       </CardDescription>
                     </div>
@@ -916,6 +942,52 @@ export const SavedSearchesPage = () => {
                     {activeLimitMessage(maxActive)} Η αποθήκευση σε παύση επιτρέπεται.
                   </p>
                 ) : null}
+                <div className="space-y-2">
+                  <Label>Πηγές δεδομένων</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Το TED και η Διαύγεια απαιτούν ενεργοποίηση στον server
+                    (`TED_ENABLED` / `DIAVGEIA_ENABLED`). Αν μια πηγή είναι
+                    απενεργοποιημένη, ο έλεγχος ολοκληρώνεται μερικά με σχετικό μήνυμα.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    {(
+                      [
+                        ["kimdis", "ΚΗΜΔΗΣ"],
+                        ["ted", "TED"],
+                        ["diavgeia", "Διαύγεια"],
+                      ] as const
+                    ).map(([id, label]) => {
+                      const selected = (editForm.dataSources ?? ["kimdis"]).includes(id);
+                      return (
+                        <label
+                          key={id}
+                          className="flex cursor-pointer items-center gap-2 text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5"
+                            checked={selected}
+                            onChange={() => {
+                              setEditForm((prev) => {
+                                if (!prev) return prev;
+                                const current = prev.dataSources ?? ["kimdis"];
+                                const next = selected
+                                  ? current.filter((row) => row !== id)
+                                  : [...current, id];
+                                return {
+                                  ...prev,
+                                  dataSources: next.length ? next : ["kimdis"],
+                                };
+                              });
+                            }}
+                            aria-label={label}
+                          />
+                          <span>{label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <Label>Λέξεις-κλειδιά (κόμμα)</Label>
                   <Input

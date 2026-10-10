@@ -19,6 +19,10 @@ import {
   assertCanRunWatchProfileScan,
   consumeScanQuota,
 } from "./scan-access.js";
+import {
+  normalizeDataSources,
+  parseDataSources,
+} from "./source-provenance.js";
 
 /** Fields gated by Pro `advancedWatchProfileFilters`. */
 const hasAdvancedWatchProfileFilters = (input: {
@@ -126,6 +130,8 @@ export type WatchProfileInput = {
   includeUnclassifiedRegion?: boolean;
   source?: WatchProfileSource;
   skipSimilarCheck?: boolean;
+  /** Data registries to query on each scan. Default: kimdis only. */
+  dataSources?: Array<"kimdis" | "ted" | "diavgeia">;
 };
 
 const trimStrings = (values: string[] | undefined): string[] =>
@@ -558,12 +564,14 @@ export const createWatchProfile = async (
     }
   }
 
+  const dataSources = normalizeDataSources(input.dataSources);
   const profile = await prisma.watchProfile.create({
     data: {
       organizationId,
       ...data,
       customFilters: {
         source: input.source ?? "MANUAL",
+        dataSources,
         ...(scanBlock ? { lastScanError: scanBlock } : {}),
       },
       scanState: scanBlock ? "FAILED" : data.scanState,
@@ -658,23 +666,34 @@ export const updateWatchProfile = async (
   }
 
   const existingMeta = readCustomFilters(existing);
+  const nextDataSources = normalizeDataSources(
+    input.dataSources ??
+      (Array.isArray(existingMeta.dataSources)
+        ? (existingMeta.dataSources as string[])
+        : ["kimdis"]),
+  );
+  const dataSourcesChanged =
+    JSON.stringify(normalizeDataSources(existingMeta.dataSources as string[])) !==
+    JSON.stringify(nextDataSources);
   const profile = await prisma.watchProfile.update({
     where: { id: existing.id },
     data: {
       ...data,
-      scanState: material
-        ? scanBlock
-          ? "FAILED"
-          : "PENDING"
-        : existing.scanState,
+      scanState:
+        material || dataSourcesChanged
+          ? scanBlock
+            ? "FAILED"
+            : "PENDING"
+          : existing.scanState,
       customFilters: {
         ...existingMeta,
+        dataSources: nextDataSources,
         ...(scanBlock ? { lastScanError: scanBlock } : {}),
       },
     },
   });
 
-  if (material && profile.enabled && !scanBlock) {
+  if ((material || dataSourcesChanged) && profile.enabled && !scanBlock) {
     await consumeScanQuota(prisma, {
       organizationId,
       kind: "manual",
@@ -1419,8 +1438,19 @@ export const runWatchProfileScan = async (
       },
     );
 
+    const {
+      dataSourcesForProfile,
+      scanTedForWatchProfile,
+      scanDiavgeiaForWatchProfile,
+      upsertMatchedSourceItem,
+    } = await import("./watch-scan-sources.js");
+    const dataSources = dataSourcesForProfile(profile);
+    let tedPages = 0;
+    let diavgeiaPages = 0;
+    let sourceLastFetchedAt: string | null = null;
+
     let variantsAttempted = 0;
-    if (kimdis) {
+    if (dataSources.includes("kimdis") && kimdis) {
       for (const filters of buildScanFilterVariants(profile)) {
         assertScanBudget(scanStartedMs, cancel);
         variantsAttempted += 1;
@@ -1479,8 +1509,92 @@ export const runWatchProfileScan = async (
       if (variantsAttempted > 0 && upstreamErrors.length === variantsAttempted) {
         throw new Error(upstreamErrors[0] ?? "kimdis_scan_failed");
       }
-    } else {
+    } else if (dataSources.includes("kimdis")) {
       upstreamErrors.push("kimdis_not_configured");
+    }
+
+    if (dataSources.includes("ted")) {
+      const tedPhase = await scanTedForWatchProfile({
+        profile,
+        criteria,
+        seenRefs: seenAdam,
+        assertBudget: () => assertScanBudget(scanStartedMs, cancel),
+      });
+      tedPages = tedPhase.pagesFetched;
+      if (tedPhase.lastFetchedAt) sourceLastFetchedAt = tedPhase.lastFetchedAt;
+      for (const err of tedPhase.errors) upstreamErrors.push(err);
+      for (const row of tedPhase.matches) {
+        assertScanBudget(scanStartedMs, cancel);
+        const tender = await upsertMatchedSourceItem(
+          prisma,
+          row.item,
+          "ted",
+        );
+        const result = await linkOpportunityToProfile(prisma, {
+          organizationId: profile.organizationId,
+          profile,
+          tenderId: tender.id,
+          match: row.match,
+          emitAttention: emitPerMatchAttention,
+        });
+        matchedTenderIds.add(result.tenderId);
+        if (result.created) newMatchIds.add(result.tenderId);
+        matchSummaries.push({
+          organizationTenderId: result.organizationTenderId,
+          referenceNumber: result.referenceNumber,
+          tenderTitle: result.tenderTitle,
+          score: result.score,
+          authority: result.authority,
+          budgetWithoutVat: result.budgetWithoutVat,
+          recordType: result.recordType,
+          submissionDate: result.submissionDate,
+          finalSubmissionDate: result.finalSubmissionDate,
+          tenderId: result.tenderId,
+        });
+      }
+    }
+
+    if (dataSources.includes("diavgeia")) {
+      const diavgeiaPhase = await scanDiavgeiaForWatchProfile({
+        profile,
+        criteria,
+        seenRefs: seenAdam,
+        assertBudget: () => assertScanBudget(scanStartedMs, cancel),
+      });
+      diavgeiaPages = diavgeiaPhase.pagesFetched;
+      if (diavgeiaPhase.lastFetchedAt) {
+        sourceLastFetchedAt = diavgeiaPhase.lastFetchedAt;
+      }
+      for (const err of diavgeiaPhase.errors) upstreamErrors.push(err);
+      for (const row of diavgeiaPhase.matches) {
+        assertScanBudget(scanStartedMs, cancel);
+        const tender = await upsertMatchedSourceItem(
+          prisma,
+          row.item,
+          "diavgeia",
+        );
+        const result = await linkOpportunityToProfile(prisma, {
+          organizationId: profile.organizationId,
+          profile,
+          tenderId: tender.id,
+          match: row.match,
+          emitAttention: emitPerMatchAttention,
+        });
+        matchedTenderIds.add(result.tenderId);
+        if (result.created) newMatchIds.add(result.tenderId);
+        matchSummaries.push({
+          organizationTenderId: result.organizationTenderId,
+          referenceNumber: result.referenceNumber,
+          tenderTitle: result.tenderTitle,
+          score: result.score,
+          authority: result.authority,
+          budgetWithoutVat: result.budgetWithoutVat,
+          recordType: result.recordType,
+          submissionDate: result.submissionDate,
+          finalSubmissionDate: result.finalSubmissionDate,
+          tenderId: result.tenderId,
+        });
+      }
     }
 
     const now = new Date();
@@ -1564,6 +1678,9 @@ export const runWatchProfileScan = async (
           lastScanEvaluatedCount: matchedTenderIds.size,
           lastScanReconciledStale: reconciledStale,
           lastScanVariantCount: variantsAttempted,
+          lastScanTedPages: tedPages,
+          lastScanDiavgeiaPages: diavgeiaPages,
+          lastSourceFetchedAt: sourceLastFetchedAt,
           scanStartedAt: null,
         }),
       },
@@ -1642,6 +1759,8 @@ export type WatchProfileDto = WatchProfile & {
   scanPartial: boolean;
   scanNewCount: number | null;
   scanEvaluatedCount: number | null;
+  dataSources: Array<"kimdis" | "ted" | "diavgeia">;
+  lastSourceFetchedAt: string | null;
 };
 
 const readCustomFilters = (profile: WatchProfile): Record<string, unknown> =>
@@ -1663,6 +1782,11 @@ export const toWatchProfileDto = (profile: WatchProfile): WatchProfileDto => {
     scanEvaluatedCount:
       typeof meta.lastScanEvaluatedCount === "number"
         ? meta.lastScanEvaluatedCount
+        : null,
+    dataSources: parseDataSources(meta.dataSources),
+    lastSourceFetchedAt:
+      typeof meta.lastSourceFetchedAt === "string"
+        ? meta.lastSourceFetchedAt
         : null,
   };
 };

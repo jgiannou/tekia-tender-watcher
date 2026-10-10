@@ -106,6 +106,13 @@ export const monitorFollowedThreads = async (
     const sourceTender = await prisma.tender.findUnique({
       where: { id: sourceTenderId },
     });
+    // TED / Διαύγεια follows are monitored by dedicated jobs (no KIMDIS RELATED_*).
+    if (
+      sourceTender?.referenceNumber.startsWith("TED:") ||
+      sourceTender?.referenceNumber.startsWith("DIAVGEIA:")
+    ) {
+      continue;
+    }
 
     const candidates: Array<{
       targetTender: Tender;
