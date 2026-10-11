@@ -7,7 +7,7 @@ import { PdfAction } from "@/components/PdfAction";
 import { SourceBadge } from "@/components/SourceBadge";
 import { DateInput } from "@/components/ui/date-input";
 import { Pagination } from "@/components/Pagination";
-import { trackAnalyticsEvent } from "@/lib/analytics";
+import { trackAnalyticsEvent, trackFirstSavedSearchIfNeeded } from "@/lib/analytics";
 import { humanSaasError } from "@/lib/labels";
 
 /** Matches KIMDIS upstream page size used by the API client. */
@@ -468,11 +468,19 @@ export const SearchPage = () => {
     if (!activeOrganization || !saveName.trim()) return;
     setSaving(true);
     try {
+      let existingCount = 0;
+      try {
+        const listed = await saasApi.listWatchProfiles(activeOrganization.id);
+        existingCount = listed.profiles.length;
+      } catch {
+        existingCount = 0;
+      }
       await saasApi.createWatchProfile(
         activeOrganization.id,
         buildWatchInput(saveName.trim(), skipSimilarCheck),
       );
       trackAnalyticsEvent("watch_profile_created", { source: "SAVED_FROM_SEARCH" });
+      trackFirstSavedSearchIfNeeded(existingCount);
       toast.success("Η αποθηκευμένη αναζήτηση δημιουργήθηκε. Ξεκίνησε αρχικός έλεγχος.");
       setSaveOpen(false);
     } catch (err) {

@@ -1,18 +1,25 @@
 /**
- * Product analytics events for GA4, sent through the existing GTM dataLayer.
+ * Product analytics (GA4 via GTM dataLayer) + Google Ads conversions (existing AW gtag).
  *
- * GTM is the only loader (see legal/consent.ts). These pushes do nothing until
- * the visitor accepts analytics cookies. A single GA4 Event tag in GTM must
- * forward the event names listed in ANALYTICS_EVENT_NAMES.
+ * Loaders live in legal/consent.ts — do not inject a second Google Tag here.
+ * GA4 events need analytics consent. Ads conversions need marketing consent.
  */
-import { hasConsent } from "@/legal/consent";
+import {
+  CONSENT_FEATURES,
+  hasConsent,
+  readConsentState,
+  TRACKING_IDS,
+} from "@/legal/consent";
 import { safePagePath } from "@/lib/safe-page-path";
 
 export const ANALYTICS_EVENT_NAMES = [
   "login",
   "sign_up",
+  "onboarding_completed",
+  "first_saved_search",
   "begin_checkout",
   "purchase",
+  "subscription_started",
   "organization_created",
   "watch_profile_created",
   "tender_followed",
@@ -20,6 +27,11 @@ export const ANALYTICS_EVENT_NAMES = [
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
+
+/** Google Ads → ARC Tenders - Free Signup */
+export const GOOGLE_ADS_SIGNUP_CONVERSION =
+  import.meta.env.VITE_GOOGLE_ADS_SIGNUP_CONVERSION?.trim() ||
+  `${TRACKING_IDS.ads}/xvBLCNXjwZkdEKzynsJE`;
 
 const PARAM_KEYS = new Set([
   "page_path",
@@ -39,6 +51,11 @@ const PARAM_KEYS = new Set([
 
 const CHECKOUT_KEY = "arc.analytics.checkout";
 const PURCHASE_SENT_KEY = "arc.analytics.purchaseSent";
+const SIGNUP_PENDING_PREFIX = "arc.analytics.signUpPending.";
+const SIGNUP_GA4_SENT_PREFIX = "arc.analytics.signUpSent.ga4.";
+const SIGNUP_ADS_SENT_PREFIX = "arc.analytics.signUpSent.ads.";
+const ONBOARDING_SENT_PREFIX = "arc.analytics.onboardingCompleted.";
+const FIRST_SAVED_SENT_PREFIX = "arc.analytics.firstSavedSearch.";
 
 type AnalyticsParamValue = string | number | boolean;
 type AnalyticsParams = Record<string, AnalyticsParamValue | null | undefined>;
@@ -54,9 +71,12 @@ type DataLayerModel = {
   set?: (key: string, value: unknown) => void;
 };
 
+type GtagFn = (...args: unknown[]) => void;
+
 declare global {
   interface Window {
     dataLayer?: unknown[];
+    gtag?: GtagFn;
   }
 }
 
@@ -100,9 +120,53 @@ const removeSessionItem = (key: string): void => {
   }
 };
 
+const readLocalItem = (key: string): string | null => {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const writeLocalItem = (key: string, value: string): void => {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignore storage failures.
+  }
+};
+
+const removeLocalItem = (key: string): void => {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures.
+  }
+};
+
+/** Returns true only the first time for this key (persistent across reloads). */
+const claimOnceLocal = (key: string): boolean => {
+  if (typeof window === "undefined") return false;
+  if (readLocalItem(key) === "1") return false;
+  writeLocalItem(key, "1");
+  return true;
+};
+
 const debugModeEnabled = (): boolean => {
   if (typeof window === "undefined") return false;
   return new URLSearchParams(window.location.search).get("ga_debug") === "1";
+};
+
+/** Reuse the same gtag stub as consent.ts — queues until AW gtag.js loads. */
+const ensureGtag = (): GtagFn => {
+  window.dataLayer = window.dataLayer || [];
+  if (!window.gtag) {
+    window.gtag = function gtag(this: void) {
+      // eslint-disable-next-line prefer-rest-params
+      window.dataLayer?.push(arguments);
+    };
+  }
+  return window.gtag;
 };
 
 /** Internal account id only. Never an email. Cleared on sign-out. */
@@ -145,6 +209,97 @@ export const trackAnalyticsEvent = (
   });
 };
 
+const fireGoogleAdsSignupConversion = (): void => {
+  if (!GOOGLE_ADS_SIGNUP_CONVERSION.startsWith("AW-")) return;
+  const gtag = ensureGtag();
+  gtag("event", "conversion", {
+    send_to: GOOGLE_ADS_SIGNUP_CONVERSION,
+  });
+};
+
+/**
+ * Flush a pending signup (after consent or on later page loads).
+ * Safe to call often — each channel claims once per user id.
+ */
+export const flushPendingSignUpTracking = (userId?: string | null): void => {
+  if (typeof window === "undefined") return;
+  const id = normalizeUserId(userId ?? currentUserId);
+  if (!id) return;
+
+  const pendingMethod = readLocalItem(`${SIGNUP_PENDING_PREFIX}${id}`);
+  if (!pendingMethod) return;
+
+  const ga4Sent = readLocalItem(`${SIGNUP_GA4_SENT_PREFIX}${id}`) === "1";
+  const adsSent = readLocalItem(`${SIGNUP_ADS_SENT_PREFIX}${id}`) === "1";
+
+  if (!ga4Sent && hasConsent("analytics") && claimOnceLocal(`${SIGNUP_GA4_SENT_PREFIX}${id}`)) {
+    trackAnalyticsEvent("sign_up", { method: pendingMethod });
+  }
+  if (!adsSent && hasConsent("marketing") && claimOnceLocal(`${SIGNUP_ADS_SENT_PREFIX}${id}`)) {
+    fireGoogleAdsSignupConversion();
+  }
+
+  const state = readConsentState();
+  if (!state.decidedAt) return;
+
+  const ga4Settled =
+    !CONSENT_FEATURES.analyticsEnabled ||
+    !state.analytics ||
+    readLocalItem(`${SIGNUP_GA4_SENT_PREFIX}${id}`) === "1";
+  const adsSettled =
+    !CONSENT_FEATURES.marketingEnabled ||
+    !state.marketing ||
+    readLocalItem(`${SIGNUP_ADS_SENT_PREFIX}${id}`) === "1";
+
+  if (ga4Settled && adsSettled) {
+    removeLocalItem(`${SIGNUP_PENDING_PREFIX}${id}`);
+  }
+};
+
+/**
+ * Call only after Better Auth signUp succeeds and a session user exists.
+ * Stores a non-PII pending marker, then fires GA4 / Ads when consent allows.
+ * Does not run on login, session refresh, or failed signup.
+ */
+export const trackSignUpSuccess = (input: {
+  userId: string;
+  method: string;
+}): void => {
+  if (typeof window === "undefined") return;
+  const id = normalizeUserId(input.userId);
+  if (!id) return;
+  setAnalyticsUserId(id);
+
+  const method = cleanText(input.method, 40) || "email";
+  if (!readLocalItem(`${SIGNUP_PENDING_PREFIX}${id}`)) {
+    writeLocalItem(`${SIGNUP_PENDING_PREFIX}${id}`, method);
+  }
+  flushPendingSignUpTracking(id);
+};
+
+/** Optional onboarding finished (setup COMPLETED). Once per user. */
+export const trackOnboardingCompleted = (userId?: string | null): void => {
+  const id = normalizeUserId(userId ?? currentUserId);
+  if (!id) return;
+  if (!claimOnceLocal(`${ONBOARDING_SENT_PREFIX}${id}`)) return;
+  trackAnalyticsEvent("onboarding_completed", { method: "setup" });
+};
+
+/**
+ * First watch profile / saved search for the org.
+ * Pass the count *before* create. Once per user (localStorage).
+ */
+export const trackFirstSavedSearchIfNeeded = (
+  existingCountBeforeCreate: number,
+  userId?: string | null,
+): void => {
+  if (existingCountBeforeCreate > 0) return;
+  const id = normalizeUserId(userId ?? currentUserId);
+  if (!id) return;
+  if (!claimOnceLocal(`${FIRST_SAVED_SENT_PREFIX}${id}`)) return;
+  trackAnalyticsEvent("first_saved_search", { content_type: "watch_profile" });
+};
+
 export const rememberPendingCheckout = (input: PendingCheckout): void => {
   if (typeof window === "undefined") return;
   removeSessionItem(PURCHASE_SENT_KEY);
@@ -175,12 +330,14 @@ export const trackPurchaseFromReturn = (): void => {
       pending = {};
     }
   }
-  trackAnalyticsEvent("purchase", {
+  const params = {
     plan: pending.plan,
     billing_interval: pending.billing_interval,
     value: pending.value,
     currency: pending.currency ?? "EUR",
-  });
+  };
+  trackAnalyticsEvent("purchase", params);
+  trackAnalyticsEvent("subscription_started", params);
 };
 
 const linkUrlFrom = (href: string | null): string | undefined => {

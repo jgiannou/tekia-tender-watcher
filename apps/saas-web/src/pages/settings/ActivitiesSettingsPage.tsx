@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { trackAnalyticsEvent } from "@/lib/analytics";
+import { trackAnalyticsEvent, trackFirstSavedSearchIfNeeded } from "@/lib/analytics";
 import {
   saasApi,
   type OrganizationActivity,
@@ -106,6 +106,13 @@ export const ActivitiesSettingsPage = () => {
     const category = suggestions.categories[0] ?? "Δραστηριότητες";
     setCreating(true);
     try {
+      let existingCount = 0;
+      try {
+        const listed = await saasApi.listWatchProfiles(activeOrganization.id);
+        existingCount = listed.profiles.length;
+      } catch {
+        existingCount = 0;
+      }
       await saasApi.createWatchProfile(activeOrganization.id, {
         name: `Από ΚΑΔ · ${category}`,
         enabled: true,
@@ -116,6 +123,7 @@ export const ActivitiesSettingsPage = () => {
         source: "SETUP_RECOMMENDATION",
       });
       trackAnalyticsEvent("watch_profile_created", { source: "SETUP_RECOMMENDATION" });
+      trackFirstSavedSearchIfNeeded(existingCount);
       toast.success("Δημιουργήθηκε αποθηκευμένη αναζήτηση από τις προτάσεις ΚΑΔ.");
       window.location.href = "/app/saved-searches";
     } catch (err) {

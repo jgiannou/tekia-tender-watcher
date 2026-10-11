@@ -16,7 +16,11 @@ import {
   type OrganizationActivity,
   type WatchSuggestion,
 } from "@/lib/api";
-import { trackAnalyticsEvent } from "@/lib/analytics";
+import {
+  trackAnalyticsEvent,
+  trackFirstSavedSearchIfNeeded,
+  trackOnboardingCompleted,
+} from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 type SetupStep = "company" | "activities" | "interests" | "watch" | "done";
@@ -260,7 +264,9 @@ export const SetupPage = () => {
       }
       setCreatedWatchName(name);
       trackAnalyticsEvent("watch_profile_created", { source: "SETUP_RECOMMENDATION" });
+      trackFirstSavedSearchIfNeeded(0, user?.id);
       await saasApi.updateOnboarding(activeOrganization.id, "COMPLETED", "done");
+      trackOnboardingCompleted(user?.id);
       toast.success("Δημιουργήθηκε η αποθηκευμένη αναζήτηση");
       setStep("done");
     } catch (err) {
@@ -271,6 +277,7 @@ export const SetupPage = () => {
   const handleSkipWatch = async () => {
     if (!activeOrganization) return;
     await saasApi.updateOnboarding(activeOrganization.id, "COMPLETED", "done");
+    trackOnboardingCompleted(user?.id);
     setCreatedWatchName(null);
     setStep("done");
   };
