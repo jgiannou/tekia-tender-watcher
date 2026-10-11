@@ -1,7 +1,8 @@
 /**
- * Product analytics (GA4 via GTM dataLayer) + Google Ads conversions (existing AW gtag).
+ * Product analytics (GA4 via GTM dataLayer) + Google Ads conversions (gtag event).
  *
- * Loaders live in legal/consent.ts — do not inject a second Google Tag here.
+ * GTM is the only Google Tag loader (legal/consent.ts). Conversion events call
+ * gtag('event','conversion') and reuse the GTM-provided gtag — never inject AW again.
  * GA4 events need analytics consent. Ads conversions need marketing consent.
  */
 import {

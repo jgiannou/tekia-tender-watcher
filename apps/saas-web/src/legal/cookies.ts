@@ -45,7 +45,7 @@ export const cookieNotice: LegalDocument = {
       id: "marketing",
       title: "3. Marketing / διαφημιστικά cookies",
       paragraphs: [
-        "Η κατηγορία marketing καλύπτει το Google Ads Google tag (AW-…) και σχετικά remarketing / conversion signals.",
+        "Η κατηγορία marketing καλύπτει Google Ads / remarketing / conversion signals που ρυθμίζονται μέσα στο Google Tag Manager (AW-…).",
         "Ενεργοποιούνται μόνο με ρητή συναίνεση marketing· χωρίς αυτήν τα σχετικά ad signals παραμένουν denied (Google Consent Mode).",
       ],
     },
