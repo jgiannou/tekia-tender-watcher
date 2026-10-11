@@ -6,6 +6,8 @@ interface ImportMetaEnv {
   readonly VITE_GTM_ID?: string;
   /** GA4 measurement id (configured inside GTM), e.g. G-XXXX */
   readonly VITE_GA4_MEASUREMENT_ID?: string;
+  /** Google Ads conversion / Google tag id, e.g. AW-XXXX */
+  readonly VITE_GOOGLE_ADS_ID?: string;
 }
 
 interface ImportMeta {
