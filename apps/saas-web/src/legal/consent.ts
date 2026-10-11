@@ -1,10 +1,10 @@
 /**
  * Cookie / tracker consent — optional tags load only after consent.
  *
- * - GTM loads analytics (GA4 tags live inside the container).
- * - Google Ads base tag (AW-…) loads only with marketing consent.
- * Do NOT paste gtag / GTM snippets into index.html (avoids double counting
- * and bypasses Consent Mode).
+ * GTM is the single loader (GA4 + Google Ads AW tag live inside the container).
+ * Signup conversions call gtag('event','conversion') from lib/analytics.ts —
+ * they reuse the GTM-provided gtag stub; do not inject a second AW Google Tag.
+ * Do NOT paste gtag / GTM snippets into index.html.
  */
 
 import { redactSensitiveUrl } from "@/lib/safe-page-path";
@@ -124,7 +124,6 @@ declare global {
 }
 
 let gtmInjected = false;
-let adsInjected = false;
 let consentDefaultPushed = false;
 
 const ensureGtag = (): GtagFn => {
@@ -195,39 +194,8 @@ const injectGoogleTagManager = (
 };
 
 /**
- * Google Ads base tag (same as Ads UI gtag snippet). Only with marketing consent.
- * Do not also add this AW- ID as a Google tag inside GTM — conversion/remarketing
- * tags in GTM can still use the same account if needed.
- */
-const injectGoogleAdsTag = (
-  adsId: string,
-  analytics: boolean,
-  marketing: boolean,
-): void => {
-  if (adsInjected || typeof document === "undefined") return;
-  if (!adsId.startsWith("AW-")) return;
-  if (document.getElementById("arc-google-ads-script")) {
-    adsInjected = true;
-    return;
-  }
-
-  adsInjected = true;
-  pushGoogleConsentDefault(analytics, marketing);
-  redactSensitiveUrl();
-  const gtag = ensureGtag();
-  gtag("js", new Date());
-  gtag("config", adsId);
-
-  const script = document.createElement("script");
-  script.id = "arc-google-ads-script";
-  script.async = true;
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(adsId)}`;
-  document.head.appendChild(script);
-};
-
-/**
- * Load optional trackers after consent.
- * GTM = analytics container (GA4). AW gtag = Google Ads base tag (marketing).
+ * Load GTM after optional consent. GA4 + Ads base tag (AW-…) live in the container.
+ * Conversion events are fired from lib/analytics.ts via gtag (no second Google Tag).
  */
 export const loadOptionalTrackersIfAllowed = (): void => {
   if (typeof window === "undefined") return;
@@ -241,15 +209,6 @@ export const loadOptionalTrackersIfAllowed = (): void => {
   } else {
     gtmInjected = true;
     pushGoogleConsentUpdate(analytics, marketing);
-  }
-
-  if (marketing) {
-    if (!adsInjected && !document.getElementById("arc-google-ads-script")) {
-      injectGoogleAdsTag(TRACKING_IDS.ads, analytics, marketing);
-    } else {
-      adsInjected = true;
-      pushGoogleConsentUpdate(analytics, marketing);
-    }
   }
 
   window.dataLayer?.push({
