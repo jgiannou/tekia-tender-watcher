@@ -71,3 +71,33 @@ export const mergeCpvOptions = (
   }
   return [...map.entries()].map(([code, label]) => ({ code, label }));
 };
+
+const digitsOnly = (code: string): string => code.replace(/\D/g, "");
+
+/** Best-effort label from the curated list (exact, then longest prefix). */
+export const cpvLabel = (code: string | null | undefined): string | null => {
+  if (!code?.trim()) return null;
+  const digits = digitsOnly(code);
+  if (!digits) return null;
+  const exact = COMMON_CPV_OPTIONS.find((row) => digitsOnly(row.code) === digits);
+  if (exact) return exact.label;
+  let best: CpvOption | null = null;
+  for (const row of COMMON_CPV_OPTIONS) {
+    const rowDigits = digitsOnly(row.code);
+    if (rowDigits.length < 2) continue;
+    if (!digits.startsWith(rowDigits)) continue;
+    if (!best || rowDigits.length > digitsOnly(best.code).length) best = row;
+  }
+  if (best) return best.label;
+  if (digits.length < 2) return null;
+  return (
+    COMMON_CPV_OPTIONS.find((row) =>
+      digitsOnly(row.code).startsWith(digits.slice(0, 2)),
+    )?.label ?? null
+  );
+};
+
+export const formatCpvBadge = (code: string): string => {
+  const label = cpvLabel(code);
+  return label ? `${code} · ${label}` : code;
+};

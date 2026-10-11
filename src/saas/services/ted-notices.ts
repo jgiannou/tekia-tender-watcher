@@ -7,6 +7,7 @@ import type { KimdisSearchItem } from "./kimdis-search.js";
 import { kimdisItemFromTender } from "./kimdis-search.js";
 import { buildProvenance, tedReferencePrefix } from "./source-provenance.js";
 import { followTender } from "./follow.js";
+import { parseTedDate } from "./ted-change-copy.js";
 
 const mergeTedNotice = (
   base: TedNoticeRef,
@@ -74,14 +75,8 @@ export const upsertTenderFromTedNotice = async (
     publicationDate: notice.publicationDate,
     fetchedAt: now,
   });
-  const deadlineMs = notice.deadline ? Date.parse(notice.deadline) : NaN;
-  const finalSubmissionDate = Number.isFinite(deadlineMs)
-    ? new Date(deadlineMs)
-    : null;
-  const pubMs = notice.publicationDate
-    ? Date.parse(notice.publicationDate)
-    : NaN;
-  const submissionDate = Number.isFinite(pubMs) ? new Date(pubMs) : null;
+  const finalSubmissionDate = parseTedDate(notice.deadline);
+  const submissionDate = parseTedDate(notice.publicationDate);
 
   return prisma.tender.upsert({
     where: { referenceNumber },

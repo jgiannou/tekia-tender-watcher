@@ -98,4 +98,38 @@ describe("attention content & destinations", () => {
     );
     expect(attentionEventHref(event)).not.toContain("/monitoring");
   });
+
+  it("formats TED deadline changes with source and check time", () => {
+    const checkedAt = "2026-10-11T12:00:00.000Z";
+    const event = base({
+      type: "DEADLINE_CHANGED",
+      title: "Η προθεσμία άλλαξε από 15/10/2026 σε 22/10/2026",
+      organizationTender: {
+        id: "ot1",
+        tender: {
+          id: "t1",
+          referenceNumber: "TED:999001-2026",
+          title: "Δοκιμαστική δημοσίευση φόρτισης TED",
+          recordType: "PROC",
+        },
+      },
+      metadata: {
+        changeKind: "deadline",
+        sourceSystem: "ted",
+        previousDeadline: "2026-10-15+03:00",
+        nextDeadline: "2026-10-22+03:00",
+        checkedAt,
+        tenderTitle: "Δοκιμαστική δημοσίευση φόρτισης TED",
+      },
+    });
+
+    const view = attentionEventViewModel(event);
+    expect(view.eyebrow).toBe("Αλλαγή προθεσμίας");
+    expect(view.primary).toContain("από");
+    expect(view.primary).toContain("σε");
+    expect(view.secondary).toContain("TED");
+    expect(view.secondary).toContain("Έλεγχος");
+    expect(view.context).toContain("φόρτισης");
+  });
 });
+

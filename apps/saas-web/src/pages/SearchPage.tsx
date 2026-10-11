@@ -33,7 +33,8 @@ import {
   type KimdisSearchItem,
   type WatchProfileInput,
 } from "@/lib/api";
-import { evaluateRegionGate, GREEK_NUTS2_REGIONS } from "@/lib/regions";
+import { formatCpvBadge } from "@/lib/cpv-options";
+import { evaluateRegionGate, formatRegion, GREEK_NUTS2_REGIONS } from "@/lib/regions";
 
 type TedNoticeRow = {
   publicationNumber: string;
@@ -704,15 +705,20 @@ export const SearchPage = () => {
                     {tedContractNatureLabel(notice.contractNature) ? (
                       <span>{tedContractNatureLabel(notice.contractNature)}</span>
                     ) : null}
-                    {notice.nutsCode ? (
-                      <span className="font-mono">{notice.nutsCode}</span>
+                    {formatRegion(notice.nutsCode) ? (
+                      <span>{formatRegion(notice.nutsCode)}</span>
                     ) : null}
                   </div>
                   {notice.cpvs?.length ? (
                     <div className="mt-1 flex flex-wrap gap-1">
                       {notice.cpvs.slice(0, 4).map((code) => (
-                        <Badge key={code} variant="outline" className="font-mono">
-                          {code}
+                        <Badge
+                          key={code}
+                          variant="outline"
+                          className="max-w-full truncate font-normal"
+                          title={formatCpvBadge(code)}
+                        >
+                          {formatCpvBadge(code)}
                         </Badge>
                       ))}
                     </div>

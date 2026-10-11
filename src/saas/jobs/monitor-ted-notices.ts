@@ -1,10 +1,12 @@
 import type { PrismaClient } from "@prisma/client";
 import { searchTedNotices } from "../sources/ted-adapter.js";
-import {
-  attentionTitleFor,
-  pruneAttentionEventsForOrg,
-} from "../services/attention.js";
+import { pruneAttentionEventsForOrg } from "../services/attention.js";
 import { queueAttentionEmail } from "../services/notify.js";
+import {
+  deadlineDayKey,
+  tedDeadlineChangeTitle,
+  tedNoticeUpdateTitle,
+} from "../services/ted-change-copy.js";
 import {
   publicationNumberFromTedReference,
   tedNoticeSnapshot,
@@ -103,9 +105,7 @@ export const monitorTedFollowedNotices = async (
 
     const nextDeadline = notice.deadline;
     const deadlineChanged =
-      Boolean(nextDeadline || previousDeadline) &&
-      String(nextDeadline ?? "") !== String(previousDeadline ?? "").slice(0, 10) &&
-      String(nextDeadline ?? "") !== String(previousDeadline ?? "");
+      deadlineDayKey(previousDeadline) !== deadlineDayKey(nextDeadline);
     const contentChanged =
       (previousTitle ?? "") !== (notice.title ?? "") ||
       (previousType ?? "") !== (notice.noticeType ?? "") ||
@@ -120,6 +120,10 @@ export const monitorTedFollowedNotices = async (
     }
 
     const changeKind = deadlineChanged ? "deadline" : "notice_update";
+    const checkedAt = now.toISOString();
+    const title = deadlineChanged
+      ? tedDeadlineChangeTitle(previousDeadline, nextDeadline)
+      : tedNoticeUpdateTitle();
     const dedupeKey = `TED_UPDATE:${tenderId}:${changeKind}:${tedNoticeSnapshot(notice)}`;
 
     for (const orgRow of orgRows) {
@@ -128,10 +132,6 @@ export const monitorTedFollowedNotices = async (
         select: { id: true },
       });
       if (existing) continue;
-
-      const title = deadlineChanged
-        ? attentionTitleFor("DEADLINE_CHANGED", "CONFIRMED")
-        : "Ενημέρωση δημοσίευσης TED που παρακολουθείτε";
 
       const event = await prisma.organizationAttentionEvent.create({
         data: {
@@ -147,7 +147,9 @@ export const monitorTedFollowedNotices = async (
             publicationNumber,
             previousDeadline,
             nextDeadline,
+            checkedAt,
             canonicalUrl: notice.url,
+            tenderTitle: notice.title ?? previousTitle,
           },
         },
       });

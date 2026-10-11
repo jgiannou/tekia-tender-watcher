@@ -145,7 +145,13 @@ export const MonitoringPage = () => {
                         {row.tender.referenceNumber}
                       </span>
                       {row.unreadAttentionCount > 0 ? (
-                        <Badge variant="warning">Νέα εξέλιξη</Badge>
+                        <Badge variant="warning">
+                          {row.latestDevelopment?.startsWith("Η προθεσμία")
+                            ? "Αλλαγή προθεσμίας"
+                            : row.latestDevelopment?.includes("TED")
+                              ? "Ενημέρωση TED"
+                              : "Νέα εξέλιξη"}
+                        </Badge>
                       ) : null}
                     </div>
                     <div className="text-sm font-medium">

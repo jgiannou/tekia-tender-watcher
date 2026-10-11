@@ -37,7 +37,9 @@ import {
   type TenderWorkspaceResponse,
   type VaultDocument,
 } from "@/lib/api";
+import { formatCpvBadge } from "@/lib/cpv-options";
 import { outreachMethodLabel, submissionMethodLabel } from "@/lib/labels";
+import { formatRegion } from "@/lib/regions";
 import { formatMatchReason } from "@/lib/matchReasons";
 
 const formatMoney = (value: number | null) =>
@@ -735,8 +737,8 @@ export const TenderDetailPage = () => {
               <span>Προθεσμία υποβολής: {formatDate(item.finalSubmissionDate)}</span>
             ) : null}
             {item.contractTypeLabel ? <span>{item.contractTypeLabel}</span> : null}
-            {item.nutsCode ? (
-              <span className="font-mono">NUTS {item.nutsCode}</span>
+            {formatRegion(item.nutsCode) ? (
+              <span>{formatRegion(item.nutsCode)}</span>
             ) : null}
             <span>
               Πηγή:{" "}
@@ -1097,10 +1099,12 @@ export const TenderDetailPage = () => {
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                         <span className="font-mono">{sample.referenceNumber}</span>
                         <span>{formatDate(sample.signedDate)}</span>
-                        <span>{formatMoney(sample.awardAmount)}</span>
+                        <span>
+                          Ποσό κατακύρωσης: {formatMoney(sample.awardAmount)}
+                        </span>
                         {sample.ratio != null ? (
                           <span>
-                            {Math.round(sample.ratio * 100)}% του προϋπολογισμού
+                            {Math.round(sample.ratio * 100)}% της εκτιμώμενης αξίας
                           </span>
                         ) : null}
                       </div>
@@ -1396,13 +1400,16 @@ export const TenderDetailPage = () => {
               <div>Τύπος: {item.recordType}</div>
               <div className="font-mono text-xs">{item.adam}</div>
               <div className="text-lg font-semibold tabular-nums">
-                Αξία: {formatMoney(item.budgetWithoutVat)}
-                <span className="ml-1 text-xs font-normal text-muted-foreground">
-                  {item.adam.startsWith("TED:")
-                    ? "εκτιμώμενη"
-                    : "χωρίς ΦΠΑ"}
-                </span>
+                {item.adam.startsWith("TED:")
+                  ? "Εκτιμώμενη αξία"
+                  : "Αξία χωρίς ΦΠΑ"}
+                : {formatMoney(item.budgetWithoutVat)}
               </div>
+              {item.awardAmount != null ? (
+                <div className="text-sm font-medium tabular-nums">
+                  Ποσό κατακύρωσης: {formatMoney(item.awardAmount)}
+                </div>
+              ) : null}
               <div>Καταχώριση: {formatDate(item.submissionDate || item.signedDate)}</div>
               {item.finalSubmissionDate ? (
                 <div>Προθεσμία υποβολής: {formatDate(item.finalSubmissionDate)}</div>
@@ -1410,14 +1417,19 @@ export const TenderDetailPage = () => {
               {item.contractTypeLabel ? (
                 <div>Είδος: {item.contractTypeLabel}</div>
               ) : null}
-              {item.nutsCode ? (
-                <div className="font-mono text-xs">NUTS {item.nutsCode}</div>
+              {formatRegion(item.nutsCode) ? (
+                <div>{formatRegion(item.nutsCode)}</div>
               ) : null}
               {item.cpvs?.length ? (
                 <div className="flex flex-wrap gap-1 pt-1">
                   {item.cpvs.slice(0, 6).map((code) => (
-                    <Badge key={code} variant="outline" className="font-mono">
-                      {code}
+                    <Badge
+                      key={code}
+                      variant="outline"
+                      className="max-w-full truncate font-normal"
+                      title={formatCpvBadge(code)}
+                    >
+                      {formatCpvBadge(code)}
                     </Badge>
                   ))}
                 </div>
