@@ -257,9 +257,10 @@ export const flushPendingSignUpTracking = (userId?: string | null): void => {
 };
 
 /**
- * Call only after Better Auth signUp succeeds and a session user exists.
+ * Call only after Better Auth sign-up returns a created user id.
+ * Does not require an active session cookie (verification-gated configs).
  * Stores a non-PII pending marker, then fires GA4 / Ads when consent allows.
- * Does not run on login, session refresh, or failed signup.
+ * Does not run on login, session refresh, failed signup, or email-verify clicks.
  */
 export const trackSignUpSuccess = (input: {
   userId: string;

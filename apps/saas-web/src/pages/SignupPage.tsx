@@ -50,16 +50,45 @@ export const SignupPage = () => {
       });
       if (result.error) throw new Error(result.error.message || "Αποτυχία εγγραφής");
 
+      // Better Auth returns the created user even when token/session is delayed
+      // (e.g. verification-gated configs). Conversion must not depend on getSession().
+      const registeredUserId =
+        result.data &&
+        typeof result.data === "object" &&
+        "user" in result.data &&
+        result.data.user &&
+        typeof result.data.user === "object" &&
+        "id" in result.data.user &&
+        typeof result.data.user.id === "string"
+          ? result.data.user.id
+          : null;
+      if (!registeredUserId) {
+        throw new Error("Η εγγραφή ολοκληρώθηκε χωρίς αναγνωριστικό χρήστη. Δοκιμάστε σύνδεση.");
+      }
+
+      // Exactly once per user — pending until analytics/marketing consent allows fire.
+      // Must run before legal/org steps so a later failure cannot lose the conversion.
+      trackSignUpSuccess({ userId: registeredUserId, method: "email" });
+
       await refetch();
       const session = await authClient.getSession();
-      if (!session.data?.user) {
-        throw new Error("Η συνεδρία δεν δημιουργήθηκε. Δοκιμάστε σύνδεση.");
-      }
-      if (session.data) {
+      const sessionUserId = session.data?.user?.id ?? null;
+      if (session.data?.user) {
         authClient.hydrateSession(session.data);
       }
-      // Account + session exist — fire GA4 sign_up + Ads conversion (consent-gated, once).
-      trackSignUpSuccess({ userId: session.data.user.id, method: "email" });
+
+      // requireEmailVerification is false today → session cookie is expected.
+      // If session is missing, account still exists; conversion already recorded.
+      if (!sessionUserId) {
+        toast.success(
+          "Ο λογαριασμός δημιουργήθηκε. Ελέγξτε το email σας για επιβεβαίωση και συνδεθείτε.",
+        );
+        navigate(
+          `/login?next=${encodeURIComponent(next.startsWith("/") ? next : "/app")}`,
+          { replace: true },
+        );
+        return;
+      }
 
       const legalVersions = currentLegalAcceptancePayload();
       let acceptanceSaved = false;
