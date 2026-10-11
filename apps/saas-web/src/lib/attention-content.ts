@@ -15,6 +15,12 @@ export type AttentionMeta = {
   method?: string;
   sourceTenderTitle?: string;
   relatedTenderTitle?: string;
+  changeKind?: string;
+  sourceSystem?: string;
+  previousDeadline?: string | null;
+  nextDeadline?: string | null;
+  checkedAt?: string | null;
+  publicationNumber?: string;
 };
 
 export type AttentionViewModel = {
@@ -39,6 +45,23 @@ export const relativeAttentionTime = (iso: string): string => {
   if (hours === 1) return "πριν 1 ώρα";
   if (hours < 48) return `πριν ${hours} ώρες`;
   return new Date(iso).toLocaleString("el-GR");
+};
+
+const formatDayEl = (value: string | null | undefined): string | null => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toLocaleDateString("el-GR");
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return value.trim() || null;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+};
+
+const sourceLabel = (meta: AttentionMeta): string | null => {
+  const system = meta.sourceSystem?.trim().toLowerCase();
+  if (system === "ted") return "TED";
+  if (system === "diavgeia") return "Διαύγεια";
+  if (system === "kimdis") return "ΚΗΜΔΗΣ";
+  return null;
 };
 
 const tenderFromEvent = (event: AttentionEvent) => {
@@ -123,12 +146,38 @@ export const attentionEventViewModel = (event: AttentionEvent): AttentionViewMod
     };
   }
 
+  if (event.type === "DEADLINE_CHANGED") {
+    const from = formatDayEl(meta.previousDeadline);
+    const to = formatDayEl(meta.nextDeadline);
+    const primary =
+      event.title?.trim() ||
+      (from && to
+        ? `Η προθεσμία άλλαξε από ${from} σε ${to}`
+        : meta.changeKind === "notice_update"
+          ? "Ενημερώθηκε η δημοσίευση TED που παρακολουθείτε"
+          : "Αλλαγή προθεσμίας");
+    const source = sourceLabel(meta);
+    const checked = meta.checkedAt
+      ? `Έλεγχος ${new Date(meta.checkedAt).toLocaleString("el-GR")}`
+      : time;
+    const eyebrow =
+      meta.changeKind === "notice_update" ? "Ενημέρωση TED" : "Αλλαγή προθεσμίας";
+    return {
+      eyebrow,
+      primary,
+      primaryFull: primary,
+      secondary: [source, checked].filter(Boolean).join(" · "),
+      context: tender.title?.trim()
+        ? tender.title.trim()
+        : meta.tenderTitle?.trim() || undefined,
+    };
+  }
+
   if (
     event.type === "RELATED_PROC_DISCOVERED" ||
     event.type === "RELATED_AWARD_DISCOVERED" ||
     event.type === "RELATED_APPROVED_REQUEST_DISCOVERED" ||
-    event.type === "RELATED_CONTRACT_DISCOVERED" ||
-    event.type === "DEADLINE_CHANGED"
+    event.type === "RELATED_CONTRACT_DISCOVERED"
   ) {
     const change =
       event.type === "RELATED_PROC_DISCOVERED"
@@ -137,9 +186,7 @@ export const attentionEventViewModel = (event: AttentionEvent): AttentionViewMod
           ? "Νέα ανάθεση / αποτέλεσμα"
           : event.type === "RELATED_CONTRACT_DISCOVERED"
             ? "Νέα σχετική σύμβαση"
-            : event.type === "DEADLINE_CHANGED"
-              ? "Αλλαγή προθεσμίας"
-              : "Νέα επίσημη εξέλιξη";
+            : "Νέα επίσημη εξέλιξη";
     const relatedTitle =
       event.relatedTender?.title?.trim() ||
       meta.relatedTenderTitle?.trim() ||

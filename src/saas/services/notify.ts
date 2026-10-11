@@ -225,10 +225,13 @@ const relatedItemFromEvent = (event: {
   const source = event.organizationTender?.tender ?? null;
   const related = event.relatedTender ?? null;
   return {
+    // TED deadline/update copy lives on event.title — prefer it over tender title.
     title:
-      metaString(meta, "relatedTenderTitle") ??
-      related?.title ??
-      event.title,
+      metaString(meta, "changeKind") != null
+        ? event.title
+        : metaString(meta, "relatedTenderTitle") ??
+          related?.title ??
+          event.title,
     referenceNumber:
       metaString(meta, "referenceNumber") ?? related?.referenceNumber ?? null,
     authority:

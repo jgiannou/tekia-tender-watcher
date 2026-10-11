@@ -205,22 +205,20 @@ export const ActivitiesSettingsPage = () => {
       {hasSuggestions ? (
         <Card>
           <CardHeader>
-            <CardTitle>Προτεινόμενα ενδιαφέροντα προμηθειών</CardTitle>
+            <CardTitle>Έτοιμη αναζήτηση από τις δραστηριότητές σας</CardTitle>
             <CardDescription>
-              Προτάσεις βάσει αποθηκευμένων δραστηριοτήτων — όχι επίσημη αντιστοίχιση ΚΑΔ→CPV.
-              Επιβεβαιώστε πριν δημιουργηθεί αποθηκευμένη αναζήτηση.
+              Δημιουργεί αποθηκευμένη αναζήτηση με λέξεις και κατηγορίες προμηθειών —
+              χωρίς να χρειάζεται να γνωρίζετε κωδικούς CPV.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {suggestions?.categories.map((category) => (
-              <div key={category} className="font-medium">
+              <div key={category} className="text-base font-medium">
                 {category}
               </div>
             ))}
             {suggestions?.cpvs.map((cpv) => (
-              <div key={cpv.code}>
-                <span className="font-mono">{cpv.code}</span> — {cpv.label}
-              </div>
+              <div key={cpv.code}>{cpv.label}</div>
             ))}
             <div className="flex flex-wrap gap-2 pt-1">
               {suggestions?.keywords.map((keyword) => (
@@ -234,7 +232,7 @@ export const ActivitiesSettingsPage = () => {
                 onClick={() => void handleCreateSavedSearch()}
                 disabled={creating}
               >
-                {creating ? "Δημιουργία…" : "Δημιουργία αποθηκευμένης αναζήτησης"}
+                {creating ? "Δημιουργία…" : "Δημιουργία έτοιμης αναζήτησης"}
               </Button>
               <Button variant="outline" asChild>
                 <Link to="/app/setup?step=interests">Επισκόπηση στο setup</Link>

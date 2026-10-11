@@ -59,7 +59,7 @@ export const SetupPage = () => {
   const [selectedCpvs, setSelectedCpvs] = useState<string[]>([]);
   const [keywords, setKeywords] = useState<string[]>([]);
   const [keywordDraft, setKeywordDraft] = useState("");
-  const [watchName, setWatchName] = useState("Web & Digital");
+  const [watchName, setWatchName] = useState("Η αναζήτησή μου");
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [createdWatchName, setCreatedWatchName] = useState<string | null>(null);
 
@@ -174,6 +174,9 @@ export const SetupPage = () => {
       setSuggestions(data.watchSuggestions);
       setSelectedCpvs(data.watchSuggestions.cpvs.map((c) => c.code));
       setKeywords(data.watchSuggestions.keywords);
+      if (data.watchSuggestions.categories[0]) {
+        setWatchName(data.watchSuggestions.categories[0]);
+      }
       setLegalName(data.settings.company.legalName);
       setAfm(data.settings.company.afm ?? "");
       // Advance URL first so remounts / refresh cannot snap back to step 1.
@@ -212,6 +215,9 @@ export const SetupPage = () => {
       setSuggestions(data.watchSuggestions);
       setSelectedCpvs(data.watchSuggestions.cpvs.map((c) => c.code));
       setKeywords(data.watchSuggestions.keywords);
+      if (data.watchSuggestions.categories[0]) {
+        setWatchName(data.watchSuggestions.categories[0]);
+      }
       await saasApi.updateOnboarding(activeOrganization.id, "IN_PROGRESS", "interests");
       setStep("interests");
     } catch (err) {
@@ -228,12 +234,16 @@ export const SetupPage = () => {
   const handleCreateWatchProfile = async () => {
     if (!activeOrganization) return;
     try {
-      const name = watchName.trim() || "Web & Digital";
+      const name =
+        watchName.trim() ||
+        suggestions.categories[0] ||
+        "Αποθηκευμένη αναζήτηση";
       await saasApi.createWatchProfile(activeOrganization.id, {
         name,
         keywords,
         cpvs: selectedCpvs,
         source: "SETUP_RECOMMENDATION",
+        dataSources: ["kimdis", "ted"],
       });
       if (user?.email) {
         await saasApi.updateNotifications(activeOrganization.id, {
@@ -498,17 +508,31 @@ export const SetupPage = () => {
       {step === "interests" ? (
         <Card>
           <CardHeader>
-            <CardTitle>Προτεινόμενες κατηγορίες</CardTitle>
+            <CardTitle>Έτοιμες αναζητήσεις για τη δραστηριότητά σας</CardTitle>
             <CardDescription>
-              Προτάσεις με βάση τους ΚΑΔ — όχι επίσημη αντιστοίχιση και όχι κανόνες επιλεξιμότητας.
+              Επιλέξτε τι θέλετε να παρακολουθείτε. Δεν χρειάζεται να γνωρίζετε κωδικούς CPV —
+              τους εφαρμόζουμε αυτόματα στο παρασκήνιο.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {suggestions.categories.length > 0 ? (
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Προτεινόμενες δραστηριότητες</div>
+                <div className="flex flex-wrap gap-2">
+                  {suggestions.categories.map((category) => (
+                    <Badge key={category} variant="secondary" className="text-sm">
+                      {category}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <div className="space-y-2">
-              <div className="text-sm font-medium">CPVs</div>
+              <div className="text-sm font-medium">Τι να ψάχνουμε</div>
               {suggestions.cpvs.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Δεν υπάρχουν προτάσεις CPV ακόμη. Προσθέστε λέξεις-κλειδιά παρακάτω.
+                  Δεν υπάρχουν έτοιμες προτάσεις ακόμη. Προσθέστε λέξεις-κλειδιά παρακάτω.
                 </p>
               ) : (
                 suggestions.cpvs.map((cpv) => {
@@ -528,10 +552,10 @@ export const SetupPage = () => {
                               : [...prev, cpv.code],
                           )
                         }
+                        aria-label={cpv.label}
                       />
                       <span>
-                        <span className="font-mono">{cpv.code}</span>
-                        <span className="mt-0.5 block text-muted-foreground">{cpv.label}</span>
+                        <span className="font-medium">{cpv.label}</span>
                       </span>
                     </label>
                   );
@@ -609,7 +633,13 @@ export const SetupPage = () => {
               />
             </div>
             <div className="text-sm text-muted-foreground">
-              CPV: {selectedCpvs.length || "—"} · Λέξεις: {keywords.join(", ") || "—"}
+              {selectedCpvs.length
+                ? `${selectedCpvs.length} κατηγορίες προμηθειών`
+                : "Χωρίς κατηγορίες"}
+              {" · "}
+              Λέξεις: {keywords.join(", ") || "—"}
+              {" · "}
+              Πηγές: ΚΗΜΔΗΣ + TED
             </div>
             <label className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-3">
               <span className="text-sm">
@@ -640,7 +670,9 @@ export const SetupPage = () => {
         <Card>
           <CardHeader>
             <CardTitle>Η αρχική ρύθμιση ολοκληρώθηκε</CardTitle>
-            <CardDescription>Μπορείτε να συνεχίσετε την εξερεύνηση του ΚΗΜΔΗΣ.</CardDescription>
+              <CardDescription>
+                Μπορείτε να συνεχίσετε σε Αναζήτηση (ΚΗΜΔΗΣ / TED) ή στις Ευκαιρίες.
+              </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
             <div>

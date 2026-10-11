@@ -30,6 +30,19 @@ export const toNuts2 = (raw: string | null | undefined): string | null => {
   return REGION_CODES.has(nuts2) ? nuts2 : null;
 };
 
+export const regionLabel = (code: string | null | undefined): string | null => {
+  const nuts2 = toNuts2(code);
+  if (!nuts2) return null;
+  return GREEK_NUTS2_REGIONS.find((region) => region.code === nuts2)?.label ?? null;
+};
+
+/** Prefer human region name; fall back to the official code. */
+export const formatRegion = (code: string | null | undefined): string | null => {
+  if (!code?.trim()) return null;
+  const label = regionLabel(code);
+  return label ? `Περιοχή: ${label}` : `Περιοχή: ${code.trim().toUpperCase()}`;
+};
+
 export type RegionGate = "ok" | "out_of_region" | "unclassified";
 
 /**

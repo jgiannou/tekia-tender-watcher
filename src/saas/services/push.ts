@@ -43,11 +43,14 @@ const bodyForEvent = (title: string, type: AttentionEventType): string => {
   if (type === "NEW_OPPORTUNITY" || type === "OPPORTUNITY_DIGEST") {
     return "Νέα ευκαιρία στο inbox σας.";
   }
+  if (type === "DEADLINE_CHANGED" && title.trim()) {
+    return title.trim();
+  }
   if (type.startsWith("RELATED_")) {
     return "Νέα εξέλιξη σε παρακολουθούμενο διαγωνισμό.";
   }
-  if (type === "DEADLINE_APPROACHING" || type === "DEADLINE_CHANGED") {
-    return "Ενημέρωση προθεσμίας.";
+  if (type === "DEADLINE_APPROACHING") {
+    return "Επερχόμενη προθεσμία σε διαγωνισμό που παρακολουθείτε.";
   }
   if (type === "SUBMISSION_RECORDED") return "Καταχωρήθηκε υποβολή.";
   if (type === "OUTREACH_RECORDED") return "Καταχωρήθηκε outreach.";

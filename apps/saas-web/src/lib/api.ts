@@ -972,6 +972,9 @@ export type KimdisSearchItem = {
   openState: "OPEN" | "CLOSED" | "CANCELLED" | "UNKNOWN";
   /** Official KIMDIS NUTS code (often NUTS 3); may be null when unclassified. */
   nutsCode?: string | null;
+  /** Awarded amount when known — distinct from estimated budgetWithoutVat. */
+  awardAmount?: number | null;
+  winnerName?: string | null;
 };
 
 export type KimdisSearchFilters = {
