@@ -1,8 +1,10 @@
 /**
- * Cookie / tracker consent — GTM loads only after optional consent.
+ * Cookie / tracker consent — optional tags load only after consent.
  *
- * Use GTM as the single loader. Keep GA4 (and later Ads) tags inside GTM.
- * Do NOT also paste the standalone gtag.js snippet into the HTML.
+ * - GTM loads analytics (GA4 tags live inside the container).
+ * - Google Ads base tag (AW-…) loads only with marketing consent.
+ * Do NOT paste gtag / GTM snippets into index.html (avoids double counting
+ * and bypasses Consent Mode).
  */
 
 import { redactSensitiveUrl } from "@/lib/safe-page-path";
@@ -22,6 +24,8 @@ const STORAGE_KEY = "arc.cookieConsent.v1";
 export const TRACKING_IDS = {
   gtm: import.meta.env.VITE_GTM_ID?.trim() || "GTM-KJ8T4GQ4",
   ga4: import.meta.env.VITE_GA4_MEASUREMENT_ID?.trim() || "G-WG2W3WE5QD",
+  /** Google Ads / Google tag ID from Ads → Tools → Google tag */
+  ads: import.meta.env.VITE_GOOGLE_ADS_ID?.trim() || "AW-18392529196",
 } as const;
 
 /**
@@ -120,6 +124,8 @@ declare global {
 }
 
 let gtmInjected = false;
+let adsInjected = false;
+let consentDefaultPushed = false;
 
 const ensureGtag = (): GtagFn => {
   window.dataLayer = window.dataLayer || [];
@@ -135,6 +141,20 @@ const ensureGtag = (): GtagFn => {
 
 const consentValue = (granted: boolean): GtagConsentState =>
   granted ? "granted" : "denied";
+
+const pushGoogleConsentDefault = (analytics: boolean, marketing: boolean): void => {
+  if (consentDefaultPushed) return;
+  consentDefaultPushed = true;
+  const gtag = ensureGtag();
+  // Set BEFORE any gtm.js / gtag.js so tags evaluate with the user's choice.
+  // (Default=denied then later update is too late: All Pages will not re-fire.)
+  gtag("consent", "default", {
+    analytics_storage: consentValue(analytics),
+    ad_storage: consentValue(marketing),
+    ad_user_data: consentValue(marketing),
+    ad_personalization: consentValue(marketing),
+  });
+};
 
 const pushGoogleConsentUpdate = (analytics: boolean, marketing: boolean): void => {
   const gtag = ensureGtag();
@@ -159,16 +179,7 @@ const injectGoogleTagManager = (
   }
 
   gtmInjected = true;
-  const gtag = ensureGtag();
-  // We only inject after the user already chose — set that state BEFORE gtm.js
-  // so All Pages / Google Tag evaluate with analytics_storage granted.
-  // (Default=denied then later update is too late: All Pages will not re-fire.)
-  gtag("consent", "default", {
-    analytics_storage: consentValue(analytics),
-    ad_storage: consentValue(marketing),
-    ad_user_data: consentValue(marketing),
-    ad_personalization: consentValue(marketing),
-  });
+  pushGoogleConsentDefault(analytics, marketing);
   // Google reads window.location for page_view. Strip tokens before gtm.js.
   redactSensitiveUrl();
   window.dataLayer?.push({
@@ -184,8 +195,39 @@ const injectGoogleTagManager = (
 };
 
 /**
- * Load GTM after optional consent. GA4/Ads tags live inside the container.
- * Standalone gtag.js is intentionally not injected (avoids double counting).
+ * Google Ads base tag (same as Ads UI gtag snippet). Only with marketing consent.
+ * Do not also add this AW- ID as a Google tag inside GTM — conversion/remarketing
+ * tags in GTM can still use the same account if needed.
+ */
+const injectGoogleAdsTag = (
+  adsId: string,
+  analytics: boolean,
+  marketing: boolean,
+): void => {
+  if (adsInjected || typeof document === "undefined") return;
+  if (!adsId.startsWith("AW-")) return;
+  if (document.getElementById("arc-google-ads-script")) {
+    adsInjected = true;
+    return;
+  }
+
+  adsInjected = true;
+  pushGoogleConsentDefault(analytics, marketing);
+  redactSensitiveUrl();
+  const gtag = ensureGtag();
+  gtag("js", new Date());
+  gtag("config", adsId);
+
+  const script = document.createElement("script");
+  script.id = "arc-google-ads-script";
+  script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(adsId)}`;
+  document.head.appendChild(script);
+};
+
+/**
+ * Load optional trackers after consent.
+ * GTM = analytics container (GA4). AW gtag = Google Ads base tag (marketing).
  */
 export const loadOptionalTrackersIfAllowed = (): void => {
   if (typeof window === "undefined") return;
@@ -201,10 +243,20 @@ export const loadOptionalTrackersIfAllowed = (): void => {
     pushGoogleConsentUpdate(analytics, marketing);
   }
 
+  if (marketing) {
+    if (!adsInjected && !document.getElementById("arc-google-ads-script")) {
+      injectGoogleAdsTag(TRACKING_IDS.ads, analytics, marketing);
+    } else {
+      adsInjected = true;
+      pushGoogleConsentUpdate(analytics, marketing);
+    }
+  }
+
   window.dataLayer?.push({
     event: "arc_consent_update",
     arc_analytics: analytics,
     arc_marketing: marketing,
     arc_ga4: TRACKING_IDS.ga4,
+    arc_google_ads: TRACKING_IDS.ads,
   });
 };
