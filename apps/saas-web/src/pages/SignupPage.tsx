@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { currentLegalAcceptancePayload } from "@/legal";
-import { setAnalyticsUserId, trackAnalyticsEvent } from "@/lib/analytics";
+import { trackAnalyticsEvent, trackSignUpSuccess } from "@/lib/analytics";
 import { authClient } from "@/lib/auth-client";
 import { saasApi } from "@/lib/api";
 import { readStashedParam } from "@/lib/safe-page-path";
@@ -58,8 +58,8 @@ export const SignupPage = () => {
       if (session.data) {
         authClient.hydrateSession(session.data);
       }
-      setAnalyticsUserId(session.data.user.id);
-      trackAnalyticsEvent("sign_up", { method: "email" });
+      // Account + session exist — fire GA4 sign_up + Ads conversion (consent-gated, once).
+      trackSignUpSuccess({ userId: session.data.user.id, method: "email" });
 
       const legalVersions = currentLegalAcceptancePayload();
       let acceptanceSaved = false;

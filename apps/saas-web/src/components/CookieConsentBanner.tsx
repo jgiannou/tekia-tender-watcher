@@ -11,6 +11,7 @@ import {
   saveCustomConsent,
   type ConsentState,
 } from "@/legal";
+import { flushPendingSignUpTracking } from "@/lib/analytics";
 
 /** Consent dialog for optional analytics (and marketing when enabled). */
 export const CookieConsentBanner = () => {
@@ -27,6 +28,7 @@ export const CookieConsentBanner = () => {
     setDraftMarketing(current.marketing);
     if (current.decidedAt) {
       loadOptionalTrackersIfAllowed();
+      flushPendingSignUpTracking();
     }
   }, []);
 
@@ -38,11 +40,13 @@ export const CookieConsentBanner = () => {
     const next = acceptAllOptionalConsent();
     setState(next);
     loadOptionalTrackersIfAllowed();
+    flushPendingSignUpTracking();
   };
 
   const handleReject = () => {
     const next = rejectOptionalConsent();
     setState(next);
+    flushPendingSignUpTracking();
   };
 
   const handleSaveCustom = () => {
@@ -53,6 +57,7 @@ export const CookieConsentBanner = () => {
     setState(next);
     setManageOpen(false);
     loadOptionalTrackersIfAllowed();
+    flushPendingSignUpTracking();
   };
 
   return (

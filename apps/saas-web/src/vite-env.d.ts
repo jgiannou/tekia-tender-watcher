@@ -8,6 +8,8 @@ interface ImportMetaEnv {
   readonly VITE_GA4_MEASUREMENT_ID?: string;
   /** Google Ads conversion / Google tag id, e.g. AW-XXXX */
   readonly VITE_GOOGLE_ADS_ID?: string;
+  /** Google Ads signup conversion send_to, e.g. AW-XXXX/label */
+  readonly VITE_GOOGLE_ADS_SIGNUP_CONVERSION?: string;
 }
 
 interface ImportMeta {
