@@ -13,7 +13,11 @@ import {
   decryptSecret,
 } from "../src/saas/crypto/secrets.js";
 import { decideSlackSend } from "../src/saas/services/slack-channel-policy.js";
-import { sanitizeSlackText } from "../src/saas/services/slack-messages.js";
+import {
+  buildOpportunityBatchSlackMessage,
+  formatDesktopStyleCardMrkdwn,
+  sanitizeSlackText,
+} from "../src/saas/services/slack-messages.js";
 import {
   BASIC_PLAN,
   FREE_PLAN,
@@ -90,6 +94,47 @@ describe("Slack crypto + sanitize", () => {
     expect(sanitizeSlackText("Hello @channel and <!everyone>")).not.toMatch(
       /@channel|<!everyone>/,
     );
+  });
+
+  it("formats opportunity cards like desktop alerts (score, ADAM, links)", () => {
+    const card = formatDesktopStyleCardMrkdwn({
+      title: "Αναβάθμιση ιστοσελίδας",
+      authority: "ΔΗΜΟΣ Χ",
+      valueEur: 1610,
+      recordType: "REQ",
+      referenceNumber: "26REQ019966624",
+      score: 84,
+      cpvs: ["72413000-8"],
+      submissionDateIso: "2026-10-12T12:00:00.000Z",
+      source: "KIMDIS",
+      arcUrl: "https://arc.example/app/tenders/REQ/26REQ019966624",
+    });
+    expect(card).toContain("ΝΕΟ LEAD ΚΗΜΔΗΣ — 84/100");
+    expect(card).toContain("ΔΗΜΟΣ Χ — Αναβάθμιση ιστοσελίδας");
+    expect(card).toContain("χωρίς ΦΠΑ");
+    expect(card).toContain("ΑΔΑΜ: `26REQ019966624`");
+    expect(card).toContain("Άνοιγμα στο ΚΗΜΔΗΣ");
+    expect(card).toContain("Άνοιγμα PDF");
+    expect(card).toContain("Επικοινωνία νωρίς");
+
+    const batch = buildOpportunityBatchSlackMessage({
+      items: [
+        {
+          title: "Αναβάθμιση ιστοσελίδας",
+          authority: "ΔΗΜΟΣ Χ",
+          valueEur: 1610,
+          recordType: "REQ",
+          referenceNumber: "26REQ019966624",
+          score: 84,
+          source: "KIMDIS",
+          arcUrl: "https://arc.example/app/tenders/REQ/26REQ019966624",
+        },
+      ],
+      totalCount: 1,
+      moreUrl: "https://arc.example/app/opportunities",
+    });
+    expect(JSON.stringify(batch.blocks)).toContain("ΝΕΟ LEAD ΚΗΜΔΗΣ");
+    expect(JSON.stringify(batch.blocks)).toContain("Προβολή στο ARC Tenders");
   });
 });
 

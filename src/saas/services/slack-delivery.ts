@@ -22,6 +22,7 @@ import {
   buildOpportunityBatchSlackMessage,
   buildRelatedActSlackMessage,
   type SlackMessagePayload,
+  type SlackTenderLine,
 } from "./slack-messages.js";
 import { normalizeSlackPreferences } from "./slack-preferences.js";
 import {
@@ -32,6 +33,79 @@ import {
 const tenderSourceLabel = (
   referenceNumber: string | null | undefined,
 ): string => sourceLabelEl(sourceSystemFromReference(referenceNumber));
+
+const parseCpvList = (raw: unknown): string[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item === "object" && "code" in item) {
+        const code = (item as { code?: unknown }).code;
+        return typeof code === "string" ? code.trim() : "";
+      }
+      return "";
+    })
+    .filter(Boolean);
+};
+
+const tenderSelectForSlack = {
+  id: true,
+  title: true,
+  referenceNumber: true,
+  recordType: true,
+  contractingAuthority: true,
+  budgetWithoutVat: true,
+  finalSubmissionDate: true,
+  submissionDate: true,
+  cpvs: true,
+  stage: true,
+  publicKimdisUrl: true,
+  officialPdfUrl: true,
+} as const;
+
+type SlackTenderRow = {
+  id: string;
+  title: string | null;
+  referenceNumber: string;
+  recordType: string;
+  contractingAuthority: string | null;
+  budgetWithoutVat: number | null;
+  finalSubmissionDate: Date | null;
+  submissionDate: Date | null;
+  cpvs: unknown;
+  stage: string | null;
+  publicKimdisUrl: string | null;
+  officialPdfUrl: string | null;
+};
+
+const toSlackTenderLine = (input: {
+  title: string;
+  tender: SlackTenderRow | null;
+  score?: number | null;
+  arcUrl: string;
+  deadlineIso?: string | null;
+}): SlackTenderLine => {
+  const tender = input.tender;
+  return {
+    title: input.title,
+    authority: tender?.contractingAuthority ?? null,
+    valueEur: tender?.budgetWithoutVat ?? null,
+    deadlineIso:
+      input.deadlineIso ??
+      tender?.finalSubmissionDate?.toISOString() ??
+      null,
+    submissionDateIso: tender?.submissionDate?.toISOString() ?? null,
+    source: tenderSourceLabel(tender?.referenceNumber),
+    recordType: tender?.recordType ?? null,
+    referenceNumber: tender?.referenceNumber ?? null,
+    cpvs: parseCpvList(tender?.cpvs),
+    score: input.score ?? null,
+    stageLabel: tender?.stage ?? null,
+    publicUrl: tender?.publicKimdisUrl ?? null,
+    pdfUrl: tender?.officialPdfUrl ?? null,
+    arcUrl: input.arcUrl,
+  };
+};
 
 export class SlackRetryAfterError extends Error {
   readonly retryAfterMs: number;
@@ -381,31 +455,12 @@ export const processSlackAttentionJob: SaasJobHandler = async (prisma, job) => {
     where: { id: attentionEventId },
     include: {
       organizationTender: {
-        include: {
-          tender: {
-            select: {
-              id: true,
-              title: true,
-              referenceNumber: true,
-              recordType: true,
-              contractingAuthority: true,
-              budgetWithoutVat: true,
-              finalSubmissionDate: true,
-            },
-          },
-        },
-      },
-      relatedTender: {
         select: {
-          id: true,
-          title: true,
-          referenceNumber: true,
-          recordType: true,
-          contractingAuthority: true,
-          budgetWithoutVat: true,
-          finalSubmissionDate: true,
+          score: true,
+          tender: { select: tenderSelectForSlack },
         },
       },
+      relatedTender: { select: tenderSelectForSlack },
     },
   });
   if (!event) return "skip";
@@ -445,7 +500,10 @@ export const processSlackAttentionJob: SaasJobHandler = async (prisma, job) => {
       : null);
   const daysRemaining =
     typeof meta.daysRemaining === "number" ? meta.daysRemaining : null;
-  const source = tenderSourceLabel(tender?.referenceNumber);
+  const score =
+    typeof meta.score === "number"
+      ? meta.score
+      : event.organizationTender?.score ?? null;
 
   const arcUrl = tenderArcUrl(
     appUrl,
@@ -454,25 +512,18 @@ export const processSlackAttentionJob: SaasJobHandler = async (prisma, job) => {
     tender?.id ?? event.organizationTenderId ?? event.id,
   );
 
+  const line = toSlackTenderLine({
+    title: event.title,
+    tender,
+    score,
+    arcUrl,
+    deadlineIso,
+  });
+
   const message =
     event.type === "DEADLINE_APPROACHING"
-      ? buildDeadlineSlackMessage({
-          title: event.title,
-          authority: tender?.contractingAuthority,
-          valueEur: tender?.budgetWithoutVat,
-          deadlineIso,
-          source,
-          arcUrl,
-          daysRemaining,
-        })
-      : buildRelatedActSlackMessage({
-          title: event.title,
-          authority: tender?.contractingAuthority,
-          valueEur: tender?.budgetWithoutVat,
-          deadlineIso,
-          source,
-          arcUrl,
-        });
+      ? buildDeadlineSlackMessage({ ...line, daysRemaining })
+      : buildRelatedActSlackMessage(line);
 
   const result = await postSlackIncomingWebhook(prisma, {
     connectionId: connection.id,
@@ -557,18 +608,9 @@ export const processSlackOpportunityBatchJob: SaasJobHandler = async (
     take: 40,
     include: {
       organizationTender: {
-        include: {
-          tender: {
-            select: {
-              id: true,
-              title: true,
-              referenceNumber: true,
-              recordType: true,
-              contractingAuthority: true,
-              budgetWithoutVat: true,
-              finalSubmissionDate: true,
-            },
-          },
+        select: {
+          score: true,
+          tender: { select: tenderSelectForSlack },
         },
       },
     },
@@ -598,20 +640,31 @@ export const processSlackOpportunityBatchJob: SaasJobHandler = async (
   const appUrl = resolveSaasAppUrl();
   const shown = undelivered.slice(0, SLACK_OPPORTUNITY_BATCH_MAX_ITEMS);
   const items = shown.map((event) => {
-    const tender = event.organizationTender?.tender;
-    return {
-      title: event.title,
-      authority: tender?.contractingAuthority ?? null,
-      valueEur: tender?.budgetWithoutVat ?? null,
-      deadlineIso: tender?.finalSubmissionDate?.toISOString() ?? null,
-      source: tenderSourceLabel(tender?.referenceNumber),
+    const tender = event.organizationTender?.tender ?? null;
+    const meta =
+      event.metadata && typeof event.metadata === "object"
+        ? (event.metadata as Record<string, unknown>)
+        : {};
+    const score =
+      typeof meta.score === "number"
+        ? meta.score
+        : event.organizationTender?.score ?? null;
+    return toSlackTenderLine({
+      title:
+        (typeof meta.tenderTitle === "string" && meta.tenderTitle.trim()
+          ? meta.tenderTitle
+          : null) ||
+        tender?.title ||
+        event.title,
+      tender,
+      score,
       arcUrl: tenderArcUrl(
         appUrl,
         tender?.recordType,
         tender?.referenceNumber,
         tender?.id ?? event.id,
       ),
-    };
+    });
   });
 
   const message = buildOpportunityBatchSlackMessage({
