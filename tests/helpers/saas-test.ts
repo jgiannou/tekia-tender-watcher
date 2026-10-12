@@ -111,37 +111,62 @@ export const setOrgPlan = async (
 export const signUpAndGetCookie = async (
   app: ReturnType<typeof createSaasTestApp>["app"],
   input: { name: string; email: string; password: string },
+  options?: { leaveUnverified?: boolean },
 ) => {
-  process.env.EMAIL_ENABLED = "false";
-  const response = await app.request("/api/auth/sign-up/email", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
+  const previousEmailEnabled = process.env.EMAIL_ENABLED;
+  const previousSmtpHost = process.env.SMTP_HOST;
+  // Unverified path: EMAIL_ENABLED + SMTP_HOST so auth create-hook skips
+  // auto-verify. sendMail still no-ops in NODE_ENV=test (no live SMTP).
+  if (options?.leaveUnverified) {
+    process.env.EMAIL_ENABLED = "true";
+    if (!String(process.env.SMTP_HOST || "").trim()) {
+      process.env.SMTP_HOST = "127.0.0.1";
+    }
+  } else {
+    process.env.EMAIL_ENABLED = "false";
+  }
+  let response: Response;
+  let bodyText: string;
+  try {
+    response = await app.request("/api/auth/sign-up/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    bodyText = await response.text();
+  } finally {
+    process.env.EMAIL_ENABLED = previousEmailEnabled;
+    if (previousSmtpHost === undefined) delete process.env.SMTP_HOST;
+    else process.env.SMTP_HOST = previousSmtpHost;
+  }
   const setCookie = response.headers.getSetCookie?.() ?? [];
   const cookieHeader =
     setCookie.length > 0
       ? setCookie.map((part) => part.split(";")[0]).join("; ")
       : response.headers.get("set-cookie")?.split(",").map((p) => p.split(";")[0].trim()).join("; ") ??
         "";
-  const bodyText = await response.text();
   if (!response.ok) {
     throw new Error(`sign-up failed ${response.status}: ${bodyText}`);
   }
-  // Tests never exercise the verify gate; force verified even if the auth
-  // create hook races or EMAIL_ENABLED leaked from the developer .env.
   try {
     const body = JSON.parse(bodyText) as { user?: { id?: string } };
     if (body.user?.id) {
       await getSaasTestPrisma().user.update({
         where: { id: body.user.id },
-        data: { emailVerified: true },
+        data: { emailVerified: options?.leaveUnverified ? false : true },
       });
     }
   } catch {
     // ignore parse failures — cookie path still returned
   }
   return { response, cookie: cookieHeader };
+};
+
+export const markUserEmailVerified = async (userId: string, verified = true) => {
+  await getSaasTestPrisma().user.update({
+    where: { id: userId },
+    data: { emailVerified: verified },
+  });
 };
 
 export const authedJson = async <T>(

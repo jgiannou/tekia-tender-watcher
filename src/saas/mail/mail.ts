@@ -2,10 +2,24 @@ import nodemailer from "nodemailer";
 import type Transporter from "nodemailer/lib/mailer/index.js";
 
 export const LIVE_EMAIL_IN_TESTS_ENV = "ARC_ALLOW_LIVE_EMAIL_IN_TESTS";
+/** Local QA only: capture outbound mail in-process, never hit SMTP. */
+export const MAIL_CAPTURE_ENV = "ARC_MAIL_CAPTURE";
+
+export type CapturedMail = {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  fromName?: string | null;
+};
+
+let capturedMails: CapturedMail[] | null = null;
 
 export const isEmailEnabled = (
   env: NodeJS.ProcessEnv = process.env,
 ): boolean => {
+  // Capture mode counts as "email on" so auth does not auto-verify.
+  if (isMailCaptureEnabled(env) || capturedMails) return true;
   const enabled = String(env.EMAIL_ENABLED || "").toLowerCase() === "true";
   const host = String(env.SMTP_HOST || "").trim();
   return enabled && Boolean(host);
@@ -17,6 +31,30 @@ export const isMailSendingBlocked = (
 ): boolean =>
   env.NODE_ENV === "test" &&
   String(env[LIVE_EMAIL_IN_TESTS_ENV] || "").toLowerCase() !== "true";
+
+export const isMailCaptureEnabled = (
+  env: NodeJS.ProcessEnv = process.env,
+): boolean => String(env[MAIL_CAPTURE_ENV] || "").toLowerCase() === "true";
+
+/** Enable in-process mail capture (local QA / tests). Does not send SMTP. */
+export const __enableMailCapture = () => {
+  capturedMails = [];
+  process.env[MAIL_CAPTURE_ENV] = "true";
+  return {
+    getMails: (): CapturedMail[] => [...(capturedMails ?? [])],
+    clear: () => {
+      if (capturedMails) capturedMails.length = 0;
+    },
+    disable: () => {
+      capturedMails = null;
+      delete process.env[MAIL_CAPTURE_ENV];
+    },
+  };
+};
+
+export const __getCapturedMails = (): CapturedMail[] => [
+  ...(capturedMails ?? []),
+];
 
 export const getEmailLocale = (
   env: NodeJS.ProcessEnv = process.env,
@@ -85,6 +123,8 @@ export const __setMailTransportForTests = (transport: Transporter | null) => {
 
 export const __resetMailTestHooks = () => {
   transportOverride = null;
+  capturedMails = null;
+  delete process.env[MAIL_CAPTURE_ENV];
 };
 
 const getTransport = () => transportOverride ?? createSmtpTransport();
@@ -99,6 +139,23 @@ export const sendMail = async (input: {
   text: string;
   fromName?: string | null;
 }): Promise<boolean> => {
+  // Capture first so local QA can collect verification links without SMTP.
+  if (isMailCaptureEnabled() || capturedMails) {
+    if (!capturedMails) capturedMails = [];
+    capturedMails.push({
+      to: input.to,
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+      fromName: input.fromName,
+    });
+    console.info(
+      "[email] captured (no SMTP)",
+      JSON.stringify({ to: input.to, subject: input.subject.slice(0, 120) }),
+    );
+    return true;
+  }
+
   if (!isEmailEnabled()) {
     console.info("[email] Skipping send: email disabled");
     return false;
@@ -108,6 +165,7 @@ export const sendMail = async (input: {
     console.warn("[email] Skipping: EMAIL_FROM missing");
     return false;
   }
+
   if (isMailSendingBlocked()) {
     console.info(
       `[email] Skipping send: test mode blocked (set ${LIVE_EMAIL_IN_TESTS_ENV}=true to opt in)`,

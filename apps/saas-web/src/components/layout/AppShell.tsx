@@ -27,6 +27,7 @@ import { TrialBanner } from "@/components/billing/TrialBanner";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { SeoHead } from "@/components/SeoHead";
+import { authClient } from "@/lib/auth-client";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -317,12 +318,39 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
 
 export const AppShell = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { refresh } = useSessionContext();
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     setMobileNavOpen(false);
   }, [location.pathname]);
+
+  // After Better Auth email verify redirect (?verified=1), refresh /me + session
+  // so entitlements unlock without requiring sign-out.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get("verified") !== "1") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await authClient.getSession();
+        if (!cancelled) await refresh();
+      } finally {
+        if (cancelled) return;
+        params.delete("verified");
+        const next = params.toString();
+        navigate(
+          { pathname: location.pathname, search: next ? `?${next}` : "" },
+          { replace: true },
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname, location.search, navigate, refresh]);
 
   // Preserve scroll position while the mobile nav sheet is open. Radix scroll
   // lock alone can jump the page (and the drawer) upward after deep scrolls.

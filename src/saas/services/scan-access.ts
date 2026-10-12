@@ -192,15 +192,19 @@ export const resolveOrganizationScanAccess = async (
   };
 
   if (!emailVerified) {
+    // Plan limits stay visible (e.g. Free = 1 active search). Automation stays
+    // gated until verify — do not collapse commercial limits to zero.
+    const plan = entitlementsForPlanKey(planKey);
+    const limits = limitsForPlanKey(planKey);
     return {
       emailVerified: false,
       status: "unverified",
       planKey,
-      plan: "INACTIVE",
+      plan: plan.plan,
       trialEndsAt,
-      limits: { ...INACTIVE_LIMITS },
+      limits,
       usage,
-      seats: seatsFor(PLAN_KEYS.basic),
+      seats: seatsFor(planKey),
       canManualKimdisSearch: true,
       canRunManualProfileScan: false,
       canRunPeriodicScan: false,

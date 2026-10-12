@@ -200,10 +200,17 @@ export const assertCanActivateWatchProfile = async (
     excludeProfileId?: string;
   },
 ) => {
-  const { entitlements } = await getOrganizationEntitlements(prisma, {
+  const { entitlements, scanAccess } = await getOrganizationEntitlements(prisma, {
     userId: input.userId,
     organizationId: input.organizationId,
   });
+  // Plan limits (e.g. Free=1) are separate from verify/automation gating.
+  if (!scanAccess.emailVerified || scanAccess.status === "unverified") {
+    throw forbidden("email_not_verified");
+  }
+  if (scanAccess.status === "inactive") {
+    throw forbidden("subscription_inactive");
+  }
   const active = await prisma.watchProfile.count({
     where: {
       organizationId: input.organizationId,

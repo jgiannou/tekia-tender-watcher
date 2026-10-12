@@ -95,7 +95,7 @@ const canForceRetryStuckScan = (profile: WatchProfile): boolean => {
 const humanScanError = (error?: string | null) => {
   if (!error) return "";
   if (error === "email_not_verified" || error.includes("email_not_verified")) {
-    return "απαιτείται επιβεβαίωση email — μέχρι τότε μόνο χειροκίνητη αναζήτηση ΚΗΜΔΗΣ";
+    return "απαιτείται επιβεβαίωση email για ενεργοποίηση";
   }
   if (error === "trial_expired" || error.includes("trial_expired")) {
     return "έληξε η δοκιμαστική περίοδος — αναβαθμίστε για ελέγχους";
@@ -190,8 +190,26 @@ const emptyForm = (): WatchProfileInput & { id?: string } => ({
   dataSources: ["kimdis"],
 });
 
-const activeLimitMessage = (max: number) =>
-  `Έχετε φτάσει το όριο των ${max} ενεργών αποθηκευμένων αναζητήσεων. Παύστε ή συγχωνεύστε υπάρχουσες πριν ενεργοποιήσετε άλλη.`;
+const activeLimitMessage = (max: number) => {
+  if (max <= 1) {
+    return "Χρησιμοποιείτε τη 1 ενεργή αναζήτηση που περιλαμβάνει το δωρεάν πακέτο. Μπορείτε να αποθηκεύσετε νέα αναζήτηση σε παύση ή να παύσετε την ενεργή για να ενεργοποιήσετε άλλη.";
+  }
+  return `Έχετε φτάσει το όριο των ${max} ενεργών αποθηκευμένων αναζητήσεων. Παύστε ή συγχωνεύστε υπάρχουσες πριν ενεργοποιήσετε άλλη.`;
+};
+
+const usageCounterLabel = (input: {
+  activeCount: number;
+  maxActive: number;
+  emailUnverified: boolean;
+}) => {
+  if (input.emailUnverified) {
+    // Plan limits stay visible; verify gating is separate (banner CTA).
+    return input.maxActive <= 1
+      ? "Το δωρεάν πακέτο περιλαμβάνει 1 ενεργή αποθηκευμένη αναζήτηση."
+      : `Το πακέτο σας περιλαμβάνει έως ${input.maxActive} ενεργές αποθηκευμένες αναζητήσεις.`;
+  }
+  return `Ενεργές αναζητήσεις: ${input.activeCount} από ${input.maxActive}`;
+};
 
 const profileToForm = (profile: WatchProfile): WatchProfileInput & { id: string } => ({
   id: profile.id,
@@ -222,7 +240,7 @@ const profileToForm = (profile: WatchProfile): WatchProfileInput & { id: string 
 });
 
 export const SavedSearchesPage = () => {
-  const { activeOrganization } = useSessionContext();
+  const { activeOrganization, user } = useSessionContext();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<WatchProfile[]>([]);
@@ -290,12 +308,20 @@ export const SavedSearchesPage = () => {
   const activeCount =
     entitlements?.usage.activeWatchProfiles ??
     profiles.filter((p) => p.enabled).length;
-  const atActiveLimit = activeCount >= maxActive;
-  const nearActiveLimit = activeCount >= Math.max(maxActive - 2, 0);
+  const scanAccess = entitlements?.scanAccess ?? null;
+  const emailUnverified =
+    user?.emailVerified === false || scanAccess?.status === "unverified";
+  const atActiveLimit = !emailUnverified && activeCount >= maxActive && maxActive > 0;
+  // Never show "near limit" when usage is zero or email is still unverified.
+  const nearActiveLimit =
+    !emailUnverified &&
+    activeCount > 0 &&
+    maxActive > 1 &&
+    activeCount >= Math.ceil(maxActive * 0.9) &&
+    !atActiveLimit;
   const advancedFiltersEnabled = Boolean(
     entitlements?.entitlements.advancedWatchProfileFilters,
   );
-  const scanAccess = entitlements?.scanAccess ?? null;
   const profileScansBlocked = scanAccess
     ? !scanAccess.canRunManualProfileScan
     : false;
@@ -327,7 +353,8 @@ export const SavedSearchesPage = () => {
 
   const openCreate = () => {
     const form = emptyForm();
-    if (atActiveLimit) {
+    // Unverified accounts may only save paused searches. At plan limit too.
+    if (emailUnverified || atActiveLimit) {
       form.enabled = false;
     }
     setEditForm(form);
@@ -358,7 +385,8 @@ export const SavedSearchesPage = () => {
       toast.error("Απαιτείται όνομα και τουλάχιστον μία λέξη-κλειδί ή CPV");
       return;
     }
-    const enabling = editForm.enabled !== false;
+    // Unverified: always persist paused — never attempt activation via API.
+    const enabling = !emailUnverified && editForm.enabled !== false;
     if (wouldExceedActiveLimit(editForm, enabling)) {
       toast.error(activeLimitMessage(maxActive));
       return;
@@ -367,6 +395,7 @@ export const SavedSearchesPage = () => {
     try {
       const payload: WatchProfileInput = {
         ...editForm,
+        enabled: enabling,
         name: editForm.name.trim(),
         keywords,
         negativeKeywords: parseList(excludeText),
@@ -390,9 +419,11 @@ export const SavedSearchesPage = () => {
         trackAnalyticsEvent("watch_profile_created", { source: "MANUAL" });
         trackFirstSavedSearchIfNeeded(existingCount);
         toast.success(
-          profileScansBlocked
-            ? "Η αποθηκευμένη αναζήτηση δημιουργήθηκε · ο έλεγχος θα ξεκινήσει όταν το επιτρέπει ο λογαριασμός"
-            : "Η αποθηκευμένη αναζήτηση δημιουργήθηκε · ξεκίνησε αρχικός έλεγχος",
+          emailUnverified || !enabling
+            ? "Η αποθηκευμένη αναζήτηση αποθηκεύτηκε σε παύση"
+            : profileScansBlocked
+              ? "Η αποθηκευμένη αναζήτηση δημιουργήθηκε · ο έλεγχος θα ξεκινήσει όταν το επιτρέπει ο λογαριασμός"
+              : "Η αποθηκευμένη αναζήτηση δημιουργήθηκε · ξεκίνησε αρχικός έλεγχος",
         );
       }
       setEditForm(null);
@@ -415,6 +446,12 @@ export const SavedSearchesPage = () => {
 
   const handleToggleEnabled = async (profile: WatchProfile) => {
     if (!activeOrganization) return;
+    if (!profile.enabled && emailUnverified) {
+      toast.error(
+        "Επιβεβαιώστε το email σας για να ενεργοποιήσετε αποθηκευμένες αναζητήσεις.",
+      );
+      return;
+    }
     if (!profile.enabled && atActiveLimit) {
       toast.error(activeLimitMessage(maxActive));
       return;
@@ -513,7 +550,7 @@ export const SavedSearchesPage = () => {
             Η εφαρμογή ελέγχει αυτόματα τις επιλεγμένες πηγές (ΚΗΜΔΗΣ / TED / Διαύγεια) και εμφανίζει τα νέα αποτελέσματα στις Ευκαιρίες.
           </p>
           <p className="mt-2 text-sm font-medium">
-            Ενεργές αναζητήσεις: {activeCount} από {maxActive}
+            {usageCounterLabel({ activeCount, maxActive, emailUnverified })}
           </p>
         </div>
         <Button onClick={openCreate}>Νέα αποθηκευμένη αναζήτηση</Button>
@@ -572,24 +609,26 @@ export const SavedSearchesPage = () => {
         </Card>
       ) : null}
 
-      {scanAccess && profileScansBlocked ? (
+      {/* Email verify CTA lives in AppShell EmailVerificationBanner — avoid a
+          second page-level banner with the same meaning. */}
+      {scanAccess &&
+      profileScansBlocked &&
+      scanAccess.status !== "unverified" ? (
         <Card className="border-amber-500/30 bg-amber-500/5">
           <CardContent className="space-y-1 py-3 text-sm">
             <p className="font-medium text-foreground">
-                {scanAccess.status === "unverified"
-                ? "Έλεγχοι σε αναμονή επιβεβαίωσης email"
-                : scanAccess.status === "trial_expired"
-                  ? "Η δοκιμή έληξε"
-                  : "Έλεγχοι προσωρινά μη διαθέσιμοι"}
+              {scanAccess.status === "trial_expired"
+                ? "Η δοκιμή έληξε"
+                : "Έλεγχοι προσωρινά μη διαθέσιμοι"}
             </p>
             <p className="text-muted-foreground">
-              {humanSaasError(scanAccess.blockCode ?? "manual_scan_blocked")} Η
-              χειροκίνητη αναζήτηση ΚΗΜΔΗΣ παραμένει διαθέσιμη.
+              {humanSaasError(scanAccess.blockCode ?? "manual_scan_blocked")}
               {scanAccess.status === "trial"
-                ? ` Δοκιμή: έως ${scanAccess.limits.periodicScansPerDay} αυτόματους ελέγχους/ημέρα.`
+                ? ` Δοκιμή: έως ${scanAccess.limits.manualProfileScansPerDay} χειροκίνητους ελέγχους/ημέρα.`
                 : ""}
-              {scanAccess.status === "active"
-                ? ` Πακέτο: έως ${scanAccess.limits.periodicScansPerDay} αυτόματους ελέγχους/ημέρα.`
+              {scanAccess.status === "active" &&
+              scanAccess.limits.periodicScansPerDay > 0
+                ? ` Πακέτο: έως ${scanAccess.limits.periodicScansPerDay} συγκεντρωτικά email slots/ημέρα.`
                 : ""}
             </p>
           </CardContent>
@@ -598,12 +637,17 @@ export const SavedSearchesPage = () => {
 
       {scanAccess &&
       !profileScansBlocked &&
-      (scanAccess.status === "trial" || scanAccess.status === "active") ? (
+      (scanAccess.status === "trial" ||
+        (scanAccess.status === "active" &&
+          scanAccess.limits.manualProfileScansPerDay > 0 &&
+          scanAccess.planKey !== "free")) ? (
         <Card className="border-border/80">
           <CardContent className="py-3 text-sm text-muted-foreground">
-            Σημερινοί έλεγχοι: {scanAccess.usage.periodic} από{" "}
-            {scanAccess.limits.periodicScansPerDay} αυτόματους · {scanAccess.usage.manual}{" "}
-            από {scanAccess.limits.manualProfileScansPerDay} χειροκίνητους
+            Σημερινοί χειροκίνητοι έλεγχοι: {scanAccess.usage.manual} από{" "}
+            {scanAccess.limits.manualProfileScansPerDay}
+            {scanAccess.limits.periodicScansPerDay > 0
+              ? ` · συγκεντρωτικά slots: ${scanAccess.usage.periodic} από ${scanAccess.limits.periodicScansPerDay}`
+              : ""}
             {scanAccess.trialEndsAt
               ? ` · δοκιμή έως ${new Date(scanAccess.trialEndsAt).toLocaleDateString("el-GR")}`
               : ""}
@@ -611,34 +655,33 @@ export const SavedSearchesPage = () => {
         </Card>
       ) : null}
 
-      {nearActiveLimit && !atActiveLimit ? (
+      {nearActiveLimit ? (
         <Card className="border-amber-500/30 bg-amber-500/5">
           <CardContent className="py-3 text-sm text-muted-foreground">
-            Πλησιάζετε το όριο ενεργών αναζητήσεων. Σκεφτείτε να{" "}
-            <Link to="/app/saved-searches" className="text-foreground underline">
-              παύσετε ή συγχωνεύσετε
-            </Link>{" "}
-            υπάρχουσες πριν προσθέσετε νέες.
+            Πλησιάζετε το όριο ενεργών αναζητήσεων. Σκεφτείτε να παύσετε ή να
+            συγχωνεύσετε υπάρχουσες πριν προσθέσετε νέες.
           </CardContent>
         </Card>
       ) : null}
 
       {atActiveLimit ? (
-        <Card className="border-destructive/30 bg-destructive/5">
+        <Card className="border-border/80 bg-muted/20">
           <CardContent className="space-y-1 py-3 text-sm">
             <p className="font-medium text-foreground">{activeLimitMessage(maxActive)}</p>
-            <p className="text-muted-foreground">
-              Μπορείτε να δημιουργήσετε νέα αναζήτηση σε παύση ή να διαχειριστείτε τις
-              υπάρχουσες.
-            </p>
           </CardContent>
         </Card>
       ) : null}
 
       {profiles.length === 0 ? (
         <EmptyState
-          title="Καμία αποθηκευμένη αναζήτηση"
-          description="Χωρίς ενεργή αποθηκευμένη αναζήτηση οι αυτόματες ευκαιρίες παραμένουν κενές. Μπορείτε να αποθηκεύσετε κριτήρια από την Αναζήτηση στο ΚΗΜΔΗΣ."
+          title="Δεν έχετε αποθηκευμένες αναζητήσεις"
+          description={
+            emailUnverified
+              ? "Αποθηκεύστε λέξεις-κλειδιά ή κωδικούς CPV για να βρίσκετε ευκαιρίες σχετικές με την επιχείρησή σας. Μπορείτε να την αποθηκεύσετε τώρα σε παύση."
+              : "Αποθηκεύστε λέξεις-κλειδιά ή κωδικούς CPV για να βρίσκετε ευκαιρίες σχετικές με την επιχείρησή σας."
+          }
+          actionLabel="Δημιουργία αναζήτησης"
+          onAction={openCreate}
         />
       ) : (
         <div className="space-y-3">
@@ -710,7 +753,9 @@ export const SavedSearchesPage = () => {
                             Επεξεργασία
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            disabled={!profile.enabled && atActiveLimit}
+                            disabled={
+                              !profile.enabled && (atActiveLimit || emailUnverified)
+                            }
                             onClick={() => void handleToggleEnabled(profile)}
                           >
                             {profile.enabled ? "Παύση" : "Ενεργοποίηση"}
@@ -906,7 +951,9 @@ export const SavedSearchesPage = () => {
                   {editForm.id ? "Επεξεργασία αναζήτησης" : "Νέα αποθηκευμένη αναζήτηση"}
                 </DialogTitle>
                 <DialogDescription>
-                  Οι αλλαγές κριτηρίων ενεργοποιούν επαναξιολόγηση / έλεγχο.
+                  {emailUnverified
+                    ? "Η αναζήτηση θα αποθηκευτεί σε παύση. Για να την ενεργοποιήσετε, επιβεβαιώστε το email σας."
+                    : "Οι αλλαγές κριτηρίων ενεργοποιούν επαναξιολόγηση / έλεγχο."}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
@@ -923,13 +970,19 @@ export const SavedSearchesPage = () => {
                   <div>
                     <Label className="text-sm">Ενεργή αναζήτηση</Label>
                     <p className="text-xs text-muted-foreground">
-                      Σε παύση δεν μετράει στο όριο {maxActive} ενεργών αναζητήσεων.
+                      {emailUnverified
+                        ? "Διαθέσιμη μετά την επιβεβαίωση email. Σε παύση δεν μετράει στο όριο ενεργών."
+                        : `Σε παύση δεν μετράει στο όριο ${maxActive} ενεργών αναζητήσεων.`}
                     </p>
                   </div>
                   <Switch
-                    checked={editForm.enabled !== false}
-                    disabled={editForm.enabled === false && atActiveLimit}
+                    checked={!emailUnverified && editForm.enabled !== false}
+                    disabled={
+                      emailUnverified ||
+                      (editForm.enabled === false && atActiveLimit)
+                    }
                     onCheckedChange={(checked) => {
+                      if (emailUnverified) return;
                       if (checked && wouldExceedActiveLimit(editForm, true)) {
                         toast.error(activeLimitMessage(maxActive));
                         return;
@@ -939,9 +992,9 @@ export const SavedSearchesPage = () => {
                     aria-label="Ενεργή αναζήτηση"
                   />
                 </div>
-                {atActiveLimit && editForm.enabled === false ? (
+                {!emailUnverified && atActiveLimit && editForm.enabled === false ? (
                   <p className="text-xs text-muted-foreground">
-                    {activeLimitMessage(maxActive)} Η αποθήκευση σε παύση επιτρέπεται.
+                    {activeLimitMessage(maxActive)}
                   </p>
                 ) : null}
                 <div className="space-y-2">
@@ -1227,7 +1280,11 @@ export const SavedSearchesPage = () => {
                     Ακύρωση
                   </Button>
                   <Button disabled={busy} onClick={() => void handleSave()}>
-                    {busy ? "Αποθήκευση…" : "Αποθήκευση"}
+                    {busy
+                      ? "Αποθήκευση…"
+                      : emailUnverified || editForm.enabled === false
+                        ? "Αποθήκευση σε παύση"
+                        : "Αποθήκευση"}
                   </Button>
                 </div>
               </div>

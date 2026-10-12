@@ -32,12 +32,17 @@ const daysLeftLabel = (trialEndsAt: string | null): string | null => {
 };
 
 export const TrialBanner = () => {
-  const { activeOrganization } = useSessionContext();
+  const { activeOrganization, user } = useSessionContext();
   const location = useLocation();
   const [banner, setBanner] = useState<BannerState | null>(null);
 
   useEffect(() => {
     if (!activeOrganization) {
+      setBanner(null);
+      return;
+    }
+    // Email verify is the primary CTA — don't stack a promo banner on top.
+    if (user?.emailVerified === false) {
       setBanner(null);
       return;
     }
@@ -49,6 +54,10 @@ export const TrialBanner = () => {
           saasApi.billingStatus(activeOrganization.id).catch(() => null),
         ]);
         if (cancelled) return;
+        if (entitlements.scanAccess?.status === "unverified") {
+          setBanner(null);
+          return;
+        }
         const status = entitlements.scanAccess?.status;
         const planKey =
           billing?.planKey ?? entitlements.scanAccess?.planKey ?? null;
@@ -81,7 +90,7 @@ export const TrialBanner = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeOrganization?.id]);
+  }, [activeOrganization?.id, user?.emailVerified]);
 
   if (!banner) return null;
   if (location.pathname.startsWith("/app/subscription")) return null;
@@ -96,21 +105,18 @@ export const TrialBanner = () => {
         aria-live="polite"
       >
         <div className="min-w-0 space-y-1">
-          <p className="text-sm font-medium">Είστε στο δωρεάν πλάνο</p>
+          <p className="text-sm font-medium">Είστε στο δωρεάν πακέτο</p>
           <p className="text-sm text-muted-foreground">
-            Αυτόματος έλεγχος του ΚΗΜΔΗΣ κάθε 2 λεπτά.{" "}
+            1 ενεργή αποθηκευμένη αναζήτηση, έως 5 διαγωνισμοί σε παρακολούθηση και
+            εβδομαδιαία σύνοψη email όταν υπάρχουν νέα.
             {banner.canStartProTrial
-              ? `Δοκιμάστε το Pro για ${TRIAL_DAYS} ημέρες χωρίς κάρτα, ή Basic από `
-              : "Basic από "}
-            <span className="font-semibold text-foreground">
-              €{basicPrice}/μήνα
-            </span>{" "}
-            {PRICING_TAX_LABEL}.
+              ? ` Δοκιμάστε το Pro για ${TRIAL_DAYS} ημέρες χωρίς κάρτα.`
+              : ""}
           </p>
         </div>
         <Button asChild size="sm" className="shrink-0">
-          <Link to="/app/subscription" aria-label="Μετάβαση στις συνδρομές">
-            {banner.canStartProTrial ? "Δοκίμασε Pro / συνδρομές" : "Δείτε συνδρομές"}
+          <Link to="/app/subscription" aria-label="Δείτε τα πακέτα">
+            Δείτε τα πακέτα
           </Link>
         </Button>
       </div>
@@ -137,24 +143,19 @@ export const TrialBanner = () => {
     >
       <div className="min-w-0 space-y-1">
         <p className="text-sm font-medium">
-          {expired
-            ? "Η δοκιμή Pro έληξε"
-            : "Είστε σε δοκιμή Pro"}
+          {expired ? "Η δοκιμή Pro έληξε" : "Είστε σε δοκιμή Pro"}
         </p>
         <p className="text-sm text-muted-foreground">
           {expired
             ? "Επιστρέφετε στο Free. Ενεργοποιήστε Basic ή Pro για vault, checklist και περισσότερες αναζητήσεις."
-            : [
-                remaining,
-                endsLabel ? `έως ${endsLabel}` : null,
-              ]
+            : [remaining, endsLabel ? `έως ${endsLabel}` : null]
                 .filter(Boolean)
                 .join(" · ") || "Pro preview."}{" "}
           Basic από{" "}
           <span className="font-semibold text-foreground">
             €{basicPrice}/μήνα
-          </span>{" "}
-          {PRICING_TAX_LABEL}.
+          </span>
+          . {PRICING_TAX_LABEL}
         </p>
       </div>
       <Button
@@ -164,7 +165,7 @@ export const TrialBanner = () => {
         variant={expired ? "destructive" : "default"}
       >
         <Link to="/app/subscription" aria-label="Μετάβαση στις συνδρομές">
-          Δείτε συνδρομές
+          Δείτε τα πακέτα
         </Link>
       </Button>
     </div>

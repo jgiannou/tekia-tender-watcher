@@ -703,6 +703,9 @@ export const updateWatchProfile = async (
   return profile;
 };
 
+const isPrismaSerializationFailure = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
+
 export const setWatchProfileEnabled = async (
   prisma: PrismaClient,
   input: {
@@ -721,17 +724,55 @@ export const setWatchProfileEnabled = async (
     where: { id: input.profileId, organizationId },
   });
   if (!existing) throw notFound("watch_profile_not_found");
-  if (input.enabled) {
-    await assertCanActivateWatchProfile(prisma, {
-      userId: input.userId,
-      organizationId,
-      excludeProfileId: existing.id,
+  if (!input.enabled) {
+    return prisma.watchProfile.update({
+      where: { id: existing.id },
+      data: { enabled: false },
     });
   }
-  return prisma.watchProfile.update({
-    where: { id: existing.id },
-    data: { enabled: input.enabled },
+
+  // Fast-fail unverified / inactive before racing the limit transaction.
+  await assertCanActivateWatchProfile(prisma, {
+    userId: input.userId,
+    organizationId,
+    excludeProfileId: existing.id,
   });
+
+  // Serializable count+update so two Free activates cannot both succeed.
+  const maxAttempts = 4;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          const { entitlements } = await getOrganizationEntitlements(prisma, {
+            userId: input.userId,
+            organizationId,
+          });
+          const active = await tx.watchProfile.count({
+            where: {
+              organizationId,
+              enabled: true,
+              id: { not: existing.id },
+            },
+          });
+          if (active >= entitlements.maxActiveWatchProfiles) {
+            throw conflict("watch_profile_active_limit_reached");
+          }
+          return tx.watchProfile.update({
+            where: { id: existing.id },
+            data: { enabled: true },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (error) {
+      if (isPrismaSerializationFailure(error) && attempt < maxAttempts - 1) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw conflict("watch_profile_active_limit_reached");
 };
 
 export const deleteWatchProfile = async (

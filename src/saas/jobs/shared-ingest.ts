@@ -158,25 +158,43 @@ const notifyUrgentDeadlines = async (prisma: PrismaClient) => {
   }
 };
 
-const matchNewActs = async (
+/**
+ * Matching step of shared ingest (verified-operator + enabled profiles only).
+ * Exported so QA/tests can feed deterministic fixtures without live KIMDIS HTTP.
+ */
+export const matchSharedIngestActs = async (
   prisma: PrismaClient,
   items: KimdisSearchItem[],
 ) => {
   const profiles = await prisma.watchProfile.findMany({
     where: { enabled: true },
   });
+  // Email verify gates automations — pause matching for orgs without a verified operator.
+  const { organizationHasVerifiedOperator } = await import(
+    "../services/scan-access.js"
+  );
+  const orgIds = [...new Set(profiles.map((p) => p.organizationId))];
+  const verifiedOrgs = new Set<string>();
+  for (const organizationId of orgIds) {
+    if (await organizationHasVerifiedOperator(prisma, organizationId)) {
+      verifiedOrgs.add(organizationId);
+    }
+  }
+  const eligibleProfiles = profiles.filter((p) =>
+    verifiedOrgs.has(p.organizationId),
+  );
   const unclassified = new Map<string, number>();
   // Reset counters each cycle so stale "χωρίς περιοχή" numbers do not linger.
-  if (profiles.length > 0) {
+  if (eligibleProfiles.length > 0) {
     await prisma.watchProfile.updateMany({
-      where: { id: { in: profiles.map((profile) => profile.id) } },
+      where: { id: { in: eligibleProfiles.map((profile) => profile.id) } },
       data: { unclassifiedRegionCount: 0 },
     });
   }
 
   for (const item of items) {
     if (item.recordType !== "REQ" && item.recordType !== "PROC") continue;
-    for (const profile of profiles) {
+    for (const profile of eligibleProfiles) {
       const criteria = criteriaFromWatchProfile(profile);
       const gate = evaluateRegionGate(
         item.nutsCode,
@@ -250,7 +268,7 @@ export const runSharedKimdisIngest = async (
     });
     const items = dedupeKimdisItems(recent.items);
     await persistActs(prisma, items);
-    await matchNewActs(prisma, items);
+    await matchSharedIngestActs(prisma, items);
     await monitorFollowedThreads(prisma);
     const { monitorTedFollowedNotices } = await import("./monitor-ted-notices.js");
     await monitorTedFollowedNotices(prisma);
