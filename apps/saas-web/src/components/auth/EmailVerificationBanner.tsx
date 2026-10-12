@@ -49,9 +49,8 @@ export const EmailVerificationBanner = () => {
       <div className="min-w-0 space-y-1">
         <p className="text-sm font-medium">Επιβεβαιώστε το email σας</p>
         <p className="text-sm text-muted-foreground">
-          Στείλαμε σύνδεσμο στο {user.email}. Μπορείτε να περιηγηθείτε και να κάνετε
-          χειροκίνητη αναζήτηση ΚΗΜΔΗΣ· οι περιοδικές αποθηκευμένες αναζητήσεις
-          ξεκλειδώνουν μετά την επιβεβαίωση.
+          Επιβεβαιώστε το email σας για να ενεργοποιήσετε την αποθηκευμένη αναζήτησή
+          σας. Μέχρι τότε μπορείτε να κάνετε χειροκίνητη αναζήτηση στο ΚΗΜΔΗΣ.
         </p>
       </div>
       <Button
@@ -63,7 +62,7 @@ export const EmailVerificationBanner = () => {
         aria-label="Επαναποστολή email επιβεβαίωσης"
         onClick={() => void handleResend()}
       >
-        {sending ? "Αποστολή…" : "Επαναποστολή"}
+        {sending ? "Αποστολή…" : "Επαναποστολή email επιβεβαίωσης"}
       </Button>
     </div>
   );
