@@ -90,6 +90,12 @@ export type PlanEntitlements = {
   /** Free: count only in UI; Basic/Pro: documented award history. */
   awardHistory: boolean;
   priceMemory: boolean;
+  /**
+   * Slack incoming-webhook notifications (1 channel / org).
+   * Free: false. Basic + Pro + Pro trial: true.
+   * Runtime also requires SAAS_SLACK_NOTIFICATIONS_ENABLED + OAuth secrets.
+   */
+  slackNotifications: boolean;
   positioningEl: string;
   /** Greek marketing / subscription bullets (single source of truth). */
   featuresEl: string[];
@@ -104,6 +110,24 @@ export const CONTACT_FOR_MORE_SEATS_EL =
   "Χρειάζεστε περισσότερους από 20 χρήστες; Επικοινωνήστε μαζί μας.";
 
 export const PRICING_VAT_FOOTNOTE_EL = "Οι τιμές δεν περιλαμβάνουν ΦΠΑ.";
+
+/** Shared Greek copy for Slack entitlement (catalog + marketing). */
+export const SLACK_NOTIFICATIONS_FEATURE_EL =
+  "Ειδοποιήσεις Slack σε 1 κανάλι της ομάδας σας";
+
+/**
+ * Public/marketing feature lists hide Slack until OAuth + encryption are
+ * configured (`isSaasSlackNotificationsConfigured`). Entitlement flags stay.
+ */
+export const featuresElForDisplay = (
+  plan: PlanEntitlements,
+  slackLive: boolean,
+): string[] => {
+  if (slackLive) return [...plan.featuresEl];
+  return plan.featuresEl.filter(
+    (line) => line !== SLACK_NOTIFICATIONS_FEATURE_EL,
+  );
+};
 
 export const BASIC_PLAN: PlanEntitlements = {
   plan: "BASIC",
@@ -147,6 +171,7 @@ export const BASIC_PLAN: PlanEntitlements = {
   expiringContractList: true,
   awardHistory: true,
   priceMemory: true,
+  slackNotifications: true,
   positioningEl:
     "Για επαγγελματίες και μικρές επιχειρήσεις που θέλουν να οργανώνουν τη συμμετοχή τους σε δημόσιους διαγωνισμούς.",
   featuresEl: [
@@ -156,6 +181,7 @@ export const BASIC_PLAN: PlanEntitlements = {
     "250 MB χώρου για εταιρικά έγγραφα",
     "Συγκεντρωτικά email έως 2 φορές την ημέρα",
     "Επιλογή άμεσων email για σημαντικές εξελίξεις στους διαγωνισμούς που παρακολουθείτε",
+    "Ειδοποιήσεις Slack σε 1 κανάλι της ομάδας σας",
     "Λίστα δικαιολογητικών και έλεγχος με τα έγγραφά σας",
     "Οργάνωση προετοιμασίας και καταγραφή υποβολής προσφοράς",
     "Καταγραφή εκδήλωσης ενδιαφέροντος προς τον φορέα",
@@ -196,6 +222,7 @@ export const FREE_PLAN: PlanEntitlements = {
   expiringContractList: false,
   awardHistory: false,
   priceMemory: false,
+  slackNotifications: false,
   emailMode: "DIGEST",
   featuresEl: [
     "1 χρήστης",
@@ -255,6 +282,7 @@ export const PRO_PLAN: PlanEntitlements = {
   expiringContractList: true,
   awardHistory: true,
   priceMemory: true,
+  slackNotifications: true,
   positioningEl:
     "Για επιχειρήσεις που παρακολουθούν περισσότερους διαγωνισμούς και συνεργάζονται ως ομάδα.",
   featuresEl: [
@@ -264,6 +292,7 @@ export const PRO_PLAN: PlanEntitlements = {
     "2 GB χώρου για εταιρικά έγγραφα",
     "Συγκεντρωτικά email έως 6 φορές την ημέρα",
     "Επιλογή άμεσων email και για νέες ευκαιρίες υψηλής συνάφειας",
+    "Ειδοποιήσεις Slack σε 1 κανάλι της ομάδας σας",
     "Συγκεντρωτική προβολή επερχόμενων προθεσμιών",
     "Προηγμένα φίλτρα αναζήτησης",
     "Εξυπηρέτηση κατά προτεραιότητα",

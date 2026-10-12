@@ -411,6 +411,43 @@ export type BillingStatusResponse = {
   canStartProTrial?: boolean;
 };
 
+export type SlackNotificationPreferences = {
+  newOpportunity: boolean;
+  relatedActOnFollowed: boolean;
+  deadlineRadar: boolean;
+};
+
+export type SlackConnectionResponse = {
+  configured: boolean;
+  entitled: boolean;
+  featureAvailable: boolean;
+  canManage: boolean;
+  messages: {
+    freeLockedEl: string;
+    planPausedEl: string;
+    needsReconnectEl: string;
+  };
+  connection: null | {
+    id: string;
+    status:
+      | "ACTIVE"
+      | "PAUSED"
+      | "PLAN_PAUSED"
+      | "NEEDS_RECONNECT"
+      | "DISCONNECTED";
+    teamName: string;
+    channelName: string;
+    channelLabel: string;
+    notificationsArmed: boolean;
+    preferences: SlackNotificationPreferences;
+    lastTestSentAt: string | null;
+    lastSuccessAt: string | null;
+    lastErrorSafe: string | null;
+    installedAt: string;
+    updatedAt: string;
+  };
+};
+
 export type SaasEntitlementsResponse = {
   entitlements: {
     maxActiveWatchProfiles: number;
@@ -428,6 +465,7 @@ export type SaasEntitlementsResponse = {
     participationChecklist?: boolean;
     expiringContractList?: boolean;
     priceMemory?: boolean;
+    slackNotifications?: boolean;
     companyVault?: boolean;
     outreachWorkflow?: boolean;
     submissionWorkflow?: boolean;
@@ -1447,6 +1485,53 @@ export const saasApi = {
       organizationId,
       body: JSON.stringify(notifications),
     }),
+  getSlackConnection: (organizationId: string) =>
+    request<SlackConnectionResponse>("/api/saas/integrations/slack", {
+      organizationId,
+    }),
+  startSlackOAuth: (
+    organizationId: string,
+    purpose?: "CONNECT" | "REPLACE",
+  ) =>
+    request<{ authorizeUrl: string }>(
+      "/api/saas/integrations/slack/oauth/start",
+      {
+        method: "POST",
+        organizationId,
+        body: JSON.stringify({ purpose: purpose ?? "CONNECT" }),
+      },
+    ),
+  updateSlackPreferences: (
+    organizationId: string,
+    input: {
+      preferences: SlackNotificationPreferences;
+      activate?: boolean;
+    },
+  ) =>
+    request<SlackConnectionResponse>(
+      "/api/saas/integrations/slack/preferences",
+      {
+        method: "PUT",
+        organizationId,
+        body: JSON.stringify(input),
+      },
+    ),
+  pauseSlackNotifications: (organizationId: string, paused: boolean) =>
+    request<SlackConnectionResponse>("/api/saas/integrations/slack/pause", {
+      method: "POST",
+      organizationId,
+      body: JSON.stringify({ paused }),
+    }),
+  sendSlackTest: (organizationId: string) =>
+    request<{ ok: true; messageEl: string; channelLabel: string }>(
+      "/api/saas/integrations/slack/test",
+      { method: "POST", organizationId, body: "{}" },
+    ),
+  disconnectSlack: (organizationId: string) =>
+    request<SlackConnectionResponse>(
+      "/api/saas/integrations/slack/disconnect",
+      { method: "POST", organizationId, body: "{}" },
+    ),
   updateOnboarding: (
     organizationId: string,
     status: OnboardingStatus,

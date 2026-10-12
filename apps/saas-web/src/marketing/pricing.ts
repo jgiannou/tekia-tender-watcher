@@ -3,6 +3,19 @@
  * Do not invent entitlements that the product does not enforce.
  */
 
+/** Must match SLACK_NOTIFICATIONS_FEATURE_EL in catalog.ts */
+export const SLACK_NOTIFICATIONS_FEATURE_EL =
+  "Ειδοποιήσεις Slack σε 1 κανάλι της ομάδας σας";
+
+/**
+ * Hide Slack marketing until the feature flag is on in the web build.
+ * Production stays quiet until SAAS Slack OAuth is live.
+ */
+export const slackMarketingEnabled = (): boolean =>
+  String(import.meta.env.VITE_SAAS_SLACK_NOTIFICATIONS_ENABLED || "")
+    .toLowerCase()
+    .trim() === "true";
+
 export const TRIAL_DAYS = 7;
 
 /** Shown next to list prices; Stripe Tax adds VAT at checkout (exclusive prices). */
@@ -145,6 +158,32 @@ export const MARKETING_PLANS = {
 
 export type MarketingPlanKey = keyof typeof MARKETING_PLANS;
 
+/** Insert Slack bullet into Basic/Pro lists only when the feature is live. */
+export const marketingFullBullets = (key: MarketingPlanKey): string[] => {
+  const base = [...MARKETING_PLANS[key].fullBullets];
+  if (!slackMarketingEnabled() || key === "free") return base;
+  const after =
+    key === "basic"
+      ? "Επιλογή άμεσων email για σημαντικές εξελίξεις στους διαγωνισμούς που παρακολουθείτε"
+      : "Επιλογή άμεσων email και για νέες ευκαιρίες υψηλής συνάφειας";
+  const idx = base.indexOf(after);
+  if (idx < 0) return [...base, SLACK_NOTIFICATIONS_FEATURE_EL];
+  return [
+    ...base.slice(0, idx + 1),
+    SLACK_NOTIFICATIONS_FEATURE_EL,
+    ...base.slice(idx + 1),
+  ];
+};
+
+export const marketingTeaserBullets = (key: MarketingPlanKey): string[] => {
+  const base = [...MARKETING_PLANS[key].teaserBullets];
+  if (!slackMarketingEnabled() || key === "free") return base;
+  if (key === "basic") {
+    return [...base.slice(0, 3), SLACK_NOTIFICATIONS_FEATURE_EL, ...base.slice(3)];
+  }
+  return [...base, SLACK_NOTIFICATIONS_FEATURE_EL];
+};
+
 export const formatEur = (amount: number): string =>
   amount.toLocaleString("el-GR", {
     minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
@@ -188,6 +227,16 @@ export const COMPARISON_ROWS: Array<{
     basic: "Συγκεντρωτικά έως 2 φορές / ημέρα",
     pro: "Συγκεντρωτικά έως 6 φορές / ημέρα",
   },
+  ...(slackMarketingEnabled()
+    ? [
+        {
+          label: "Ειδοποιήσεις Slack",
+          free: "—",
+          basic: "1 κανάλι",
+          pro: "1 κανάλι",
+        },
+      ]
+    : []),
   { label: "Επερχόμενες προθεσμίες", free: "Στην εφαρμογή", basic: "Στην εφαρμογή", pro: "✓ email" },
   { label: "Προηγμένα φίλτρα αναζήτησης", free: "—", basic: "—", pro: "✓" },
 ];

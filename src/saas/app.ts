@@ -89,6 +89,7 @@ import {
   getEntitlementsView,
 } from "./services/entitlements.js";
 import { registerBillingRoutes } from "./billing/routes.js";
+import { registerSlackIntegrationRoutes } from "./integrations/slack-routes.js";
 import { createOpsEnterHandler } from "./ops/enter.js";
 import { listOpportunities, markOpportunitySeen } from "./services/opportunities.js";
 import { getSharedIngestStatus } from "./jobs/shared-ingest.js";
@@ -229,6 +230,13 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     c.req.header("X-Organization-Id") ?? c.get("activeOrganizationId");
 
   registerBillingRoutes({
+    app,
+    prisma: deps.prisma,
+    requireSession: requireSession as never,
+    resolveOrgId,
+  });
+
+  registerSlackIntegrationRoutes({
     app,
     prisma: deps.prisma,
     requireSession: requireSession as never,

@@ -29,6 +29,9 @@ describe("competition PRD catalog", () => {
     expect(FREE_PLAN.participationChecklist).toBe(false);
     expect(BASIC_PLAN.participationChecklist).toBe(true);
     expect(PRO_PLAN.priceMemory).toBe(true);
+    expect(FREE_PLAN.slackNotifications).toBe(false);
+    expect(BASIC_PLAN.slackNotifications).toBe(true);
+    expect(PRO_PLAN.slackNotifications).toBe(true);
   });
 
   it("keeps trial as a Pro preview that does not replace Free", () => {
