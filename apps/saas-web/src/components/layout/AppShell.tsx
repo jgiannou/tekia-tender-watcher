@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ArcMark } from "@/components/brand/ArcMark";
+import { PageLoading } from "@/components/states";
 import {
   Binoculars,
   Bookmark,
@@ -481,7 +482,10 @@ export const AppShell = () => {
         <main className="min-w-0 flex-1 overflow-x-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
           <EmailVerificationBanner />
           <TrialBanner />
-          <Outlet />
+          {/* Nested Suspense keeps the shell visible while lazy route chunks load. */}
+          <Suspense fallback={<PageLoading label="Φόρτωση…" />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
 
