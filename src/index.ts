@@ -178,7 +178,7 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
       cron.schedule(
         outboxExpression,
         () => {
-          void runSaasOutboxWorker(getPrisma(), { limit: 20 })
+          void runSaasOutboxWorker(getPrisma(), { limit: 20, kimdis })
             .then((summary) => {
               if (summary.processed > 0) {
                 console.log("[outbox] processed", JSON.stringify(summary));

@@ -56,6 +56,7 @@ model User {
   legalAcceptance LegalAcceptance?
   pushDevices PushDevice[]
   slackInstallations OrganizationSlackConnection[] @relation("SlackInstalledBy")
+  googleConnections  UserOrganizationGoogleConnection[]
 
   @@map("users")
 }
@@ -187,6 +188,7 @@ model Organization {
   tenderWorkspaces   TenderWorkspace[]
   submissionDocumentSnapshots SubmissionDocumentSnapshot[]
   slackConnection    OrganizationSlackConnection?
+  googleConnections  UserOrganizationGoogleConnection[]
 
   @@map("organizations")
 }
@@ -249,6 +251,245 @@ model SlackOAuthState {
   @@index([userId, organizationId])
   @@index([expiresAt])
   @@map("slack_oauth_states")
+}
+
+/// Capability status for a Google integration (Calendar / Drive / Sheets).
+enum GoogleCapabilityStatus {
+  DISABLED
+  ACTIVE
+  PAUSED
+  PLAN_PAUSED
+  NEEDS_RECONNECT
+  /// Calendar/sheets resource missing — needs explicit recreate.
+  NEEDS_RECREATE
+  /// First sync / setup still running.
+  SYNCING
+}
+
+/**
+ * Personal Google connection bound to user + organization.
+ * One Google account per user/org. Tokens encrypted at rest.
+ * Capabilities (Calendar/Drive/Sheets) use incremental OAuth scopes.
+ */
+model UserOrganizationGoogleConnection {
+  id                     String   @id @default(cuid())
+  organizationId         String
+  userId                 String
+  googleAccountId        String
+  googleEmail            String
+  /// AES-GCM ciphertext of refresh token (never plaintext / never in outbox).
+  refreshTokenCiphertext String
+  refreshTokenNonce      String
+  accessTokenCiphertext  String?
+  accessTokenNonce       String?
+  accessTokenExpiresAt   DateTime?
+  /// Space-separated granted scopes from Google token response.
+  grantedScopes          String   @default("")
+  tokenStatus            GoogleCapabilityStatus @default(ACTIVE)
+
+  calendarStatus         GoogleCapabilityStatus @default(DISABLED)
+  calendarId             String?
+  calendarHtmlLink       String?
+  calendarSummary        String?
+  calendarLastSuccessAt  DateTime?
+  calendarLastErrorAt    DateTime?
+  calendarLastErrorSafe  String?
+  calendarInitialSyncAt  DateTime?
+
+  driveStatus            GoogleCapabilityStatus @default(DISABLED)
+  driveLastSuccessAt     DateTime?
+  driveLastErrorAt       DateTime?
+  driveLastErrorSafe     String?
+
+  sheetsStatus           GoogleCapabilityStatus @default(DISABLED)
+  spreadsheetId          String?
+  spreadsheetUrl         String?
+  sheetsLastSuccessAt    DateTime?
+  sheetsLastErrorAt      DateTime?
+  sheetsLastErrorSafe    String?
+
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calendarEvents GoogleCalendarEventLink[]
+  driveFolders   GoogleDriveFolderLink[]
+  driveImports   GoogleDriveImportRecord[]
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+  @@index([calendarStatus])
+  @@map("user_organization_google_connections")
+}
+
+model GoogleOAuthState {
+  id             String   @id @default(cuid())
+  state          String   @unique
+  userId         String
+  organizationId String
+  /// CONNECT | REPLACE | INCREMENTAL
+  purpose        String   @default("CONNECT")
+  /// calendar | drive | sheets (comma-separated for combined grants)
+  capabilities   String
+  /// PKCE code_verifier (plaintext short-lived; deleted after exchange)
+  codeVerifier   String
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([userId, organizationId])
+  @@index([expiresAt])
+  @@map("google_oauth_states")
+}
+
+/// Maps an org tender deadline to a Google Calendar event (idempotent sync).
+model GoogleCalendarEventLink {
+  id                   String   @id @default(cuid())
+  connectionId         String
+  organizationTenderId String
+  tenderId             String
+  googleCalendarId     String
+  googleEventId        String
+  /// Fingerprint of synced deadline payload (date/time/title) for change detection.
+  deadlineFingerprint  String
+  lastSyncedAt         DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  connection UserOrganizationGoogleConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, organizationTenderId])
+  @@index([connectionId, googleEventId])
+  @@index([tenderId])
+  @@map("google_calendar_event_links")
+}
+
+/// Maps a tender to a Drive folder snapshot created by ARC (Phase 3).
+enum GoogleDriveFolderStatus {
+  PENDING
+  SUCCEEDED
+  /// Folder exists but some files failed / are still missing — retry resumes only those.
+  PARTIAL
+  FAILED
+}
+
+enum GoogleDriveFolderItemStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  /// Deliberately not copied (e.g. official PDF unavailable → link-only).
+  SKIPPED
+}
+
+/// One immutable tender snapshot folder in the user's Google Drive (Phase 3).
+/// A new snapshot is a new row + a new Drive folder — existing folders are never mutated.
+model GoogleDriveFolderLink {
+  id                   String   @id @default(cuid())
+  connectionId         String
+  organizationId       String
+  organizationTenderId String
+  tenderId             String
+  createdByUserId      String
+  /// Google account the folder was created in (stale-job guard after account switch).
+  googleAccountId      String
+  googleEmail          String
+  /// Null until the root folder exists in Drive.
+  folderId             String?
+  folderUrl            String?
+  folderName           String
+  /// Idempotency key for "start" (client request id) — unique per connection + tender.
+  snapshotKey          String
+  status               GoogleDriveFolderStatus @default(PENDING)
+  /// Safe machine code only (never tokens or raw Google bodies).
+  errorSafe            String?
+  /// Selection made by the user (IDs and booleans only).
+  options              Json     @default("{}")
+  /// Bumped on every retry so superseded outbox jobs skip themselves.
+  jobEpoch             Int      @default(0)
+  completedAt          DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  connection UserOrganizationGoogleConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  items      GoogleDriveFolderItem[]
+
+  @@unique([connectionId, organizationTenderId, folderId], map: "gdrive_folder_links_conn_tender_folder_key")
+  @@unique([connectionId, organizationTenderId, snapshotKey], map: "gdrive_folder_links_conn_tender_snapshot_key")
+  @@index([connectionId, organizationTenderId])
+  @@index([organizationId, status])
+  @@map("google_drive_folder_links")
+}
+
+/// A sub-folder or file planned for / written into a snapshot folder.
+model GoogleDriveFolderItem {
+  id          String                      @id @default(cuid())
+  linkId      String
+  /// Deterministic per link (section:01, summary, official:PROC:…, vault:<id>, checklist).
+  itemKey     String
+  /// SUBFOLDER | SUMMARY | OFFICIAL_PDF | VAULT_DOCUMENT | CHECKLIST
+  kind        String
+  /// 01 | 02 | 03 — null for root-level items.
+  section     String?
+  displayName String
+  /// Vault document id or "<recordType>:<adam>".
+  sourceRef   String?
+  sortOrder   Int
+  status      GoogleDriveFolderItemStatus @default(PENDING)
+  driveFileId String?
+  errorSafe   String?
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+
+  link GoogleDriveFolderLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@unique([linkId, itemKey])
+  @@index([linkId, status])
+  @@map("google_drive_folder_items")
+}
+
+enum GoogleDriveImportStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+/// One file copied from Google Drive into the company vault (Phase 2).
+/// Copy only — no live sync. Re-importing the same Drive file creates a new vault document.
+model GoogleDriveImportRecord {
+  id                 String                  @id @default(cuid())
+  connectionId       String
+  organizationId     String
+  userId             String
+  /// Null until the copy succeeded; SetNull when the vault document is deleted.
+  vaultDocumentId    String?
+  googleFileId       String
+  googleFileName     String
+  googleMimeType     String
+  googleModifiedTime DateTime?
+  googleMd5Checksum  String?
+  /// Drive `version` (monotonic counter) at import time.
+  googleVersion      String?
+  /// Set when a Google Doc was exported (e.g. application/pdf).
+  exportMimeType     String?
+  /// ARC vault folder the copy is stored in.
+  targetFolderId     String
+  status             GoogleDriveImportStatus @default(PENDING)
+  /// Safe machine code only (never tokens or raw Google bodies).
+  errorSafe          String?
+  importedAt         DateTime?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  connection    UserOrganizationGoogleConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  vaultDocument VaultDocument?                   @relation(fields: [vaultDocumentId], references: [id], onDelete: SetNull)
+
+  @@index([connectionId, status])
+  @@index([organizationId, userId, status])
+  @@index([googleFileId])
+  @@index([vaultDocumentId])
+  @@map("google_drive_import_records")
 }
 
 model OrganizationMember {
@@ -869,6 +1110,7 @@ model VaultDocument {
   versions       VaultDocumentVersion[]
   workspaceRefs  TenderWorkspaceDocumentRef[]
   submissionSnapshots SubmissionDocumentSnapshot[]
+  googleDriveImports  GoogleDriveImportRecord[]
 
   @@index([organizationId, folderId])
   @@index([organizationId, name])

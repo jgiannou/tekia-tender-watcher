@@ -96,6 +96,24 @@ export type PlanEntitlements = {
    * Runtime also requires SAAS_SLACK_NOTIFICATIONS_ENABLED + OAuth secrets.
    */
   slackNotifications: boolean;
+  /**
+   * Google Calendar deadline sync (personal per user+org).
+   * Free: false. Basic + Pro + Pro trial: true.
+   * Runtime requires SAAS_GOOGLE_CALENDAR_ENABLED + OAuth secrets.
+   */
+  googleCalendar: boolean;
+  /**
+   * Google Drive import + tender folders.
+   * Free: false. Basic + Pro + Pro trial: true.
+   * Runtime requires SAAS_GOOGLE_DRIVE_ENABLED + OAuth secrets.
+   */
+  googleDrive: boolean;
+  /**
+   * Google Sheets watched-tenders list.
+   * Free: false. Basic + Pro + Pro trial: true.
+   * Runtime requires SAAS_GOOGLE_SHEETS_ENABLED + OAuth secrets.
+   */
+  googleSheets: boolean;
   positioningEl: string;
   /** Greek marketing / subscription bullets (single source of truth). */
   featuresEl: string[];
@@ -115,18 +133,47 @@ export const PRICING_VAT_FOOTNOTE_EL = "Οι τιμές δεν περιλαμβ�
 export const SLACK_NOTIFICATIONS_FEATURE_EL =
   "Ειδοποιήσεις Slack σε 1 κανάλι της ομάδας σας";
 
+export const GOOGLE_CALENDAR_FEATURE_EL =
+  "Προθεσμίες στο Google Calendar με αυτόματη ενημέρωση";
+export const GOOGLE_DRIVE_IMPORT_FEATURE_EL =
+  "Εισαγωγή εγγράφων από Google Drive";
+export const GOOGLE_DRIVE_FOLDER_FEATURE_EL =
+  "Δημιουργία φακέλου διαγωνισμού στο Google Drive";
+export const GOOGLE_SHEETS_FEATURE_EL =
+  "Ενημερούμενη λίστα διαγωνισμών στο Google Sheets";
+
+export type IntegrationLiveFlags = {
+  slack?: boolean;
+  googleCalendar?: boolean;
+  googleDrive?: boolean;
+  googleSheets?: boolean;
+};
+
 /**
- * Public/marketing feature lists hide Slack until OAuth + encryption are
- * configured (`isSaasSlackNotificationsConfigured`). Entitlement flags stay.
+ * Public/marketing feature lists hide integrations until configured.
+ * Pass boolean for Slack-only legacy callers, or IntegrationLiveFlags.
  */
 export const featuresElForDisplay = (
   plan: PlanEntitlements,
-  slackLive: boolean,
+  live: boolean | IntegrationLiveFlags,
 ): string[] => {
-  if (slackLive) return [...plan.featuresEl];
-  return plan.featuresEl.filter(
-    (line) => line !== SLACK_NOTIFICATIONS_FEATURE_EL,
-  );
+  const flags: IntegrationLiveFlags =
+    typeof live === "boolean" ? { slack: live } : live;
+  return plan.featuresEl.filter((line) => {
+    if (line === SLACK_NOTIFICATIONS_FEATURE_EL && !flags.slack) return false;
+    if (line === GOOGLE_CALENDAR_FEATURE_EL && !flags.googleCalendar) {
+      return false;
+    }
+    if (
+      (line === GOOGLE_DRIVE_IMPORT_FEATURE_EL ||
+        line === GOOGLE_DRIVE_FOLDER_FEATURE_EL) &&
+      !flags.googleDrive
+    ) {
+      return false;
+    }
+    if (line === GOOGLE_SHEETS_FEATURE_EL && !flags.googleSheets) return false;
+    return true;
+  });
 };
 
 export const BASIC_PLAN: PlanEntitlements = {
@@ -172,6 +219,9 @@ export const BASIC_PLAN: PlanEntitlements = {
   awardHistory: true,
   priceMemory: true,
   slackNotifications: true,
+  googleCalendar: true,
+  googleDrive: true,
+  googleSheets: true,
   positioningEl:
     "Για επαγγελματίες και μικρές επιχειρήσεις που θέλουν να οργανώνουν τη συμμετοχή τους σε δημόσιους διαγωνισμούς.",
   featuresEl: [
@@ -182,6 +232,10 @@ export const BASIC_PLAN: PlanEntitlements = {
     "Συγκεντρωτικά email έως 2 φορές την ημέρα",
     "Επιλογή άμεσων email για σημαντικές εξελίξεις στους διαγωνισμούς που παρακολουθείτε",
     "Ειδοποιήσεις Slack σε 1 κανάλι της ομάδας σας",
+    GOOGLE_CALENDAR_FEATURE_EL,
+    GOOGLE_DRIVE_IMPORT_FEATURE_EL,
+    GOOGLE_DRIVE_FOLDER_FEATURE_EL,
+    GOOGLE_SHEETS_FEATURE_EL,
     "Λίστα δικαιολογητικών και έλεγχος με τα έγγραφά σας",
     "Οργάνωση προετοιμασίας και καταγραφή υποβολής προσφοράς",
     "Καταγραφή εκδήλωσης ενδιαφέροντος προς τον φορέα",
@@ -223,6 +277,9 @@ export const FREE_PLAN: PlanEntitlements = {
   awardHistory: false,
   priceMemory: false,
   slackNotifications: false,
+  googleCalendar: false,
+  googleDrive: false,
+  googleSheets: false,
   emailMode: "DIGEST",
   featuresEl: [
     "1 χρήστης",
@@ -283,6 +340,9 @@ export const PRO_PLAN: PlanEntitlements = {
   awardHistory: true,
   priceMemory: true,
   slackNotifications: true,
+  googleCalendar: true,
+  googleDrive: true,
+  googleSheets: true,
   positioningEl:
     "Για επιχειρήσεις που παρακολουθούν περισσότερους διαγωνισμούς και συνεργάζονται ως ομάδα.",
   featuresEl: [
@@ -293,6 +353,10 @@ export const PRO_PLAN: PlanEntitlements = {
     "Συγκεντρωτικά email έως 6 φορές την ημέρα",
     "Επιλογή άμεσων email και για νέες ευκαιρίες υψηλής συνάφειας",
     "Ειδοποιήσεις Slack σε 1 κανάλι της ομάδας σας",
+    GOOGLE_CALENDAR_FEATURE_EL,
+    GOOGLE_DRIVE_IMPORT_FEATURE_EL,
+    GOOGLE_DRIVE_FOLDER_FEATURE_EL,
+    GOOGLE_SHEETS_FEATURE_EL,
     "Συγκεντρωτική προβολή επερχόμενων προθεσμιών",
     "Προηγμένα φίλτρα αναζήτησης",
     "Εξυπηρέτηση κατά προτεραιότητα",

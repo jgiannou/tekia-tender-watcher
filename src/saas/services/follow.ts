@@ -68,7 +68,7 @@ export const followTender = async (
     });
 
     return row;
-  }).then((row) => {
+  }).then(async (row) => {
     trackProductEventSafe(prisma, {
       type: "tender_followed",
       userId: input.userId,
@@ -77,6 +77,17 @@ export const followTender = async (
       entityId: input.tenderId,
       metadata: { organizationTenderId: row.id },
     });
+    try {
+      const { enqueueGoogleCalendarUpsertForTender } = await import(
+        "./google-calendar-sync.js"
+      );
+      await enqueueGoogleCalendarUpsertForTender(prisma, {
+        organizationId: input.organizationId,
+        organizationTenderId: row.id,
+      });
+    } catch {
+      // Calendar sync is best-effort; follow must succeed.
+    }
     return row;
   });
 };
@@ -121,6 +132,19 @@ export const unfollowTender = async (
       },
     });
 
+    return row;
+  }).then(async (row) => {
+    try {
+      const { enqueueGoogleCalendarDeleteForTender } = await import(
+        "./google-calendar-sync.js"
+      );
+      await enqueueGoogleCalendarDeleteForTender(prisma, {
+        organizationId: input.organizationId,
+        organizationTenderId: row.id,
+      });
+    } catch {
+      // best-effort
+    }
     return row;
   });
 };

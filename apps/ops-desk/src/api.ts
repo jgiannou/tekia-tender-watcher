@@ -404,6 +404,21 @@ declare global {
         body?: string;
       }) => Promise<{ ok?: boolean; status: number; bodyText?: string; body?: string; error?: string | null }>;
       openExternal?: (url: string) => Promise<void | { ok: boolean; error?: string }>;
+      writePulseCache?: (snapshot: {
+        generatedAt: number;
+        users: number;
+        organizations: number;
+        paying: number;
+        errors: number;
+        healthy: boolean;
+        statusText: string;
+        apiUrl?: string;
+        adminToken?: string;
+      }) => Promise<{ ok: boolean; path?: string; error?: string }>;
+      syncPulseWidget?: (payload: {
+        apiUrl: string;
+        adminToken: string;
+      }) => Promise<{ ok: boolean; error?: string }>;
     };
   }
 }

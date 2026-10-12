@@ -1,0 +1,112 @@
+name: ARCPulse
+options:
+  bundleIdPrefix: gr.tekia.arc.tenders
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: "37ZNXDS49B"
+    CURRENT_PROJECT_VERSION: "24"
+    MARKETING_VERSION: "0.4.5"
+    ENABLE_HARDENED_RUNTIME: YES
+targets:
+  ARCPulse:
+    type: application
+    platform: macOS
+    sources:
+      - path: ARCPulse
+        excludes:
+          - "Shared/**"
+      - path: ARCPulse/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: gr.tekia.arc.tenders.pulse
+        PRODUCT_NAME: ARC Tenders Pulse
+        INFOPLIST_KEY_CFBundleDisplayName: ARC Tenders Pulse
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_NSHumanReadableCopyright: Copyright © TEKIA
+        INFOPLIST_KEY_LSUIElement: YES
+        GENERATE_INFOPLIST_FILE: YES
+        COMBINE_HIDPI_IMAGES: YES
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+        CODE_SIGN_ENTITLEMENTS: ARCPulse/ARCPulse.entitlements
+    info:
+      path: ARCPulse/Info.plist
+      properties:
+        LSUIElement: true
+        CFBundleURLTypes:
+          - CFBundleURLName: ARC Tenders Pulse
+            CFBundleURLSchemes:
+              - arcpulse
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsArbitraryLoadsInWebContent: true
+          NSExceptionDomains:
+            gfjv662rudc5mhwwyvj2zcvh.169.58.65.199.sslip.io:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: true
+              NSExceptionRequiresForwardSecrecy: false
+    entitlements:
+      path: ARCPulse/ARCPulse.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.files.user-selected.read-only: true
+        com.apple.security.application-groups:
+          - group.37ZNXDS49B.arc.tenders.pulse
+    dependencies:
+      - target: ARCPulseWidget
+        embed: true
+        codeSign: true
+        copy:
+          destination: plugins
+          buildPhase: embed
+    scheme:
+      testTargets: []
+
+  ARCPulseWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: ARCPulseWidget
+        excludes:
+          - "Secrets.generated.json"
+      - path: ARCPulse/Shared
+      - path: ARCPulseWidget/Secrets.generated.json
+        buildPhase: resources
+        optional: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: gr.tekia.arc.tenders.pulse.widget
+        PRODUCT_NAME: ARCPulseWidget
+        INFOPLIST_KEY_CFBundleDisplayName: ARC Tenders Pulse
+        INFOPLIST_KEY_NSHumanReadableCopyright: Copyright © TEKIA
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks @executable_path/../../../../Frameworks"
+        CODE_SIGN_ENTITLEMENTS: ARCPulseWidget/ARCPulseWidget.entitlements
+    info:
+      path: ARCPulseWidget/Info.plist
+      properties:
+        CFBundleDisplayName: ARC Tenders Pulse
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSExceptionDomains:
+            gfjv662rudc5mhwwyvj2zcvh.169.58.65.199.sslip.io:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: true
+              NSExceptionRequiresForwardSecrecy: false
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: ARCPulseWidget/ARCPulseWidget.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.application-groups:
+          - group.37ZNXDS49B.arc.tenders.pulse

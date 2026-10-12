@@ -5,6 +5,14 @@ import {
   processSlackOpportunityBatchJob,
 } from "../services/slack-delivery.js";
 import {
+  processGoogleCalendarDeleteEventJob,
+  processGoogleCalendarFullSyncJob,
+  processGoogleCalendarUpsertEventJob,
+} from "../services/google-calendar-sync.js";
+import { processGoogleDriveFolderJob } from "../services/google-drive-folder.js";
+import { processGoogleDriveImportJob } from "../services/google-drive-import.js";
+import type { KimdisClient } from "../../kimdis/client.js";
+import {
   processSaasOutbox,
   SAAS_JOB_TYPES,
   type SaasJobHandler,
@@ -35,7 +43,7 @@ const weeklyHandler: SaasJobHandler = async (prisma, job) => {
 
 export const runSaasOutboxWorker = async (
   prisma: PrismaClient,
-  options?: { limit?: number },
+  options?: { limit?: number; kimdis?: KimdisClient },
 ) =>
   processSaasOutbox(
     prisma,
@@ -44,6 +52,14 @@ export const runSaasOutboxWorker = async (
       [SAAS_JOB_TYPES.weeklyDigest]: weeklyHandler,
       [SAAS_JOB_TYPES.slackAttention]: processSlackAttentionJob,
       [SAAS_JOB_TYPES.slackOpportunityBatch]: processSlackOpportunityBatchJob,
+      [SAAS_JOB_TYPES.googleCalendarFullSync]: processGoogleCalendarFullSyncJob,
+      [SAAS_JOB_TYPES.googleCalendarUpsertEvent]:
+        processGoogleCalendarUpsertEventJob,
+      [SAAS_JOB_TYPES.googleCalendarDeleteEvent]:
+        processGoogleCalendarDeleteEventJob,
+      [SAAS_JOB_TYPES.googleDriveImport]: processGoogleDriveImportJob,
+      [SAAS_JOB_TYPES.googleDriveCreateFolder]: (client, job) =>
+        processGoogleDriveFolderJob(client, job, { kimdis: options?.kimdis }),
     },
-    options,
+    options ? { limit: options.limit } : undefined,
   );

@@ -14,6 +14,7 @@ import {
 import { useSessionContext } from "@/auth/SessionProvider";
 import { AuthenticatedPdfViewer } from "@/components/AuthenticatedPdfViewer";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
+import { ImportFromGoogleDriveDialog } from "@/components/ImportFromGoogleDriveDialog";
 import { UploadDocumentDialog } from "@/components/UploadDocumentDialog";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +32,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { saasApi, type VaultDocument, type VaultFolder } from "@/lib/api";
+import {
+  saasApi,
+  type GoogleIntegrationsResponse,
+  type VaultDocument,
+  type VaultFolder,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const statusLabel = (status: VaultDocument["status"]) => {
@@ -83,6 +89,10 @@ export const DocumentsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [driveImportOpen, setDriveImportOpen] = useState(false);
+  const [googleView, setGoogleView] = useState<GoogleIntegrationsResponse | null>(
+    null,
+  );
   const [previewDoc, setPreviewDoc] = useState<VaultDocument | null>(null);
   const [versionTargetId, setVersionTargetId] = useState<string | null>(null);
 
@@ -119,12 +129,32 @@ export const DocumentsPage = () => {
 
   useEffect(() => {
     if (!activeOrganization) return;
+    let cancelled = false;
+    saasApi
+      .getGoogleIntegrations(activeOrganization.id)
+      .then((view) => {
+        if (!cancelled) setGoogleView(view);
+      })
+      .catch(() => {
+        if (!cancelled) setGoogleView(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrganization?.id]);
+
+  useEffect(() => {
+    if (!activeOrganization) return;
     void loadDocuments().catch((err) => {
       toast.error(err instanceof Error ? err.message : "Αποτυχία φόρτωσης εγγράφων");
     });
   }, [folderId, search, activeOrganization?.id]);
 
   const activeFolder = folders.find((folder) => folder.id === folderId) ?? null;
+  // Drive flag on + plan includes Drive and the company vault.
+  const showDriveImport = Boolean(
+    googleView?.drive.featureAvailable && googleView.drive.importEntitled,
+  );
   const rootFolders = useMemo(
     () => folders.filter((folder) => !folder.parentId),
     [folders],
@@ -284,11 +314,34 @@ export const DocumentsPage = () => {
           >
             Δημιουργία εταιρικού προφίλ
           </Button>
+          {showDriveImport ? (
+            <Button
+              variant="secondary"
+              disabled={!googleView?.drive.pickerConfigured}
+              onClick={() => setDriveImportOpen(true)}
+              aria-label="Εισαγωγή από Google Drive"
+              aria-describedby={
+                googleView?.drive.pickerConfigured
+                  ? undefined
+                  : "drive-import-unavailable"
+              }
+            >
+              Εισαγωγή από Google Drive
+            </Button>
+          ) : null}
           <Button onClick={() => setUploadOpen(true)}>
             <Plus className="h-4 w-4" />
             Ανέβασμα εγγράφου
           </Button>
         </div>
+        {showDriveImport && !googleView?.drive.pickerConfigured ? (
+          <p
+            id="drive-import-unavailable"
+            className="basis-full text-xs text-muted-foreground"
+          >
+            Η εισαγωγή από Google Drive δεν είναι διαθέσιμη προσωρινά.
+          </p>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -488,6 +541,18 @@ export const DocumentsPage = () => {
         className="hidden"
         onChange={(e) => void handleNewVersion(e.target.files?.[0] ?? null)}
       />
+
+      {showDriveImport && googleView ? (
+        <ImportFromGoogleDriveDialog
+          open={driveImportOpen}
+          onOpenChange={setDriveImportOpen}
+          organizationId={activeOrganization.id}
+          folders={folders}
+          defaultFolderId={folderId}
+          driveStatus={googleView.drive.status}
+          onImported={() => void loadDocuments()}
+        />
+      ) : null}
 
       <UploadDocumentDialog
         open={uploadOpen}

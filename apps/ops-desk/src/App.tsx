@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ENV_PRESETS,
   createSandbox,
@@ -23,6 +23,7 @@ import {
   type ProductEventEntry,
   type RequestEntry,
 } from "./api";
+import { ArcMark } from "./ArcMark";
 import { DetailModal, type DrillState } from "./DetailModal";
 
 const formatTime = (iso: string) => {
@@ -105,6 +106,7 @@ export const App = () => {
   const isElectron = Boolean(window.arcTendersOps?.isElectron);
   const connected = Boolean(config.token.trim() && config.apiUrl.trim());
   const activePreset = ENV_PRESETS.find((p) => p.id === activeEnv) ?? ENV_PRESETS[0];
+  const pulseSyncedRef = useRef(false);
 
   const planMax = useMemo(() => {
     if (!stats) return 1;
@@ -133,9 +135,17 @@ export const App = () => {
     setProductEvents([]);
     setHealth(null);
     setPipeline(null);
+    pulseSyncedRef.current = false;
+    if (window.arcTendersOps?.syncPulseWidget && next.token && next.apiUrl) {
+      void window.arcTendersOps.syncPulseWidget({
+        apiUrl: next.apiUrl,
+        adminToken: next.token,
+      });
+      pulseSyncedRef.current = true;
+    }
     setSavedNote(
       isElectron
-        ? `${activePreset.label} saved on this Mac — reopen anytime.`
+        ? `${activePreset.label} saved — widget credentials synced (ARC Pulse may open once).`
         : `${activePreset.label} saved in this browser.`,
     );
   };
@@ -183,7 +193,7 @@ export const App = () => {
       setRequests(requestsResult.status === "fulfilled" ? requestsResult.value : []);
       setProductEvents(eventsResult.status === "fulfilled" ? eventsResult.value : []);
       setPipeline(pipelineResult.status === "fulfilled" ? pipelineResult.value : null);
-      setHealth(
+      const healthValue =
         healthResult.status === "fulfilled"
           ? healthResult.value
           : {
@@ -198,8 +208,8 @@ export const App = () => {
               warnsInBuffer: 0,
               http5xxInBuffer: 0,
               http4xxInBuffer: 0,
-            },
-      );
+            };
+      setHealth(healthValue);
       const failed = settled
         .map((r, i) =>
           r.status === "rejected"
@@ -211,6 +221,34 @@ export const App = () => {
         setError(`Connected to stats. Missing ops routes: ${failed.join(", ")} — deploy latest API.`);
       }
       setLastRefresh(new Date().toISOString());
+
+      // Optional cache mirror. Real credentials must be ingested by ARC Pulse (sandbox).
+      if (window.arcTendersOps?.writePulseCache) {
+        const healthy = Boolean(healthValue.ok && healthValue.db);
+        void window.arcTendersOps.writePulseCache({
+          generatedAt: Date.now() / 1000,
+          users: s.users ?? 0,
+          organizations: s.organizations ?? 0,
+          paying: s.payingOrgs ?? s.payingUsers ?? 0,
+          errors: s.logs?.errorsInBuffer ?? healthValue.errorsInBuffer ?? 0,
+          healthy,
+          statusText: healthy ? "API + DB OK" : "Unhealthy / offline",
+          apiUrl: cfg.apiUrl,
+          adminToken: cfg.token,
+        });
+      }
+      if (
+        !pulseSyncedRef.current &&
+        window.arcTendersOps?.syncPulseWidget &&
+        cfg.token.trim() &&
+        cfg.apiUrl.trim()
+      ) {
+        pulseSyncedRef.current = true;
+        void window.arcTendersOps.syncPulseWidget({
+          apiUrl: cfg.apiUrl,
+          adminToken: cfg.token,
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setHealth(null);
@@ -306,18 +344,11 @@ export const App = () => {
       <header className="topbar">
         <div className="brand">
           <h1>
-            <img
-              src="/favicon.png"
-              alt=""
-              width={28}
-              height={28}
-              style={{
-                verticalAlign: "middle",
-                marginRight: 10,
-                borderRadius: 7,
-              }}
-            />
-            ARC Tenders Ops
+            <ArcMark className="brand-mark" title="ARC Tenders" />
+            <span>
+              <span className="brand-arc">ARC</span>
+              <span className="brand-product"> Tenders Ops</span>
+            </span>
           </h1>
           <p>
             {activePreset.label} pulse — signups, product actions, plans &amp; errors

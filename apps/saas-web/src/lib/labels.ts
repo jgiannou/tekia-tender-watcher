@@ -70,6 +70,48 @@ export const humanSaasError = (message: string): string => {
   if (message.includes("vault_storage_limit_reached")) {
     return "Έχετε φτάσει το όριο αποθήκευσης του πακέτου. Αναβαθμίστε ή διαγράψτε αρχεία.";
   }
+  if (message.includes("google_drive_import_in_progress")) {
+    return "Υπάρχει ήδη εισαγωγή σε εξέλιξη. Περιμένετε να ολοκληρωθεί.";
+  }
+  if (message.includes("google_drive_too_many_files")) {
+    return "Μπορείτε να εισαγάγετε έως 10 αρχεία τη φορά.";
+  }
+  if (message.includes("google_drive_files_required")) {
+    return "Επιλέξτε τουλάχιστον ένα αρχείο.";
+  }
+  if (
+    message.includes("google_drive_scope_missing") ||
+    message.includes("google_needs_reconnect")
+  ) {
+    return "Χρειάζεται επανασύνδεση με το Google Drive.";
+  }
+  if (message.includes("google_drive_not_connected")) {
+    return "Συνδέστε πρώτα το Google Drive.";
+  }
+  if (message.includes("google_picker_not_configured")) {
+    return "Η εισαγωγή από Google Drive δεν είναι διαθέσιμη προσωρινά.";
+  }
+  if (message.includes("google_drive_disabled")) {
+    return "Η εισαγωγή από Google Drive δεν είναι διαθέσιμη.";
+  }
+  if (message.includes("google_drive_folder_in_progress")) {
+    return "Ο φάκελος δημιουργείται ήδη. Περιμένετε να ολοκληρωθεί.";
+  }
+  if (message.includes("google_drive_folder_too_many_documents")) {
+    return "Μπορείτε να προσθέσετε έως 20 έγγραφα εταιρείας στον φάκελο.";
+  }
+  if (message.includes("google_drive_folder_file_too_large")) {
+    return "Ένα από τα επιλεγμένα έγγραφα ξεπερνά το όριο των 25 MB.";
+  }
+  if (message.includes("google_drive_folder_account_changed")) {
+    return "Ο λογαριασμός Google άλλαξε. Δημιουργήστε νέο φάκελο στον τρέχοντα λογαριασμό.";
+  }
+  if (message.includes("google_drive_folder_nothing_to_retry")) {
+    return "Δεν υπάρχουν αρχεία για επανάληψη.";
+  }
+  if (message.includes("tender_not_in_workspace")) {
+    return "Ξεκινήστε την παρακολούθηση του διαγωνισμού για να δημιουργήσετε φάκελο.";
+  }
   if (message.includes("billing_not_configured")) {
     return "Η χρέωση δεν είναι ρυθμισμένη ακόμη. Ολοκληρώστε τα Stripe Price IDs.";
   }
@@ -121,6 +163,24 @@ export const humanSaasError = (message: string): string => {
     message.includes("dateFrom and dateTo must be provided together")
   ) {
     return "Μπορείτε να ορίσετε μόνο «από», μόνο «έως», ή και τις δύο ημερομηνίες.";
+  }
+  if (message.includes("slack_prefs_required")) {
+    return "Επιλέξτε τουλάχιστον έναν τύπο ειδοποίησης.";
+  }
+  if (message.includes("slack_needs_reconnect")) {
+    return "Η σύνδεση με το Slack χρειάζεται ανανέωση.";
+  }
+  if (message.includes("slack_not_armed")) {
+    return "Αποθηκεύστε πρώτα τις προτιμήσεις Slack για να ενεργοποιήσετε τις ειδοποιήσεις.";
+  }
+  if (message.includes("slack_test_rate_limited")) {
+    return "Περιμένετε λίγο πριν στείλετε νέα δοκιμαστική ειδοποίηση.";
+  }
+  if (message.includes("slack_test_failed")) {
+    return "Η δοκιμαστική ειδοποίηση δεν στάλθηκε. Δοκιμάστε ξανά.";
+  }
+  if (message.includes("plan_feature_locked")) {
+    return "Οι ειδοποιήσεις Slack απαιτούν ενεργό Basic ή Pro.";
   }
   if (message.startsWith("HTTP 500") || message.includes("internal_error")) {
     return "Προσωρινό σφάλμα διακομιστή. Δοκιμάστε ξανά.";

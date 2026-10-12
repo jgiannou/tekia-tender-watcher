@@ -8,11 +8,30 @@ export const SAAS_JOB_TYPES = {
   deadlineRadar: "DEADLINE_RADAR",
   slackAttention: "SLACK_ATTENTION",
   slackOpportunityBatch: "SLACK_OPPORTUNITY_BATCH",
+  googleCalendarFullSync: "GOOGLE_CALENDAR_FULL_SYNC",
+  googleCalendarUpsertEvent: "GOOGLE_CALENDAR_UPSERT_EVENT",
+  googleCalendarDeleteEvent: "GOOGLE_CALENDAR_DELETE_EVENT",
+  googleSheetsFullSync: "GOOGLE_SHEETS_FULL_SYNC",
+  googleDriveImport: "GOOGLE_DRIVE_IMPORT",
+  googleDriveCreateFolder: "GOOGLE_DRIVE_CREATE_FOLDER",
 } as const;
 
 export const SLACK_SAAS_JOB_TYPES = [
   SAAS_JOB_TYPES.slackAttention,
   SAAS_JOB_TYPES.slackOpportunityBatch,
+] as const;
+
+export const GOOGLE_SAAS_JOB_TYPES = [
+  SAAS_JOB_TYPES.googleCalendarFullSync,
+  SAAS_JOB_TYPES.googleCalendarUpsertEvent,
+  SAAS_JOB_TYPES.googleCalendarDeleteEvent,
+  SAAS_JOB_TYPES.googleSheetsFullSync,
+] as const;
+
+/** Drive import + folder jobs are cancelled separately so Calendar pause never touches them. */
+export const GOOGLE_DRIVE_SAAS_JOB_TYPES = [
+  SAAS_JOB_TYPES.googleDriveImport,
+  SAAS_JOB_TYPES.googleDriveCreateFolder,
 ] as const;
 
 export type SaasJobType = (typeof SAAS_JOB_TYPES)[keyof typeof SAAS_JOB_TYPES];
@@ -126,6 +145,79 @@ export const cancelPendingSlackJobsForOrg = async (
     [...SLACK_SAAS_JOB_TYPES],
     reason,
   );
+
+/** Cancel Google jobs for one connection (payload.connectionId). */
+export const cancelPendingGoogleJobsForConnection = async (
+  prisma: PrismaClient,
+  connectionId: string,
+  reason = "google_connection_stopped",
+  types: readonly string[] = GOOGLE_SAAS_JOB_TYPES,
+): Promise<number> => {
+  const jobs = await prisma.saasJob.findMany({
+    where: {
+      type: { in: [...types] },
+      status: { in: ["PENDING", "RUNNING"] },
+    },
+    select: { id: true, payload: true },
+  });
+  const ids = jobs
+    .filter((j) => {
+      const p = j.payload as { connectionId?: string } | null;
+      return p?.connectionId === connectionId;
+    })
+    .map((j) => j.id);
+  if (ids.length === 0) return 0;
+  const result = await prisma.saasJob.updateMany({
+    where: { id: { in: ids } },
+    data: {
+      status: "CANCELLED",
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      completedAt: new Date(),
+      lastError: reason,
+    },
+  });
+  metrics.cancelled += result.count;
+  return result.count;
+};
+
+/** Cancel Google jobs for org (optionally scoped to userId in payload). */
+export const cancelPendingGoogleJobsForUserOrg = async (
+  prisma: PrismaClient,
+  organizationId: string,
+  userId: string | null,
+  reason = "google_connection_stopped",
+  types: readonly string[] = GOOGLE_SAAS_JOB_TYPES,
+): Promise<number> => {
+  const jobs = await prisma.saasJob.findMany({
+    where: {
+      organizationId,
+      type: { in: [...types] },
+      status: { in: ["PENDING", "RUNNING"] },
+    },
+    select: { id: true, payload: true },
+  });
+  const ids = jobs
+    .filter((j) => {
+      if (!userId) return true;
+      const p = j.payload as { userId?: string } | null;
+      return p?.userId === userId;
+    })
+    .map((j) => j.id);
+  if (ids.length === 0) return 0;
+  const result = await prisma.saasJob.updateMany({
+    where: { id: { in: ids } },
+    data: {
+      status: "CANCELLED",
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      completedAt: new Date(),
+      lastError: reason,
+    },
+  });
+  metrics.cancelled += result.count;
+  return result.count;
+};
 
 /**
  * Atomically claim due jobs with a lease (Postgres SKIP LOCKED).

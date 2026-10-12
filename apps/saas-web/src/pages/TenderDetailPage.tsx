@@ -4,6 +4,7 @@ import { ArrowLeft, Building2, Landmark, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { CompanyDocumentPicker } from "@/components/CompanyDocumentPicker";
+import { CreateTenderDriveFolderDialog } from "@/components/CreateTenderDriveFolderDialog";
 import { IconAction } from "@/components/IconAction";
 import { PdfAction } from "@/components/PdfAction";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
@@ -28,6 +29,7 @@ import { trackAnalyticsEvent } from "@/lib/analytics";
 import {
   saasApi,
   type DiavgeiaLink,
+  type GoogleIntegrationsResponse,
   type KimdisSearchItem,
   type Opportunity,
   type OutreachDraft,
@@ -143,6 +145,8 @@ export const TenderDetailPage = () => {
   const [checklist, setChecklist] = useState<ParticipationChecklist | null>(null);
   const [priceMemory, setPriceMemory] = useState<PriceMemory | null>(null);
   const [diavgeia, setDiavgeia] = useState<DiavgeiaLink | null>(null);
+  const [googleView, setGoogleView] = useState<GoogleIntegrationsResponse | null>(null);
+  const [driveFolderOpen, setDriveFolderOpen] = useState(false);
 
   const load = async () => {
     if (!activeOrganization || !recordType || !adam) {
@@ -233,6 +237,23 @@ export const TenderDetailPage = () => {
   useEffect(() => {
     void load();
   }, [activeOrganization?.id, recordType, adam]);
+
+  // Drive availability decides whether the «Δημιουργία φακέλου στο Drive» action shows.
+  useEffect(() => {
+    if (!activeOrganization) return;
+    let cancelled = false;
+    saasApi
+      .getGoogleIntegrations(activeOrganization.id)
+      .then((view) => {
+        if (!cancelled) setGoogleView(view);
+      })
+      .catch(() => {
+        if (!cancelled) setGoogleView(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrganization?.id]);
 
   const following = Boolean(workflow?.organizationTender?.following);
   const relatedProcs =
@@ -816,6 +837,29 @@ export const TenderDetailPage = () => {
             >
               Διακοπή παρακολούθησης
             </Button>
+          ) : null}
+          {googleView?.drive.featureAvailable && workflow?.organizationTender ? (
+            googleView.drive.entitled ? (
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => setDriveFolderOpen(true)}
+                aria-label="Δημιουργία φακέλου στο Drive"
+              >
+                Δημιουργία φακέλου στο Drive
+              </Button>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                Η δημιουργία φακέλου στο Drive είναι διαθέσιμη στα πακέτα Basic και Pro.{" "}
+                <Link
+                  to="/app/subscription"
+                  className="underline hover:text-foreground"
+                  aria-label="Δείτε τα πακέτα"
+                >
+                  Δείτε τα πακέτα
+                </Link>
+              </span>
+            )
           ) : null}
           {tenderId ? (
             <Button
@@ -1480,6 +1524,19 @@ export const TenderDetailPage = () => {
         title={item.title}
         officialUrl={item.publicKimdisUrl}
       />
+
+      {googleView?.drive.featureAvailable &&
+      googleView.drive.entitled &&
+      activeOrganization &&
+      tenderId ? (
+        <CreateTenderDriveFolderDialog
+          open={driveFolderOpen}
+          onOpenChange={setDriveFolderOpen}
+          organizationId={activeOrganization.id}
+          tenderId={tenderId}
+          driveStatus={googleView.drive.status}
+        />
+      ) : null}
 
       <Dialog open={outreachOpen} onOpenChange={setOutreachOpen}>
         <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">

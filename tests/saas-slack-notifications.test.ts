@@ -28,6 +28,11 @@ import {
   postSlackIncomingWebhook,
   processSlackAttentionJob,
 } from "../src/saas/services/slack-delivery.js";
+import {
+  deriveSlackDeliveryState,
+  slackDeliveryStateIsLive,
+  slackTestResultMessageEl,
+} from "../src/saas/services/slack-delivery-state.js";
 import { enqueueSaasJob, SAAS_JOB_TYPES } from "../src/saas/jobs/outbox.js";
 import { runSaasOutboxWorker } from "../src/saas/jobs/process-outbox.js";
 
@@ -85,6 +90,82 @@ describe("Slack crypto + sanitize", () => {
     expect(sanitizeSlackText("Hello @channel and <!everyone>")).not.toMatch(
       /@channel|<!everyone>/,
     );
+  });
+});
+
+describe("Slack delivery state (UI)", () => {
+  const prefsOn = {
+    newOpportunity: true,
+    relatedActOnFollowed: false,
+    deadlineRadar: false,
+  };
+  const prefsOff = {
+    newOpportunity: false,
+    relatedActOnFollowed: false,
+    deadlineRadar: false,
+  };
+
+  it("maps active / paused / setup / none / reconnect / plan-paused", () => {
+    expect(
+      deriveSlackDeliveryState({
+        status: "ACTIVE",
+        notificationsArmed: true,
+        preferences: prefsOn,
+      }),
+    ).toBe("ACTIVE");
+    expect(
+      deriveSlackDeliveryState({
+        status: "PAUSED",
+        notificationsArmed: true,
+        preferences: prefsOn,
+      }),
+    ).toBe("PAUSED");
+    expect(
+      deriveSlackDeliveryState({
+        status: "PAUSED",
+        notificationsArmed: false,
+        preferences: prefsOff,
+      }),
+    ).toBe("SETUP_INCOMPLETE");
+    expect(
+      deriveSlackDeliveryState({
+        status: "ACTIVE",
+        notificationsArmed: true,
+        preferences: prefsOff,
+      }),
+    ).toBe("NO_CATEGORIES");
+    expect(
+      deriveSlackDeliveryState({
+        status: "NEEDS_RECONNECT",
+        notificationsArmed: true,
+        preferences: prefsOn,
+      }),
+    ).toBe("NEEDS_RECONNECT");
+    expect(
+      deriveSlackDeliveryState({
+        status: "PLAN_PAUSED",
+        notificationsArmed: true,
+        preferences: prefsOn,
+      }),
+    ).toBe("PLAN_PAUSED");
+  });
+
+  it("only ACTIVE is a live (green) delivery indicator", () => {
+    expect(slackDeliveryStateIsLive("ACTIVE")).toBe(true);
+    expect(slackDeliveryStateIsLive("PAUSED")).toBe(false);
+    expect(slackDeliveryStateIsLive("NO_CATEGORIES")).toBe(false);
+    expect(slackDeliveryStateIsLive("SETUP_INCOMPLETE")).toBe(false);
+    expect(slackDeliveryStateIsLive("NEEDS_RECONNECT")).toBe(false);
+    expect(slackDeliveryStateIsLive("PLAN_PAUSED")).toBe(false);
+  });
+
+  it("distinguishes queued vs delivered test copy", () => {
+    expect(
+      slackTestResultMessageEl({ delivery: "queued", channelLabel: "#ops" }),
+    ).toContain("προγραμματίστηκε");
+    expect(
+      slackTestResultMessageEl({ delivery: "delivered", channelLabel: "#ops" }),
+    ).toBe("Η δοκιμαστική ειδοποίηση στάλθηκε στο #ops.");
   });
 });
 
@@ -638,5 +719,420 @@ describe("Slack SaaS API + delivery", () => {
     });
     const result = await runSaasOutboxWorker(prisma, { limit: 5 });
     expect(result.processed).toBeGreaterThanOrEqual(1);
+  });
+
+  it("exposes deliveryState and never returns webhook secrets", async () => {
+    const { cookie, orgId } = await signupOrg("view-state@example.com", "basic");
+    const enc = encryptSecret("https://hooks.slack.com/services/T1/B1/secret");
+    await prisma.organizationSlackConnection.create({
+      data: {
+        organizationId: orgId,
+        status: "PAUSED",
+        slackTeamId: "T1",
+        slackTeamName: "TEKIA",
+        slackChannelId: "C1",
+        slackChannelName: "arc-tenders",
+        webhookUrlCiphertext: enc.ciphertext,
+        webhookUrlNonce: enc.nonce,
+        notificationsArmed: false,
+        preferences: {
+          newOpportunity: false,
+          relatedActOnFollowed: false,
+          deadlineRadar: false,
+        },
+      },
+    });
+    const res = await authedJson<{
+      connection: {
+        deliveryState: string;
+        deliveryStateLabelEl: string;
+        channelLabel: string;
+      } | null;
+    }>(app, "/api/saas/integrations/slack", {
+      cookie,
+      organizationId: orgId,
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.connection?.deliveryState).toBe("SETUP_INCOMPLETE");
+    expect(res.json.connection?.channelLabel).toBe("#arc-tenders");
+    expect(JSON.stringify(res.json)).not.toContain("hooks.slack.com");
+    expect(JSON.stringify(res.json)).not.toContain("Add to Slack");
+  });
+
+  it("saves preferences without lifting an existing pause", async () => {
+    const { cookie, orgId } = await signupOrg("pref-pause@example.com", "basic");
+    const enc = encryptSecret("https://hooks.slack.com/services/T1/B1/x");
+    await prisma.organizationSlackConnection.create({
+      data: {
+        organizationId: orgId,
+        status: "PAUSED",
+        slackTeamId: "T1",
+        slackTeamName: "T",
+        slackChannelId: "C1",
+        slackChannelName: "ops",
+        webhookUrlCiphertext: enc.ciphertext,
+        webhookUrlNonce: enc.nonce,
+        notificationsArmed: true,
+        preferences: {
+          newOpportunity: true,
+          relatedActOnFollowed: false,
+          deadlineRadar: false,
+        },
+      },
+    });
+    const res = await authedJson<{
+      connection: { status: string; preferences: { deadlineRadar: boolean } };
+    }>(app, "/api/saas/integrations/slack/preferences", {
+      method: "PUT",
+      cookie,
+      organizationId: orgId,
+      body: {
+        activate: false,
+        preferences: {
+          newOpportunity: true,
+          relatedActOnFollowed: true,
+          deadlineRadar: true,
+        },
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.connection.status).toBe("PAUSED");
+    expect(res.json.connection.preferences.deadlineRadar).toBe(true);
+  });
+
+  it("allows saving all categories off without disconnecting", async () => {
+    const { cookie, orgId } = await signupOrg("pref-off@example.com", "basic");
+    const enc = encryptSecret("https://hooks.slack.com/services/T1/B1/x");
+    await prisma.organizationSlackConnection.create({
+      data: {
+        organizationId: orgId,
+        status: "ACTIVE",
+        slackTeamId: "T1",
+        slackTeamName: "T",
+        slackChannelId: "C1",
+        slackChannelName: "ops",
+        webhookUrlCiphertext: enc.ciphertext,
+        webhookUrlNonce: enc.nonce,
+        notificationsArmed: true,
+        preferences: {
+          newOpportunity: true,
+          relatedActOnFollowed: false,
+          deadlineRadar: false,
+        },
+      },
+    });
+    const res = await authedJson<{
+      connection: { status: string; deliveryState: string };
+    }>(app, "/api/saas/integrations/slack/preferences", {
+      method: "PUT",
+      cookie,
+      organizationId: orgId,
+      body: {
+        activate: false,
+        preferences: {
+          newOpportunity: false,
+          relatedActOnFollowed: false,
+          deadlineRadar: false,
+        },
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.connection.status).toBe("ACTIVE");
+    expect(res.json.connection.deliveryState).toBe("NO_CATEGORIES");
+  });
+
+  it("rejects first activate without a category; pause/resume without OAuth", async () => {
+    const { cookie, orgId } = await signupOrg("pause-resume@example.com", "basic");
+    const enc = encryptSecret("https://hooks.slack.com/services/T1/B1/x");
+    await prisma.organizationSlackConnection.create({
+      data: {
+        organizationId: orgId,
+        status: "PAUSED",
+        slackTeamId: "T1",
+        slackTeamName: "T",
+        slackChannelId: "C1",
+        slackChannelName: "ops",
+        webhookUrlCiphertext: enc.ciphertext,
+        webhookUrlNonce: enc.nonce,
+        notificationsArmed: false,
+        preferences: {
+          newOpportunity: false,
+          relatedActOnFollowed: false,
+          deadlineRadar: false,
+        },
+      },
+    });
+    const badArm = await authedJson(
+      app,
+      "/api/saas/integrations/slack/preferences",
+      {
+        method: "PUT",
+        cookie,
+        organizationId: orgId,
+        body: {
+          activate: true,
+          preferences: {
+            newOpportunity: false,
+            relatedActOnFollowed: false,
+            deadlineRadar: false,
+          },
+        },
+      },
+    );
+    expect(badArm.status).toBe(400);
+
+    const arm = await authedJson<{ connection: { status: string } }>(
+      app,
+      "/api/saas/integrations/slack/preferences",
+      {
+        method: "PUT",
+        cookie,
+        organizationId: orgId,
+        body: {
+          activate: true,
+          preferences: {
+            newOpportunity: true,
+            relatedActOnFollowed: false,
+            deadlineRadar: false,
+          },
+        },
+      },
+    );
+    expect(arm.status).toBe(200);
+    expect(arm.json.connection.status).toBe("ACTIVE");
+
+    await enqueueSaasJob(prisma, {
+      type: SAAS_JOB_TYPES.slackAttention,
+      deliveryKey: `SLACK:pause-test:1`,
+      organizationId: orgId,
+      payload: { connectionId: "x", attentionEventId: "1" },
+    });
+    const paused = await authedJson<{ connection: { status: string } }>(
+      app,
+      "/api/saas/integrations/slack/pause",
+      {
+        method: "POST",
+        cookie,
+        organizationId: orgId,
+        body: { paused: true },
+      },
+    );
+    expect(paused.status).toBe(200);
+    expect(paused.json.connection.status).toBe("PAUSED");
+    const jobs = await prisma.saasJob.findMany({ where: { organizationId: orgId } });
+    expect(jobs.every((j) => j.status === "CANCELLED")).toBe(true);
+
+    const oauthCallsBefore = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes("oauth"),
+    ).length;
+    const resumed = await authedJson<{ connection: { status: string } }>(
+      app,
+      "/api/saas/integrations/slack/pause",
+      {
+        method: "POST",
+        cookie,
+        organizationId: orgId,
+        body: { paused: false },
+      },
+    );
+    expect(resumed.status).toBe(200);
+    expect(resumed.json.connection.status).toBe("ACTIVE");
+    const oauthCallsAfter = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes("oauth"),
+    ).length;
+    expect(oauthCallsAfter).toBe(oauthCallsBefore);
+  });
+
+  it("blocks resume without categories; test sets timestamp only after delivery", async () => {
+    const { cookie, orgId } = await signupOrg("test-ts@example.com", "basic");
+    const enc = encryptSecret("https://hooks.slack.com/services/T1/B1/ok");
+    await prisma.organizationSlackConnection.create({
+      data: {
+        organizationId: orgId,
+        status: "PAUSED",
+        slackTeamId: "T1",
+        slackTeamName: "T",
+        slackChannelId: "C1",
+        slackChannelName: "ops",
+        webhookUrlCiphertext: enc.ciphertext,
+        webhookUrlNonce: enc.nonce,
+        notificationsArmed: true,
+        preferences: {
+          newOpportunity: false,
+          relatedActOnFollowed: false,
+          deadlineRadar: false,
+        },
+      },
+    });
+    const noResume = await authedJson(
+      app,
+      "/api/saas/integrations/slack/pause",
+      {
+        method: "POST",
+        cookie,
+        organizationId: orgId,
+        body: { paused: false },
+      },
+    );
+    expect(noResume.status).toBe(400);
+
+    // Explicit test may run while manually paused.
+    const testRes = await authedJson<{
+      ok: boolean;
+      delivery: string;
+      messageEl: string;
+      lastTestSentAt: string;
+    }>(app, "/api/saas/integrations/slack/test", {
+      method: "POST",
+      cookie,
+      organizationId: orgId,
+      body: {},
+    });
+    expect(testRes.status).toBe(200);
+    expect(testRes.json.delivery).toBe("delivered");
+    expect(testRes.json.messageEl).toContain("στάλθηκε");
+    expect(testRes.json.lastTestSentAt).toBeTruthy();
+    const stillPaused = await prisma.organizationSlackConnection.findUniqueOrThrow({
+      where: { organizationId: orgId },
+    });
+    expect(stillPaused.status).toBe("PAUSED");
+    expect(stillPaused.lastTestSentAt).not.toBeNull();
+
+    const rate = await authedJson(
+      app,
+      "/api/saas/integrations/slack/test",
+      { method: "POST", cookie, organizationId: orgId, body: {} },
+    );
+    expect(rate.status).toBe(400);
+  });
+
+  it("does not stamp lastTestSentAt when webhook fails", async () => {
+    const { cookie, orgId } = await signupOrg("test-fail@example.com", "basic");
+    const enc = encryptSecret("https://hooks.slack.com/services/T1/B1/dead");
+    await prisma.organizationSlackConnection.create({
+      data: {
+        organizationId: orgId,
+        status: "ACTIVE",
+        slackTeamId: "T1",
+        slackTeamName: "T",
+        slackChannelId: "C1",
+        slackChannelName: "ops",
+        webhookUrlCiphertext: enc.ciphertext,
+        webhookUrlNonce: enc.nonce,
+        notificationsArmed: true,
+        preferences: { newOpportunity: true },
+      },
+    });
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input).includes("hooks.slack.com")) {
+        return new Response("fail", { status: 500 });
+      }
+      return new Response("ok", { status: 200 });
+    });
+    const testRes = await authedJson(
+      app,
+      "/api/saas/integrations/slack/test",
+      { method: "POST", cookie, organizationId: orgId, body: {} },
+    );
+    expect(testRes.status).toBeGreaterThanOrEqual(400);
+    const row = await prisma.organizationSlackConnection.findUniqueOrThrow({
+      where: { organizationId: orgId },
+    });
+    expect(row.lastTestSentAt).toBeNull();
+  });
+
+  it("REPLACE clears lastTestSentAt and cancels old pending jobs", async () => {
+    const { cookie, orgId, userId } = await signupOrg(
+      "replace-clear@example.com",
+      "basic",
+    );
+    const enc = encryptSecret("https://hooks.slack.com/services/T_OLD/B/old");
+    const conn = await prisma.organizationSlackConnection.create({
+      data: {
+        organizationId: orgId,
+        status: "PAUSED",
+        slackTeamId: "T_OLD",
+        slackTeamName: "Old WS",
+        slackChannelId: "C_OLD",
+        slackChannelName: "old-channel",
+        webhookUrlCiphertext: enc.ciphertext,
+        webhookUrlNonce: enc.nonce,
+        notificationsArmed: true,
+        preferences: {
+          newOpportunity: true,
+          relatedActOnFollowed: false,
+          deadlineRadar: false,
+        },
+        lastTestSentAt: new Date("2026-01-01T12:00:00.000Z"),
+        installedByUserId: userId,
+      },
+    });
+    await enqueueSaasJob(prisma, {
+      type: SAAS_JOB_TYPES.slackAttention,
+      deliveryKey: `SLACK:${conn.id}:old`,
+      organizationId: orgId,
+      payload: { connectionId: conn.id, attentionEventId: "old" },
+    });
+
+    const start = await authedJson<{ authorizeUrl: string }>(
+      app,
+      "/api/saas/integrations/slack/oauth/start",
+      {
+        method: "POST",
+        cookie,
+        organizationId: orgId,
+        body: { purpose: "REPLACE" },
+      },
+    );
+    expect(start.status).toBe(200);
+    const state = new URL(start.json.authorizeUrl).searchParams.get("state")!;
+    const callback = await app.request(
+      `/api/saas/integrations/slack/oauth/callback?code=replace&state=${state}`,
+      { redirect: "manual" },
+    );
+    expect(callback.headers.get("location")).toContain("slack=connected");
+
+    const updated = await prisma.organizationSlackConnection.findUniqueOrThrow({
+      where: { organizationId: orgId },
+    });
+    expect(updated.slackTeamId).toBe("T_TEST");
+    expect(updated.slackChannelName).toBe("ops");
+    expect(updated.lastTestSentAt).toBeNull();
+    expect(updated.status).toBe("PAUSED");
+    expect(updated.notificationsArmed).toBe(true);
+    const jobs = await prisma.saasJob.findMany({ where: { organizationId: orgId } });
+    expect(jobs.every((j) => j.status === "CANCELLED")).toBe(true);
+  });
+
+  it("allows disconnect after Free downgrade without OAuth", async () => {
+    const { cookie, orgId } = await signupOrg("disc-free@example.com", "basic");
+    const enc = encryptSecret("https://hooks.slack.com/services/T1/B1/x");
+    await prisma.organizationSlackConnection.create({
+      data: {
+        organizationId: orgId,
+        status: "PLAN_PAUSED",
+        slackTeamId: "T1",
+        slackTeamName: "T",
+        slackChannelId: "C1",
+        slackChannelName: "ops",
+        webhookUrlCiphertext: enc.ciphertext,
+        webhookUrlNonce: enc.nonce,
+        notificationsArmed: true,
+        preferences: { newOpportunity: true },
+      },
+    });
+    await setOrgPlan(prisma, orgId, PLAN_KEYS.free);
+    const res = await authedJson(app, "/api/saas/integrations/slack/disconnect", {
+      method: "POST",
+      cookie,
+      organizationId: orgId,
+      body: {},
+    });
+    expect(res.status).toBe(200);
+    expect(
+      await prisma.organizationSlackConnection.findUnique({
+        where: { organizationId: orgId },
+      }),
+    ).toBeNull();
   });
 });
