@@ -9,6 +9,14 @@ import type {
 } from "../../kimdis/types.js";
 import { SaasError, badRequest, kimdisUpstreamError } from "../errors.js";
 import {
+  evaluateRegionGate,
+  normalizeRegionCodes,
+} from "../geo/nuts.js";
+import {
+  mergeKimdisSearchItems,
+  searchKimdisPublicUi,
+} from "./kimdis-public-ui.js";
+import {
   tedContractNatureLabel,
   type TedNoticeRef,
 } from "../sources/ted-adapter.js";
@@ -34,6 +42,7 @@ export const KIMDIS_PROCEDURE_TYPES: Record<string, string> = {
 };
 
 export const KIMDIS_REQUEST_KINDS = [
+  { id: "any", label: "Όλοι οι τύποι αιτημάτων" },
   { id: "initial", label: "Πρωτογενή" },
   { id: "approved", label: "Εγκεκριμένα" },
   { id: "approval", label: "Εγκρίσεις" },
@@ -44,6 +53,58 @@ export type KimdisRequestKind = (typeof KIMDIS_REQUEST_KINDS)[number]["id"];
 export type KimdisOpenState = "OPEN" | "CLOSED" | "CANCELLED" | "UNKNOWN";
 
 export type KimdisSearchSort = "date_desc" | "date_asc";
+
+/** Full ADAM as used by KIMDIS Open Data (year + family + digits). */
+const FULL_ADAM_RE =
+  /^(\d{2})(REQ|PROC|AWRD|CONTRACT)(\d{6,12})$/i;
+const PARTIAL_ADAM_HINT_RE =
+  /^\d{0,2}(REQ|PROC|AWRD|CONTRACT)?\d*$/i;
+
+export type ParsedKimdisAdam =
+  | {
+      status: "exact";
+      adam: string;
+      recordType: RecordType | "AWRD" | "CONTRACT";
+    }
+  | { status: "empty" }
+  | { status: "invalid"; normalized: string; reason: string };
+
+/** Trim, collapse spaces, uppercase family segment. */
+export const normalizeKimdisAdam = (raw: string): string =>
+  raw.trim().replace(/\s+/g, "").toUpperCase();
+
+/**
+ * Classify an ADAM field value for exact lookup vs validation.
+ * Partial / malformed values must not pretend to be exact search.
+ */
+export const parseKimdisAdamInput = (raw?: string | null): ParsedKimdisAdam => {
+  if (raw == null || !String(raw).trim()) return { status: "empty" };
+  const normalized = normalizeKimdisAdam(String(raw));
+  const full = FULL_ADAM_RE.exec(normalized);
+  if (full) {
+    const recordType = full[2]!.toUpperCase() as
+      | RecordType
+      | "AWRD"
+      | "CONTRACT";
+    return {
+      status: "exact",
+      adam: `${full[1]}${recordType}${full[3]}`,
+      recordType,
+    };
+  }
+  if (PARTIAL_ADAM_HINT_RE.test(normalized) && /\d/.test(normalized)) {
+    return {
+      status: "invalid",
+      normalized,
+      reason: "adam_incomplete",
+    };
+  }
+  return {
+    status: "invalid",
+    normalized,
+    reason: "adam_invalid",
+  };
+};
 
 export type KimdisSearchFilters = {
   recordFamily: RecordType;
@@ -61,14 +122,25 @@ export type KimdisSearchFilters = {
   searchAllHistory?: boolean;
   totalCostFrom?: number;
   totalCostTo?: number;
-  /** Omit / undefined = initial only (manual search default). `"any"` = all REQ kinds. */
-  requestKind?: KimdisRequestKind | "any";
+  /**
+   * REQ kind flags. Omit / undefined = initial only (watch-scan / legacy default).
+   * Manual search should send `"any"` explicitly for all kinds.
+   */
+  requestKind?: KimdisRequestKind;
   procedureType?: string;
   finalSubmissionDateFrom?: string;
   finalSubmissionDateTo?: string;
   cancelDateFrom?: string;
   cancelDateTo?: string;
   signer?: string;
+  /** Official NUTS2 codes — filtered server-side (Open Data has no region param). */
+  regions?: string[];
+  includeUnclassifiedRegion?: boolean;
+  /**
+   * Manual search only: after Open Data, also query the public ΚΗΜΔΗΣ UI and
+   * merge missing ADAMs. Never enable for watch-profile scans.
+   */
+  enrichFromPublicUi?: boolean;
 };
 
 export type KimdisSearchItem = {
@@ -112,6 +184,27 @@ export type KimdisSearchResult = {
   totalElements: number;
   totalPages: number;
   last: boolean;
+  /** Exact ADAM lookup — other form filters were not applied upstream. */
+  mode?: "standard" | "exact_adam";
+  exactAdam?: string;
+  exactAdamFound?: boolean;
+  /** Present when geographic filtering ran server-side. */
+  regionFilter?: {
+    applied: boolean;
+    /** True when upstream pages were capped before a full filtered total was known. */
+    partial: boolean;
+    scannedUpstreamPages: number;
+    matchedSoFar: number;
+    regions: string[];
+    includeUnclassified: boolean;
+  };
+  /** Present when the unofficial public-UI fallback ran. */
+  publicUiEnrichment?: {
+    attempted: boolean;
+    ok: boolean;
+    added: number;
+    errorSafe?: string;
+  };
 };
 
 const emptyResult = (page: number): KimdisSearchResult => ({
@@ -168,7 +261,7 @@ const upstreamSortParam = (sort: KimdisSearchSort): string =>
   sort === "date_asc" ? "submissionDate,asc" : "submissionDate,desc";
 
 const requestKindFlags = (
-  requestKind?: KimdisRequestKind | "any",
+  requestKind?: KimdisRequestKind,
 ): { isInitial: boolean; isApproved: boolean; isApproval: boolean } => {
   switch (requestKind) {
     case "any":
@@ -180,9 +273,14 @@ const requestKindFlags = (
     case "initial":
       return { isInitial: true, isApproved: false, isApproval: false };
     default:
+      // Legacy / watch-scan omit → primary requests only.
       return { isInitial: true, isApproved: false, isApproval: false };
   }
 };
+
+/** Soft cap: Open Data has no NUTS filter; we page upstream without downloading unbounded history. */
+export const REGION_FILTER_MAX_UPSTREAM_PAGES = 8;
+export const KIMDIS_UPSTREAM_PAGE_SIZE = 50;
 
 const collectCpvs = (details: KimdisObjectDetail[] | null | undefined): string[] => {
   const cpvs = new Set<string>();
@@ -355,6 +453,491 @@ const pickExactAdam = (
 ): KimdisSearchItem | null =>
   items.find((item) => item.adam === adam) ?? null;
 
+const resolveSearchDates = (
+  filters: Pick<
+    KimdisSearchFilters,
+    "dateFrom" | "dateTo" | "searchAllHistory"
+  >,
+): { dateFrom: string; dateTo: string } => {
+  if (filters.dateFrom && filters.dateTo) {
+    return { dateFrom: filters.dateFrom, dateTo: filters.dateTo };
+  }
+  if (filters.dateFrom) {
+    return { dateFrom: filters.dateFrom, dateTo: formatDateOnly(new Date()) };
+  }
+  if (filters.dateTo) {
+    const defaults = defaultDateWindow();
+    return { dateFrom: defaults.dateFrom, dateTo: filters.dateTo };
+  }
+  if (filters.searchAllHistory) {
+    return allHistoryDateWindow();
+  }
+  return defaultDateWindow();
+};
+
+type UpstreamSearchBody = {
+  dates: { dateFrom: string; dateTo: string };
+  contractTypeCode?: string;
+  procedureTypeCode?: string;
+  title?: string;
+  referenceNumber?: string;
+  cpvItems?: string[];
+  organizations?: string[];
+  signer?: string;
+  totalCostFrom?: number;
+  totalCostTo?: number;
+  cancelDateFrom?: string;
+  cancelDateTo?: string;
+  finalSubmissionDateFrom?: string;
+  finalSubmissionDateTo?: string;
+  requestKind?: KimdisRequestKind;
+};
+
+const fetchUpstreamPage = async (
+  kimdis: KimdisClient,
+  recordFamily: RecordType,
+  body: UpstreamSearchBody,
+  page: number,
+  sortParam: string,
+): Promise<{
+  items: KimdisSearchItem[];
+  totalElements: number;
+  totalPages: number;
+  last: boolean;
+  number: number;
+}> => {
+  if (recordFamily === "REQ") {
+    const kindFlags = requestKindFlags(body.requestKind);
+    const result = await kimdis.searchRequestsPage(
+      {
+        ...body.dates,
+        ...(body.contractTypeCode ? { contractType: body.contractTypeCode } : {}),
+        ...kindFlags,
+        ...(body.title ? { title: body.title } : {}),
+        ...(body.referenceNumber ? { referenceNumber: body.referenceNumber } : {}),
+        ...(body.cpvItems ? { cpvItems: body.cpvItems } : {}),
+        ...(body.organizations ? { organizations: body.organizations } : {}),
+        ...(body.signer ? { signer: body.signer } : {}),
+        ...(body.totalCostFrom != null ? { totalCostFrom: body.totalCostFrom } : {}),
+        ...(body.totalCostTo != null ? { totalCostTo: body.totalCostTo } : {}),
+        ...(body.cancelDateFrom ? { cancelDateFrom: body.cancelDateFrom } : {}),
+        ...(body.cancelDateTo ? { cancelDateTo: body.cancelDateTo } : {}),
+      },
+      page,
+      sortParam,
+    );
+    return {
+      items: (result.content ?? []).map((record) =>
+        normalizeItem(kimdis, record, "REQ"),
+      ),
+      totalElements: result.totalElements ?? 0,
+      totalPages: result.totalPages ?? 0,
+      last: Boolean(result.last),
+      number: result.number ?? page,
+    };
+  }
+
+  const result = await kimdis.searchNoticesPage(
+    {
+      ...body.dates,
+      ...(body.contractTypeCode ? { contractType: body.contractTypeCode } : {}),
+      ...(body.title ? { title: body.title } : {}),
+      ...(body.referenceNumber ? { referenceNumber: body.referenceNumber } : {}),
+      ...(body.cpvItems ? { cpvItems: body.cpvItems } : {}),
+      ...(body.organizations ? { organizations: body.organizations } : {}),
+      ...(body.signer ? { signer: body.signer } : {}),
+      ...(body.procedureTypeCode ? { procedureType: body.procedureTypeCode } : {}),
+      ...(body.totalCostFrom != null ? { totalCostFrom: body.totalCostFrom } : {}),
+      ...(body.totalCostTo != null ? { totalCostTo: body.totalCostTo } : {}),
+      ...(body.cancelDateFrom ? { cancelDateFrom: body.cancelDateFrom } : {}),
+      ...(body.cancelDateTo ? { cancelDateTo: body.cancelDateTo } : {}),
+      ...(body.finalSubmissionDateFrom
+        ? { finalSubmissionDateFrom: body.finalSubmissionDateFrom }
+        : {}),
+      ...(body.finalSubmissionDateTo
+        ? { finalSubmissionDateTo: body.finalSubmissionDateTo }
+        : {}),
+    },
+    page,
+    sortParam,
+  );
+  return {
+    items: (result.content ?? []).map((record) =>
+      normalizeItem(kimdis, record, "PROC"),
+    ),
+    totalElements: result.totalElements ?? 0,
+    totalPages: result.totalPages ?? 0,
+    last: Boolean(result.last),
+    number: result.number ?? page,
+  };
+};
+
+const itemMatchesRegions = (
+  item: KimdisSearchItem,
+  regions: string[],
+  includeUnclassified: boolean,
+): boolean =>
+  evaluateRegionGate(item.nutsCode, regions, includeUnclassified) === "ok";
+
+/**
+ * Open Data has no NUTS parameter. Walk a bounded number of upstream pages,
+ * collect matches, and slice the requested result page. Never claim a full
+ * filtered total when the walk was capped.
+ */
+const searchWithRegionFilter = async (
+  kimdis: KimdisClient,
+  input: {
+    recordFamily: RecordType;
+    body: UpstreamSearchBody;
+    sort: KimdisSearchSort;
+    page: number;
+    pageSize: number;
+    regions: string[];
+    includeUnclassified: boolean;
+  },
+): Promise<KimdisSearchResult> => {
+  const sortParam = upstreamSortParam(input.sort);
+  const matched: KimdisSearchItem[] = [];
+  let upstreamPage = 0;
+  let upstreamLast = false;
+  let scanned = 0;
+  const needThrough = (input.page + 1) * input.pageSize;
+  // Grow the upstream budget with the requested page so "next" can continue
+  // beyond the first window without downloading unbounded history.
+  const maxUpstreamPages = Math.min(
+    40,
+    REGION_FILTER_MAX_UPSTREAM_PAGES * (input.page + 1),
+  );
+
+  while (scanned < maxUpstreamPages && matched.length < needThrough) {
+    let batch: Awaited<ReturnType<typeof fetchUpstreamPage>>;
+    try {
+      batch = await fetchUpstreamPage(
+        kimdis,
+        input.recordFamily,
+        input.body,
+        upstreamPage,
+        sortParam,
+      );
+    } catch (error) {
+      if (isNoResultsUpstream(error)) {
+        upstreamLast = true;
+        break;
+      }
+      throw error;
+    }
+    scanned += 1;
+    for (const item of batch.items) {
+      if (itemMatchesRegions(item, input.regions, input.includeUnclassified)) {
+        matched.push(item);
+      }
+    }
+    upstreamLast = batch.last || batch.items.length === 0;
+    if (upstreamLast) break;
+    if (batch.totalPages > 0 && upstreamPage + 1 >= batch.totalPages) {
+      upstreamLast = true;
+      break;
+    }
+    upstreamPage += 1;
+  }
+
+  const partial = !upstreamLast;
+  const start = input.page * input.pageSize;
+  const pageItems = matched.slice(start, start + input.pageSize);
+  const matchedSoFar = matched.length;
+  // Honest totals: full count only when the walk finished; otherwise lower bound.
+  const totalElements = partial ? matchedSoFar : matchedSoFar;
+  const totalPages = partial
+    ? Math.max(input.page + 1, Math.ceil(matchedSoFar / input.pageSize) || 1)
+    : Math.max(1, Math.ceil(matchedSoFar / input.pageSize) || 0);
+  const last = !partial && start + pageItems.length >= matchedSoFar;
+
+  return {
+    items: pageItems,
+    page: input.page,
+    totalElements,
+    totalPages: matchedSoFar === 0 && !partial ? 0 : totalPages,
+    last,
+    mode: "standard",
+    regionFilter: {
+      applied: true,
+      partial,
+      scannedUpstreamPages: scanned,
+      matchedSoFar,
+      regions: input.regions,
+      includeUnclassified: input.includeUnclassified,
+    },
+  };
+};
+
+const itemDateMsSafe = (item: KimdisSearchItem): number => {
+  const raw = item.submissionDate || item.signedDate;
+  if (!raw) return 0;
+  const ms = new Date(raw).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+};
+
+const sortMergedItems = (
+  items: KimdisSearchItem[],
+  sort: KimdisSearchSort,
+): KimdisSearchItem[] => {
+  const sorted = [...items].sort(
+    (a, b) => itemDateMsSafe(b) - itemDateMsSafe(a),
+  );
+  return sort === "date_asc" ? sorted.reverse() : sorted;
+};
+
+/**
+ * Exact ADAM lookup against Open Data — no silent date / kind / title filters.
+ * Optional public-UI fallback when Open Data misses the act.
+ */
+const searchExactAdam = async (
+  kimdis: KimdisClient,
+  input: {
+    adam: string;
+    adamRecordType: RecordType | "AWRD" | "CONTRACT";
+    selectedFamily: RecordType;
+    enrichFromPublicUi?: boolean;
+  },
+): Promise<KimdisSearchResult> => {
+  if (
+    input.adamRecordType !== "REQ" &&
+    input.adamRecordType !== "PROC"
+  ) {
+    throw badRequest(
+      `adam_family_unsupported:${input.adamRecordType}`,
+    );
+  }
+  if (input.adamRecordType !== input.selectedFamily) {
+    throw badRequest(
+      `adam_family_mismatch:expected_${input.adamRecordType}_got_${input.selectedFamily}`,
+    );
+  }
+
+  const body: UpstreamSearchBody = {
+    dates: allHistoryDateWindow(),
+    referenceNumber: input.adam,
+    requestKind: input.selectedFamily === "REQ" ? "any" : undefined,
+  };
+
+  const notFound = (
+    enrichment?: KimdisSearchResult["publicUiEnrichment"],
+  ): KimdisSearchResult => ({
+    items: [],
+    page: 0,
+    totalElements: 0,
+    totalPages: 0,
+    last: true,
+    mode: "exact_adam",
+    exactAdam: input.adam,
+    exactAdamFound: false,
+    publicUiEnrichment: enrichment,
+  });
+
+  try {
+    const recentDates = defaultDateWindow();
+    const recent = await fetchUpstreamPage(
+      kimdis,
+      input.selectedFamily,
+      { ...body, dates: recentDates },
+      0,
+      upstreamSortParam("date_desc"),
+    );
+    let hit = pickExactAdam(recent.items, input.adam);
+    if (!hit) {
+      const historical = await fetchUpstreamPage(
+        kimdis,
+        input.selectedFamily,
+        body,
+        0,
+        upstreamSortParam("date_desc"),
+      );
+      hit = pickExactAdam(historical.items, input.adam);
+    }
+
+    if (hit) {
+      return {
+        items: [hit],
+        page: 0,
+        totalElements: 1,
+        totalPages: 1,
+        last: true,
+        mode: "exact_adam",
+        exactAdam: input.adam,
+        exactAdamFound: true,
+        publicUiEnrichment: input.enrichFromPublicUi
+          ? { attempted: false, ok: true, added: 0 }
+          : undefined,
+      };
+    }
+
+    if (!input.enrichFromPublicUi || input.selectedFamily !== "REQ") {
+      return notFound(
+        input.enrichFromPublicUi
+          ? { attempted: false, ok: true, added: 0 }
+          : undefined,
+      );
+    }
+
+    const ui = await searchKimdisPublicUi({
+      recordFamily: "REQ",
+      referenceNumber: input.adam,
+      requestKind: "any",
+    });
+    if (!ui.ok) {
+      return notFound({
+        attempted: true,
+        ok: false,
+        added: 0,
+        errorSafe: ui.errorSafe,
+      });
+    }
+    const uiHit = pickExactAdam(ui.items, input.adam);
+    if (!uiHit) {
+      return notFound({ attempted: true, ok: true, added: 0 });
+    }
+    return {
+      items: [uiHit],
+      page: 0,
+      totalElements: 1,
+      totalPages: 1,
+      last: true,
+      mode: "exact_adam",
+      exactAdam: input.adam,
+      exactAdamFound: true,
+      publicUiEnrichment: { attempted: true, ok: true, added: 1 },
+    };
+  } catch (error) {
+    if (error instanceof SaasError) throw error;
+    if (isNoResultsUpstream(error)) {
+      if (!input.enrichFromPublicUi || input.selectedFamily !== "REQ") {
+        return notFound();
+      }
+      const ui = await searchKimdisPublicUi({
+        recordFamily: "REQ",
+        referenceNumber: input.adam,
+        requestKind: "any",
+      });
+      const uiHit = ui.ok ? pickExactAdam(ui.items, input.adam) : null;
+      if (uiHit) {
+        return {
+          items: [uiHit],
+          page: 0,
+          totalElements: 1,
+          totalPages: 1,
+          last: true,
+          mode: "exact_adam",
+          exactAdam: input.adam,
+          exactAdamFound: true,
+          publicUiEnrichment: { attempted: true, ok: true, added: 1 },
+        };
+      }
+      return notFound({
+        attempted: true,
+        ok: ui.ok,
+        added: 0,
+        errorSafe: ui.errorSafe,
+      });
+    }
+    const message =
+      error instanceof Error ? error.message : "KIMDIS search failed";
+    throw kimdisUpstreamError(message);
+  }
+};
+
+const enrichStandardResult = async (
+  openData: KimdisSearchResult,
+  filters: KimdisSearchFilters,
+  dates: { dateFrom: string; dateTo: string },
+  sort: KimdisSearchSort,
+): Promise<KimdisSearchResult> => {
+  if (!filters.enrichFromPublicUi || filters.recordFamily !== "REQ") {
+    return openData;
+  }
+
+  const ui = await searchKimdisPublicUi({
+    recordFamily: "REQ",
+    title: filters.title,
+    referenceNumber: filters.referenceNumber,
+    dateFrom: dates.dateFrom,
+    dateTo: dates.dateTo,
+    requestKind: filters.requestKind ?? "any",
+    organization: filters.organization,
+  });
+
+  if (!ui.ok) {
+    return {
+      ...openData,
+      publicUiEnrichment: {
+        attempted: true,
+        ok: false,
+        added: 0,
+        errorSafe: ui.errorSafe,
+      },
+    };
+  }
+
+  let uiItems = ui.items;
+  const regions = normalizeRegionCodes(filters.regions);
+  if (regions.length > 0) {
+    uiItems = uiItems.filter(
+      (item) =>
+        evaluateRegionGate(
+          item.nutsCode,
+          regions,
+          Boolean(filters.includeUnclassifiedRegion),
+        ) === "ok",
+    );
+  }
+
+  // Prefer merging on the first page / complete Open Data window so extras
+  // surface immediately. Later Open Data pages stay Open-Data-only.
+  const page = filters.page ?? 0;
+  if (page > 0 && !openData.last && openData.totalElements > openData.items.length) {
+    const openAdams = new Set(openData.items.map((i) => i.adam));
+    const extras = uiItems.filter((i) => !openAdams.has(i.adam));
+    return {
+      ...openData,
+      publicUiEnrichment: {
+        attempted: true,
+        ok: true,
+        added: 0,
+        errorSafe:
+          extras.length > 0
+            ? `public_ui_extras_deferred:${extras.length}`
+            : undefined,
+      },
+    };
+  }
+
+  const { items: merged, addedFromPublicUi } = mergeKimdisSearchItems(
+    openData.items,
+    uiItems,
+  );
+  const sorted = sortMergedItems(merged, sort);
+  const pageSize = Math.min(
+    Math.max(filters.pageSize ?? KIMDIS_UPSTREAM_PAGE_SIZE, 1),
+    KIMDIS_UPSTREAM_PAGE_SIZE,
+  );
+  const totalElements = Math.max(openData.totalElements, sorted.length);
+  const start = page * pageSize;
+  const pageItems = sorted.slice(start, start + pageSize);
+  const totalPages = Math.max(1, Math.ceil(totalElements / pageSize));
+
+  return {
+    ...openData,
+    items: pageItems,
+    totalElements,
+    totalPages,
+    last: start + pageItems.length >= sorted.length && openData.last,
+    publicUiEnrichment: {
+      attempted: true,
+      ok: true,
+      added: addedFromPublicUi,
+    },
+  };
+};
+
 /**
  * Load a single KIMDIS record by ADAM for tender detail pages.
  * Prefers the local DB (instant) so followed/known acts open without waiting
@@ -366,8 +949,12 @@ export const getKimdisRecordByAdam = async (
   input: { recordType: RecordType; adam: string },
   options?: { prisma?: PrismaClient },
 ): Promise<KimdisSearchItem | null> => {
-  const adam = input.adam.trim();
-  if (!adam) throw badRequest("adam_required");
+  const parsed = parseKimdisAdamInput(input.adam);
+  if (parsed.status === "empty") throw badRequest("adam_required");
+  if (parsed.status === "invalid") {
+    throw badRequest(parsed.reason);
+  }
+  const adam = parsed.adam;
 
   if (options?.prisma) {
     const local = await options.prisma.tender.findUnique({
@@ -389,30 +976,13 @@ export const getKimdisRecordByAdam = async (
     }
   }
 
-  const requestKind =
-    input.recordType === "REQ" ? ("any" as const) : undefined;
-
-  // Recent window first — exact ADAM lookups are normally fast here.
-  const recent = await searchKimdis(kimdis, {
-    recordFamily: input.recordType,
-    referenceNumber: adam,
-    page: 0,
-    sort: "date_desc",
-    requestKind,
+  const result = await searchExactAdam(kimdis, {
+    adam,
+    adamRecordType: parsed.recordType,
+    selectedFamily: input.recordType,
+    enrichFromPublicUi: true,
   });
-  const recentHit = pickExactAdam(recent.items, adam);
-  if (recentHit) return recentHit;
-
-  // Older acts: widen once. referenceNumber keeps the payload small.
-  const historical = await searchKimdis(kimdis, {
-    recordFamily: input.recordType,
-    referenceNumber: adam,
-    page: 0,
-    sort: "date_desc",
-    searchAllHistory: true,
-    requestKind,
-  });
-  return pickExactAdam(historical.items, adam);
+  return result.items[0] ?? null;
 };
 
 export const searchKimdis = async (
@@ -421,6 +991,25 @@ export const searchKimdis = async (
 ): Promise<KimdisSearchResult> => {
   const page = filters.page ?? 0;
   const sort: KimdisSearchSort = filters.sort ?? "date_desc";
+  const pageSize = Math.min(
+    Math.max(filters.pageSize ?? KIMDIS_UPSTREAM_PAGE_SIZE, 1),
+    KIMDIS_UPSTREAM_PAGE_SIZE,
+  );
+
+  const adamParsed = parseKimdisAdamInput(filters.referenceNumber);
+  if (adamParsed.status === "invalid") {
+    throw badRequest(adamParsed.reason);
+  }
+  if (adamParsed.status === "exact") {
+    // Exact ADAM: ignore title/dates/kind/regions — identity lookup only.
+    return searchExactAdam(kimdis, {
+      adam: adamParsed.adam,
+      adamRecordType: adamParsed.recordType,
+      selectedFamily: filters.recordFamily,
+      enrichFromPublicUi: filters.enrichFromPublicUi,
+    });
+  }
+
   const contractTypeCode = resolveContractTypeCode(filters.contractType);
   if (filters.contractType?.trim() && !contractTypeCode) {
     throw badRequest(`Unknown contract type: ${filters.contractType}`);
@@ -431,120 +1020,76 @@ export const searchKimdis = async (
     throw badRequest(`Unknown procedure type: ${filters.procedureType}`);
   }
 
-  let dates: { dateFrom: string; dateTo: string };
-  if (filters.dateFrom && filters.dateTo) {
-    dates = { dateFrom: filters.dateFrom, dateTo: filters.dateTo };
-  } else if (filters.dateFrom) {
-    dates = { dateFrom: filters.dateFrom, dateTo: formatDateOnly(new Date()) };
-  } else if (filters.dateTo) {
-    const defaults = defaultDateWindow();
-    dates = { dateFrom: defaults.dateFrom, dateTo: filters.dateTo };
-  } else if (filters.searchAllHistory) {
-    dates = allHistoryDateWindow();
-  } else {
-    dates = defaultDateWindow();
-  }
-
-  const cpvItems = filters.cpv?.trim() ? [filters.cpv.trim()] : undefined;
-  const organizations = filters.organization?.trim()
-    ? [filters.organization.trim()]
-    : undefined;
+  const regions = normalizeRegionCodes(filters.regions);
+  const includeUnclassified = Boolean(filters.includeUnclassifiedRegion);
+  const dates = resolveSearchDates(filters);
+  const body: UpstreamSearchBody = {
+    dates,
+    contractTypeCode,
+    procedureTypeCode,
+    title: filters.title?.trim() || undefined,
+    cpvItems: filters.cpv?.trim() ? [filters.cpv.trim()] : undefined,
+    organizations: filters.organization?.trim()
+      ? [filters.organization.trim()]
+      : undefined,
+    signer: filters.signer?.trim() || undefined,
+    totalCostFrom: filters.totalCostFrom,
+    totalCostTo: filters.totalCostTo,
+    cancelDateFrom: filters.cancelDateFrom,
+    cancelDateTo: filters.cancelDateTo,
+    finalSubmissionDateFrom: filters.finalSubmissionDateFrom,
+    finalSubmissionDateTo: filters.finalSubmissionDateTo,
+    requestKind: filters.requestKind,
+  };
   const sortParam = upstreamSortParam(sort);
 
   try {
-    if (filters.recordFamily === "REQ") {
-      const kindFlags = requestKindFlags(filters.requestKind);
-      const body = {
-        ...dates,
-        ...(contractTypeCode ? { contractType: contractTypeCode } : {}),
-        ...kindFlags,
-        ...(filters.title?.trim() ? { title: filters.title.trim() } : {}),
-        ...(filters.referenceNumber?.trim()
-          ? { referenceNumber: filters.referenceNumber.trim() }
-          : {}),
-        ...(cpvItems ? { cpvItems } : {}),
-        ...(organizations ? { organizations } : {}),
-        ...(filters.signer?.trim() ? { signer: filters.signer.trim() } : {}),
-        ...(filters.totalCostFrom != null
-          ? { totalCostFrom: filters.totalCostFrom }
-          : {}),
-        ...(filters.totalCostTo != null
-          ? { totalCostTo: filters.totalCostTo }
-          : {}),
-        ...(filters.cancelDateFrom
-          ? { cancelDateFrom: filters.cancelDateFrom }
-          : {}),
-        ...(filters.cancelDateTo ? { cancelDateTo: filters.cancelDateTo } : {}),
-      };
-
-      const result = await kimdis.searchRequestsPage(body, page, sortParam);
-      const totalElements = result.totalElements ?? 0;
-      const last = Boolean(result.last);
-      const items = sortItemsIfCompletePage(
-        (result.content ?? []).map((record) => normalizeItem(kimdis, record, "REQ")),
+    let openData: KimdisSearchResult;
+    if (regions.length > 0) {
+      openData = await searchWithRegionFilter(kimdis, {
+        recordFamily: filters.recordFamily,
+        body,
         sort,
         page,
-        last,
-        totalElements,
+        pageSize,
+        regions,
+        includeUnclassified,
+      });
+    } else {
+      const result = await fetchUpstreamPage(
+        kimdis,
+        filters.recordFamily,
+        body,
+        page,
+        sortParam,
       );
-      return {
+      const items = sortItemsIfCompletePage(
+        result.items,
+        sort,
+        page,
+        result.last,
+        result.totalElements,
+      );
+      openData = {
         items,
-        page: result.number ?? page,
-        totalElements,
-        totalPages: result.totalPages ?? 0,
-        last,
+        page: result.number,
+        totalElements: result.totalElements,
+        totalPages: result.totalPages,
+        last: result.last,
+        mode: "standard",
       };
     }
-
-    const body = {
-      ...dates,
-      ...(contractTypeCode ? { contractType: contractTypeCode } : {}),
-      ...(filters.title?.trim() ? { title: filters.title.trim() } : {}),
-      ...(filters.referenceNumber?.trim()
-        ? { referenceNumber: filters.referenceNumber.trim() }
-        : {}),
-      ...(cpvItems ? { cpvItems } : {}),
-      ...(organizations ? { organizations } : {}),
-      ...(filters.signer?.trim() ? { signer: filters.signer.trim() } : {}),
-      ...(procedureTypeCode ? { procedureType: procedureTypeCode } : {}),
-      ...(filters.totalCostFrom != null
-        ? { totalCostFrom: filters.totalCostFrom }
-        : {}),
-      ...(filters.totalCostTo != null
-        ? { totalCostTo: filters.totalCostTo }
-        : {}),
-      ...(filters.cancelDateFrom
-        ? { cancelDateFrom: filters.cancelDateFrom }
-        : {}),
-      ...(filters.cancelDateTo ? { cancelDateTo: filters.cancelDateTo } : {}),
-      ...(filters.finalSubmissionDateFrom
-        ? { finalSubmissionDateFrom: filters.finalSubmissionDateFrom }
-        : {}),
-      ...(filters.finalSubmissionDateTo
-        ? { finalSubmissionDateTo: filters.finalSubmissionDateTo }
-        : {}),
-    };
-
-    const result = await kimdis.searchNoticesPage(body, page, sortParam);
-    const totalElements = result.totalElements ?? 0;
-    const last = Boolean(result.last);
-    const items = sortItemsIfCompletePage(
-      (result.content ?? []).map((record) => normalizeItem(kimdis, record, "PROC")),
-      sort,
-      page,
-      last,
-      totalElements,
-    );
-    return {
-      items,
-      page: result.number ?? page,
-      totalElements,
-      totalPages: result.totalPages ?? 0,
-      last,
-    };
+    return enrichStandardResult(openData, filters, dates, sort);
   } catch (error) {
     if (error instanceof SaasError) throw error;
-    if (isNoResultsUpstream(error)) return emptyResult(page);
+    if (isNoResultsUpstream(error)) {
+      return enrichStandardResult(
+        { ...emptyResult(page), mode: "standard" },
+        filters,
+        dates,
+        sort,
+      );
+    }
     const message =
       error instanceof Error ? error.message : "KIMDIS search failed";
     throw kimdisUpstreamError(message);

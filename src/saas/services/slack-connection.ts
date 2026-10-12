@@ -30,10 +30,19 @@ import {
   slackPreferencesHaveAnyEnabled,
   type SlackNotificationPreferences,
 } from "./slack-preferences.js";
+import {
+  deriveSlackDeliveryState,
+  SLACK_DELIVERY_STATE_LABEL_EL,
+  slackTestResultMessageEl,
+  type SlackDeliveryState,
+  type SlackTestDelivery,
+} from "./slack-delivery-state.js";
 import { resolveOrganizationScanAccess } from "./scan-access.js";
 import { postSlackIncomingWebhook } from "./slack-delivery.js";
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+/** Minimum gap between explicit Slack connection tests (server-side). */
+const SLACK_TEST_MIN_INTERVAL_MS = 30_000;
 
 export type SlackConnectionPublicView = {
   configured: boolean;
@@ -42,6 +51,8 @@ export type SlackConnectionPublicView = {
   connection: null | {
     id: string;
     status: SlackConnectionStatus;
+    deliveryState: SlackDeliveryState;
+    deliveryStateLabelEl: string;
     teamName: string;
     channelName: string;
     channelLabel: string;
@@ -58,19 +69,61 @@ export type SlackConnectionPublicView = {
     freeLockedEl: string;
     planPausedEl: string;
     needsReconnectEl: string;
+    adminsOnlyEl: string;
+    connectHintEl: string;
   };
 };
 
 const MESSAGES = {
   freeLockedEl:
     "Οι ειδοποιήσεις Slack είναι διαθέσιμες στα πακέτα Basic και Pro.",
-  planPausedEl:
-    "Οι ειδοποιήσεις Slack έχουν τεθεί σε παύση. Απαιτείται ενεργό Basic ή Pro για να τις ενεργοποιήσετε ξανά.",
-  needsReconnectEl:
-    "Η σύνδεση με το Slack χρειάζεται ανανέωση. Συνδεθείτε ξανά για να συνεχίσετε να λαμβάνετε ειδοποιήσεις.",
+  planPausedEl: SLACK_DELIVERY_STATE_LABEL_EL.PLAN_PAUSED,
+  needsReconnectEl: SLACK_DELIVERY_STATE_LABEL_EL.NEEDS_RECONNECT,
+  adminsOnlyEl: "Μόνο οι διαχειριστές μπορούν να αλλάξουν τη σύνδεση",
+  connectHintEl:
+    "Συνδέστε το Slack για να λαμβάνει η ομάδα σας ενημερώσεις στο κανάλι που θα επιλέξετε.",
   oauthCancelEl:
     "Η σύνδεση με το Slack δεν ολοκληρώθηκε. Μπορείτε να δοκιμάσετε ξανά.",
 } as const;
+
+const toPublicConnection = (
+  row: {
+    id: string;
+    status: SlackConnectionStatus;
+    slackTeamName: string;
+    slackChannelName: string;
+    notificationsArmed: boolean;
+    preferences: unknown;
+    lastTestSentAt: Date | null;
+    lastSuccessAt: Date | null;
+    lastErrorSafe: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+): NonNullable<SlackConnectionPublicView["connection"]> => {
+  const preferences = normalizeSlackPreferences(row.preferences);
+  const deliveryState = deriveSlackDeliveryState({
+    status: row.status,
+    notificationsArmed: row.notificationsArmed,
+    preferences,
+  });
+  return {
+    id: row.id,
+    status: row.status,
+    deliveryState,
+    deliveryStateLabelEl: SLACK_DELIVERY_STATE_LABEL_EL[deliveryState],
+    teamName: row.slackTeamName,
+    channelName: row.slackChannelName,
+    channelLabel: formatChannelLabel(row.slackChannelName),
+    notificationsArmed: row.notificationsArmed,
+    preferences,
+    lastTestSentAt: row.lastTestSentAt?.toISOString() ?? null,
+    lastSuccessAt: row.lastSuccessAt?.toISOString() ?? null,
+    lastErrorSafe: row.lastErrorSafe,
+    installedAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+};
 
 export const slackUiMessages = MESSAGES;
 
@@ -143,23 +196,10 @@ export const getSlackConnectionView = async (
       freeLockedEl: MESSAGES.freeLockedEl,
       planPausedEl: MESSAGES.planPausedEl,
       needsReconnectEl: MESSAGES.needsReconnectEl,
+      adminsOnlyEl: MESSAGES.adminsOnlyEl,
+      connectHintEl: MESSAGES.connectHintEl,
     },
-    connection: row
-      ? {
-          id: row.id,
-          status: row.status,
-          teamName: row.slackTeamName,
-          channelName: row.slackChannelName,
-          channelLabel: formatChannelLabel(row.slackChannelName),
-          notificationsArmed: row.notificationsArmed,
-          preferences: normalizeSlackPreferences(row.preferences),
-          lastTestSentAt: row.lastTestSentAt?.toISOString() ?? null,
-          lastSuccessAt: row.lastSuccessAt?.toISOString() ?? null,
-          lastErrorSafe: row.lastErrorSafe,
-          installedAt: row.createdAt.toISOString(),
-          updatedAt: row.updatedAt.toISOString(),
-        }
-      : null,
+    connection: row ? toPublicConnection(row) : null,
   };
 };
 
@@ -400,12 +440,13 @@ export const completeSlackOAuthCallback = async (
     ? normalizeSlackPreferences(existing.preferences)
     : DEFAULT_SLACK_PREFERENCES;
   const keepArmed = existing ? existing.notificationsArmed : false;
-  // Fresh connect starts paused until admin saves prefs.
-  const nextStatus: SlackConnectionStatus = existing?.status === "ACTIVE"
-    ? "ACTIVE"
-    : existing?.status === "PLAN_PAUSED"
-      ? "PLAN_PAUSED"
-      : "PAUSED";
+  // Preserve manual / plan pause. Never auto-resume after replace.
+  // Reconnect from NEEDS_RECONNECT requires explicit resume/activation.
+  let nextStatus: SlackConnectionStatus = "PAUSED";
+  if (existing?.status === "ACTIVE") nextStatus = "ACTIVE";
+  else if (existing?.status === "PAUSED") nextStatus = "PAUSED";
+  else if (existing?.status === "PLAN_PAUSED") nextStatus = "PLAN_PAUSED";
+  else if (existing?.status === "NEEDS_RECONNECT") nextStatus = "PAUSED";
 
   await prisma.organizationSlackConnection.upsert({
     where: { organizationId: stateRow.organizationId },
@@ -423,6 +464,8 @@ export const completeSlackOAuthCallback = async (
       notificationsArmed: false,
       lastErrorSafe: null,
       lastErrorAt: null,
+      lastTestSentAt: null,
+      lastSuccessAt: null,
     },
     update: {
       status: existing ? nextStatus : "PAUSED",
@@ -437,6 +480,9 @@ export const completeSlackOAuthCallback = async (
       notificationsArmed: existing ? keepArmed : false,
       lastErrorSafe: null,
       lastErrorAt: null,
+      // Test timestamp is per destination — never carry to a new channel.
+      lastTestSentAt: null,
+      lastSuccessAt: null,
     },
   });
 
@@ -453,12 +499,15 @@ export const updateSlackPreferences = async (
     userId: string;
     organizationId: string | null;
     preferences: SlackNotificationPreferences;
-    /** First save arms + activates when entitled. */
+    /**
+     * First-time arm + activate only. Must not lift an existing manual pause
+     * when saving later preference edits (`activate: false` / omitted).
+     */
     activate?: boolean;
   },
 ) => {
   const ctx = await requireSlackAdmin(prisma, input);
-  const { scanAccess } = await assertSlackEntitled(prisma, {
+  await assertSlackEntitled(prisma, {
     userId: ctx.userId,
     organizationId: ctx.organizationId,
   });
@@ -471,26 +520,33 @@ export const updateSlackPreferences = async (
   }
 
   const preferences = normalizeSlackPreferences(input.preferences);
-  const shouldActivate =
-    input.activate === true ||
-    (row.notificationsArmed && row.status === "ACTIVE");
+  const isFirstSetup = !row.notificationsArmed;
+  const wantsActivate = input.activate === true;
+
+  if (isFirstSetup || wantsActivate) {
+    if (!slackPreferencesHaveAnyEnabled(preferences)) {
+      throw badRequest("slack_prefs_required");
+    }
+  }
 
   let status: SlackConnectionStatus = row.status;
   let notificationsArmed = row.notificationsArmed;
 
-  if (row.status === "PLAN_PAUSED") {
-    // Prefs can be edited while paused; stay PLAN_PAUSED until explicit resume.
+  if (isFirstSetup && wantsActivate) {
+    // Initial “Αποθήκευση και ενεργοποίηση”.
     notificationsArmed = true;
-  } else if (shouldActivate || !row.notificationsArmed) {
-    if (slackPreferencesHaveAnyEnabled(preferences) || input.activate) {
-      notificationsArmed = true;
-      if (
-        scanAccess.status === "active" ||
-        scanAccess.status === "trial"
-      ) {
-        status = "ACTIVE";
-      }
+    if (row.status === "PLAN_PAUSED") {
+      status = "PLAN_PAUSED";
+    } else {
+      status = "ACTIVE";
     }
+  } else if (isFirstSetup && !wantsActivate) {
+    // Prefs may be drafted before arming; stay unarmed / paused.
+    notificationsArmed = false;
+  } else {
+    // Already configured: save prefs only — never lift PAUSED / PLAN_PAUSED.
+    notificationsArmed = true;
+    // status unchanged (including ACTIVE with all categories off).
   }
 
   const updated = await prisma.organizationSlackConnection.update({
@@ -528,32 +584,32 @@ export const setSlackNotificationsPaused = async (
   if (row.status === "NEEDS_RECONNECT") {
     throw badRequest("slack_needs_reconnect");
   }
-  if (row.status === "PLAN_PAUSED" && !input.paused) {
-    // Explicit re-enable after upgrade from Free.
-    if (!row.notificationsArmed) {
-      throw badRequest("slack_not_armed");
-    }
-    await prisma.organizationSlackConnection.update({
-      where: { id: row.id },
-      data: { status: "ACTIVE", lastErrorSafe: null },
-    });
-    return getSlackConnectionView(prisma, input);
-  }
+
+  const prefs = normalizeSlackPreferences(row.preferences);
+
   if (input.paused) {
     await cancelPendingSlackJobsForOrg(prisma, ctx.organizationId);
     await prisma.organizationSlackConnection.update({
       where: { id: row.id },
       data: { status: "PAUSED" },
     });
-  } else {
-    if (!row.notificationsArmed) {
-      throw badRequest("slack_not_armed");
-    }
-    await prisma.organizationSlackConnection.update({
-      where: { id: row.id },
-      data: { status: "ACTIVE", lastErrorSafe: null },
-    });
+    return getSlackConnectionView(prisma, input);
   }
+
+  // Resume — no OAuth, no backfill. Uses saved prefs only.
+  if (!row.notificationsArmed) {
+    throw badRequest("slack_not_armed");
+  }
+  if (!slackPreferencesHaveAnyEnabled(prefs)) {
+    throw badRequest("slack_prefs_required");
+  }
+  if (row.status === "PLAN_PAUSED") {
+    // Allowed after upgrade when entitled (assertSlackEntitled already passed).
+  }
+  await prisma.organizationSlackConnection.update({
+    where: { id: row.id },
+    data: { status: "ACTIVE", lastErrorSafe: null },
+  });
   return getSlackConnectionView(prisma, input);
 };
 
@@ -578,7 +634,13 @@ export const disconnectSlack = async (
 export const sendSlackTestMessage = async (
   prisma: PrismaClient,
   input: { userId: string; organizationId: string | null },
-): Promise<{ ok: true; channelLabel: string }> => {
+): Promise<{
+  ok: true;
+  delivery: SlackTestDelivery;
+  channelLabel: string;
+  messageEl: string;
+  lastTestSentAt: string;
+}> => {
   const ctx = await requireSlackAdmin(prisma, input);
   await assertSlackEntitled(prisma, {
     userId: ctx.userId,
@@ -591,8 +653,21 @@ export const sendSlackTestMessage = async (
   if (row.status === "NEEDS_RECONNECT") {
     throw badRequest("slack_needs_reconnect");
   }
+  if (row.status === "PLAN_PAUSED") {
+    throw forbidden("plan_feature_locked");
+  }
 
+  if (
+    row.lastTestSentAt &&
+    Date.now() - row.lastTestSentAt.getTime() < SLACK_TEST_MIN_INTERVAL_MS
+  ) {
+    throw badRequest("slack_test_rate_limited");
+  }
+
+  const channelLabel = formatChannelLabel(row.slackChannelName);
   const payload = buildTestSlackMessage(row.slackChannelName);
+  // Explicit test posts synchronously; timestamp only after Slack accepts.
+  // (If a future path enqueues only, return delivery: "queued" without timestamp.)
   const result = await postSlackIncomingWebhook(prisma, {
     connectionId: row.id,
     payload,
@@ -604,13 +679,18 @@ export const sendSlackTestMessage = async (
     }
     throw serviceUnavailable("slack_test_failed", result.errorSafe);
   }
+  const deliveredAt = new Date();
   await prisma.organizationSlackConnection.update({
     where: { id: row.id },
-    data: { lastTestSentAt: new Date() },
+    data: { lastTestSentAt: deliveredAt },
   });
+  const delivery: SlackTestDelivery = "delivered";
   return {
     ok: true,
-    channelLabel: formatChannelLabel(row.slackChannelName),
+    delivery,
+    channelLabel,
+    messageEl: slackTestResultMessageEl({ delivery, channelLabel }),
+    lastTestSentAt: deliveredAt.toISOString(),
   };
 };
 

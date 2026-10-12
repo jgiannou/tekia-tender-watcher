@@ -1,16 +1,18 @@
 :root {
-  --bg: #0c1117;
-  --bg-elev: #121922;
-  --bg-panel: #161e29;
-  --line: rgba(232, 236, 241, 0.08);
-  --line-strong: rgba(232, 236, 241, 0.16);
-  --text: #e8ecf1;
-  --muted: #8b97a8;
-  --accent: #e16349;
-  --accent-soft: rgba(225, 99, 73, 0.14);
+  /* Match saas-web .dark ARC tokens */
+  --bg: #0a0a0a;
+  --bg-elev: #111111;
+  --bg-panel: #141414;
+  --line: rgb(0 243 255 / 0.1);
+  --line-strong: rgb(0 243 255 / 0.18);
+  --text: #f5f5f5;
+  --muted: #a0a0a0;
+  --accent: #00f3ff;
+  --accent-soft: rgb(0 243 255 / 0.12);
+  --accent-ink: #050505;
   --ok: #3dba8a;
   --warn: #e0a045;
-  --err: #ef5f5f;
+  --err: #ff3b5c;
   --mono: "IBM Plex Mono", ui-monospace, monospace;
   --sans: "IBM Plex Sans", system-ui, sans-serif;
   color-scheme: dark;
@@ -29,10 +31,10 @@ body,
 
 body {
   font-family: var(--sans);
-  background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(225, 99, 73, 0.12), transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, rgba(61, 186, 138, 0.08), transparent 50%),
-    linear-gradient(180deg, #0e141c 0%, var(--bg) 40%, #0a0e13 100%);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse 85% 55% at 50% -18%, rgb(0 243 255 / 0.12), transparent 58%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgb(0 243 255 / 0.08), transparent 55%);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
@@ -60,7 +62,7 @@ button {
   gap: 1rem;
   padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--line);
-  background: rgba(12, 17, 23, 0.72);
+  background: rgb(5 5 5 / 0.78);
   backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
@@ -75,9 +77,29 @@ button {
 
 .brand h1 {
   margin: 0;
-  font-size: 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 1.2rem;
   letter-spacing: -0.02em;
   font-weight: 700;
+}
+
+.brand-mark {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+}
+
+.brand-arc {
+  font-family: var(--mono);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.brand-product {
+  font-weight: 500;
+  color: var(--muted);
 }
 
 .brand p {
@@ -133,7 +155,7 @@ button {
 }
 
 .btn:hover {
-  border-color: rgba(225, 99, 73, 0.5);
+  border-color: rgb(0 243 255 / 0.45);
   background: var(--accent-soft);
 }
 
@@ -144,23 +166,23 @@ button {
 .btn.primary {
   background: var(--accent);
   border-color: transparent;
-  color: #fff;
+  color: var(--accent-ink);
 }
 
 .btn.primary:hover {
-  filter: brightness(1.05);
+  filter: brightness(1.08);
   background: var(--accent);
 }
 
 .btn.danger {
   background: transparent;
-  border-color: rgba(220, 80, 60, 0.55);
-  color: #e07060;
+  border-color: rgb(255 59 92 / 0.55);
+  color: #ff7a91;
 }
 
 .btn.danger:hover {
-  background: rgba(220, 80, 60, 0.12);
-  border-color: rgba(220, 80, 60, 0.8);
+  background: rgb(255 59 92 / 0.12);
+  border-color: rgb(255 59 92 / 0.8);
 }
 
 .btn:disabled {
@@ -203,7 +225,7 @@ button {
 .sidebar {
   border-right: 1px solid var(--line);
   padding: 1.25rem;
-  background: rgba(18, 25, 34, 0.55);
+  background: rgb(5 5 5 / 0.65);
 }
 
 .sidebar h2 {
@@ -249,9 +271,9 @@ button {
 }
 
 .env-tab.active.prod {
-  box-shadow: inset 0 0 0 1px rgba(225, 99, 73, 0.55);
-  background: var(--accent-soft);
-  color: #f2c4ba;
+  box-shadow: inset 0 0 0 1px rgb(255 59 92 / 0.55);
+  background: rgb(255 59 92 / 0.12);
+  color: #ffb0bd;
 }
 
 .env-tab.active.staging {
@@ -267,12 +289,12 @@ button {
 }
 
 .pill.env.prod {
-  color: #f2c4ba;
-  border-color: rgba(225, 99, 73, 0.4);
+  color: #ffb0bd;
+  border-color: rgb(255 59 92 / 0.4);
 }
 
 .pill.env.prod .dot {
-  background: var(--accent);
+  background: var(--err);
 }
 
 .pill.env.staging {
@@ -333,7 +355,7 @@ button {
 
 .field input:focus,
 .field select:focus {
-  border-color: rgba(225, 99, 73, 0.7);
+  border-color: rgb(0 243 255 / 0.7);
 }
 
 .field input[readonly] {
@@ -413,7 +435,7 @@ button {
 
 .stat.clickable:hover,
 .plan-row.clickable:hover {
-  border-color: rgba(225, 99, 73, 0.55);
+  border-color: rgb(0 243 255 / 0.55);
   transform: translateY(-1px);
 }
 
@@ -648,7 +670,7 @@ button.row.clickable-row:hover {
 .bar > span {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), #f0a08f);
+  background: linear-gradient(90deg, #008b96, var(--accent));
   border-radius: inherit;
 }
 
@@ -686,13 +708,13 @@ button.row.clickable-row:hover {
 .modal {
   width: min(1100px, 100%);
   max-height: min(860px, 92vh);
-  background: #121922;
+  background: #111111;
   border: 1px solid var(--line-strong);
   border-radius: 0.9rem;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
 }
 
 .modal-head {
@@ -732,7 +754,7 @@ button.row.clickable-row:hover {
 }
 
 .modal-search input:focus {
-  border-color: rgba(225, 99, 73, 0.7);
+  border-color: rgb(0 243 255 / 0.7);
 }
 
 .modal .error-banner {

@@ -15,6 +15,21 @@ declare global {
         headers: Record<string, string>;
       }>;
       openExternal: (url: string) => Promise<void>;
+      writePulseCache?: (snapshot: {
+        generatedAt: number;
+        users: number;
+        organizations: number;
+        paying: number;
+        errors: number;
+        healthy: boolean;
+        statusText: string;
+        apiUrl?: string;
+        adminToken?: string;
+      }) => Promise<{ ok: boolean; path?: string; error?: string }>;
+      syncPulseWidget?: (payload: {
+        apiUrl: string;
+        adminToken: string;
+      }) => Promise<{ ok: boolean; error?: string }>;
     };
   }
 }

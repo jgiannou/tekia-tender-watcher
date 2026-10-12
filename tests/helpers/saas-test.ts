@@ -39,6 +39,8 @@ export const getSaasTestPrisma = (): PrismaClient => {
 export const resetSaasDatabase = async (prisma: PrismaClient) => {
   await waitForWatchProfileScans();
   await prisma.submissionDocumentSnapshot.deleteMany();
+  // Import records reference vault documents — delete them first.
+  await prisma.googleDriveImportRecord.deleteMany();
   await prisma.tenderWorkspaceDocumentRef.deleteMany();
   await prisma.vaultDocumentVersion.deleteMany();
   await prisma.vaultDocument.deleteMany();
@@ -48,6 +50,10 @@ export const resetSaasDatabase = async (prisma: PrismaClient) => {
   await prisma.saasJob.deleteMany();
   await prisma.organizationSlackConnection.deleteMany();
   await prisma.slackOAuthState.deleteMany();
+  await prisma.googleCalendarEventLink.deleteMany();
+  await prisma.googleDriveFolderLink.deleteMany();
+  await prisma.userOrganizationGoogleConnection.deleteMany();
+  await prisma.googleOAuthState.deleteMany();
   await prisma.organizationAttentionEvent.deleteMany();
   await prisma.relatedActLink.deleteMany();
   await prisma.outreachLedger.deleteMany();

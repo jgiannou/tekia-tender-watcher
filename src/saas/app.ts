@@ -90,6 +90,7 @@ import {
 } from "./services/entitlements.js";
 import { registerBillingRoutes } from "./billing/routes.js";
 import { registerSlackIntegrationRoutes } from "./integrations/slack-routes.js";
+import { registerGoogleIntegrationRoutes } from "./integrations/google-routes.js";
 import { createOpsEnterHandler } from "./ops/enter.js";
 import { listOpportunities, markOpportunitySeen } from "./services/opportunities.js";
 import { getSharedIngestStatus } from "./jobs/shared-ingest.js";
@@ -241,6 +242,14 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     prisma: deps.prisma,
     requireSession: requireSession as never,
     resolveOrgId,
+  });
+
+  registerGoogleIntegrationRoutes({
+    app,
+    prisma: deps.prisma,
+    requireSession: requireSession as never,
+    resolveOrgId,
+    kimdis: deps.kimdis,
   });
 
   app.get("/api/saas/me", requireSession, async (c) => {
@@ -704,16 +713,24 @@ export const createSaasApp = (deps: SaasAppDeps) => {
         searchAllHistory: z.boolean().optional(),
         totalCostFrom: z.number().optional(),
         totalCostTo: z.number().optional(),
-        requestKind: z.enum(["initial", "approved", "approval"]).optional(),
+        requestKind: z
+          .enum(["any", "initial", "approved", "approval"])
+          .optional(),
         procedureType: z.string().optional(),
         finalSubmissionDateFrom: z.string().optional(),
         finalSubmissionDateTo: z.string().optional(),
         cancelDateFrom: z.string().optional(),
         cancelDateTo: z.string().optional(),
         signer: z.string().optional(),
+        regions: z.array(z.string()).optional(),
+        includeUnclassifiedRegion: z.boolean().optional(),
       })
       .parse(await c.req.json());
-    const result = await searchKimdis(deps.kimdis, body);
+    // Manual interactive search only — watch scans call searchKimdis without this flag.
+    const result = await searchKimdis(deps.kimdis, {
+      ...body,
+      enrichFromPublicUi: true,
+    });
     return c.json(result);
   });
 

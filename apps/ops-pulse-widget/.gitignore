@@ -1,0 +1,10 @@
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+.DS_Store
+ARCPulseWidget/Secrets.generated.json
+Secrets.local.json

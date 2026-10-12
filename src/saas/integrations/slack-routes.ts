@@ -111,8 +111,10 @@ export const registerSlackIntegrationRoutes = (
     });
     return c.json({
       ok: true,
-      messageEl: `Η δοκιμαστική ειδοποίηση στάλθηκε στο ${result.channelLabel}.`,
+      delivery: result.delivery,
+      messageEl: result.messageEl,
       channelLabel: result.channelLabel,
+      lastTestSentAt: result.lastTestSentAt,
     });
   });
 

@@ -15,6 +15,11 @@ import {
 } from "../plans/catalog.js";
 import { isSaasSlackNotificationsConfigured } from "../services/slack-config.js";
 import {
+  isSaasGoogleCalendarEnabled,
+  isSaasGoogleDriveEnabled,
+  isSaasGoogleSheetsEnabled,
+} from "../services/google-config.js";
+import {
   checkoutCancelUrl,
   checkoutSuccessUrl,
   classifyStripeCheckoutError,
@@ -72,7 +77,12 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
         proSelfServiceSeatCap: PRO_SELF_SERVICE_SEAT_CAP,
       },
       plans: publicPlans().map((plan) => {
-        const slackLive = isSaasSlackNotificationsConfigured();
+        const liveFlags = {
+          slack: isSaasSlackNotificationsConfigured(),
+          googleCalendar: isSaasGoogleCalendarEnabled(),
+          googleDrive: isSaasGoogleDriveEnabled(),
+          googleSheets: isSaasGoogleSheetsEnabled(),
+        };
         return {
         key: plan.planKey,
         code: plan.plan,
@@ -100,8 +110,11 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
         expiringContractList: plan.expiringContractList,
         awardHistory: plan.awardHistory,
         priceMemory: plan.priceMemory,
-        slackNotifications: plan.slackNotifications && slackLive,
-        featuresEl: featuresElForDisplay(plan, slackLive),
+        slackNotifications: plan.slackNotifications && liveFlags.slack,
+        googleCalendar: plan.googleCalendar && liveFlags.googleCalendar,
+        googleDrive: plan.googleDrive && liveFlags.googleDrive,
+        googleSheets: plan.googleSheets && liveFlags.googleSheets,
+        featuresEl: featuresElForDisplay(plan, liveFlags),
         footnoteEl: plan.footnoteEl,
         ctaEl: plan.ctaEl,
         includesLabelEl: plan.includesLabelEl,

@@ -417,6 +417,187 @@ export type SlackNotificationPreferences = {
   deadlineRadar: boolean;
 };
 
+export type SlackDeliveryState =
+  | "NEEDS_RECONNECT"
+  | "PLAN_PAUSED"
+  | "SETUP_INCOMPLETE"
+  | "PAUSED"
+  | "NO_CATEGORIES"
+  | "ACTIVE";
+
+export type GoogleCapabilityStatus =
+  | "DISABLED"
+  | "ACTIVE"
+  | "PAUSED"
+  | "PLAN_PAUSED"
+  | "NEEDS_RECONNECT"
+  | "NEEDS_RECREATE"
+  | "SYNCING"
+  | "DISCONNECTED";
+
+export type GoogleIntegrationsResponse = {
+  oauthConfigured: boolean;
+  calendar: {
+    featureAvailable: boolean;
+    entitled: boolean;
+    status: GoogleCapabilityStatus;
+    statusLabelEl: string;
+    googleEmail: string | null;
+    calendarSummary: string | null;
+    calendarHtmlLink: string | null;
+    lastSuccessAt: string | null;
+    canManage: boolean;
+  };
+  drive: {
+    featureAvailable: boolean;
+    entitled: boolean;
+    status: GoogleCapabilityStatus;
+    statusLabelEl: string;
+    googleEmail: string | null;
+    canManage: boolean;
+    pickerConfigured: boolean;
+    /** Plan includes Drive and the company vault. */
+    importEntitled: boolean;
+  };
+  sheets: {
+    featureAvailable: boolean;
+    entitled: boolean;
+    status: GoogleCapabilityStatus;
+    statusLabelEl: string;
+    googleEmail: string | null;
+    spreadsheetUrl: string | null;
+    lastSuccessAt: string | null;
+    canManage: boolean;
+    released: boolean;
+  };
+  messages: {
+    freeLockedEl: string;
+    calendarHintEl: string;
+    calendarPauseHintEl: string;
+    calendarOneWayEl: string;
+    driveHintEl: string;
+    importCopyHintEl: string;
+    sheetsHintEl: string;
+    reconnectEl: string;
+    oauthCancelEl: string;
+    disconnectExplainEl: string;
+  };
+};
+
+export type GoogleDrivePickerToken = {
+  /** Short-lived. Keep in memory only — never localStorage / sessionStorage. */
+  accessToken: string;
+  expiresIn: number;
+  pickerApiKey: string;
+  appId: string;
+};
+
+export type GoogleDriveFilePreview = {
+  id: string;
+  name: string;
+  mimeType: string;
+  mimeLabelEl: string;
+  sizeBytes: number | null;
+  supported: boolean;
+  targetFilename: string | null;
+  needsExport: boolean;
+  formatLabelEl: string | null;
+  errorCode: string | null;
+  reasonEl: string | null;
+};
+
+export type GoogleDriveImportRecord = {
+  id: string;
+  googleFileId: string;
+  googleFileName: string;
+  googleMimeType: string;
+  status: "PENDING" | "SUCCEEDED" | "FAILED";
+  errorCode: string | null;
+  errorEl: string | null;
+  vaultDocumentId: string | null;
+  importedAt: string | null;
+};
+
+export type GoogleDriveImportBatch = {
+  records: GoogleDriveImportRecord[];
+  active: boolean;
+};
+
+export type GoogleDriveFolderItem = {
+  id: string;
+  kind: "SUBFOLDER" | "SUMMARY" | "OFFICIAL_PDF" | "VAULT_DOCUMENT" | "CHECKLIST" | string;
+  section: string | null;
+  name: string;
+  status: "PENDING" | "SUCCEEDED" | "FAILED" | "SKIPPED";
+  errorCode: string | null;
+  errorEl: string | null;
+  retryable: boolean;
+};
+
+export type GoogleDriveFolder = {
+  id: string;
+  tenderId: string;
+  folderName: string;
+  folderUrl: string | null;
+  googleEmail: string;
+  status: "PENDING" | "SUCCEEDED" | "PARTIAL" | "FAILED";
+  active: boolean;
+  errorCode: string | null;
+  errorEl: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  items: GoogleDriveFolderItem[];
+  retryable: boolean;
+  successEl: string | null;
+  copyHintEl: string;
+};
+
+export type TenderDriveFolderPreview = {
+  googleEmail: string;
+  tender: {
+    id: string;
+    referenceNumber: string;
+    title: string | null;
+    contractingAuthority: string | null;
+    deadlineEl: string | null;
+    sourceLabelEl: string;
+  };
+  defaultFolderName: string;
+  structure: Array<{ key: string; name: string }>;
+  officialDocuments: Array<{
+    key: string;
+    label: string;
+    mode: "pdf" | "link_only";
+    modeLabelEl: string;
+    url: string | null;
+  }>;
+  vault: {
+    entitled: boolean;
+    maxDocuments: number;
+    documents: Array<{
+      id: string;
+      name: string;
+      fileName: string;
+      fileSizeBytes: number | null;
+      supported: boolean;
+      reasonEl: string | null;
+    }>;
+  };
+  checklist: {
+    entitled: boolean;
+    available: boolean;
+    labelEl: string;
+    reasonEl: string | null;
+    limitationEl: string | null;
+  };
+  existingFolders: GoogleDriveFolder[];
+  messages: {
+    destinationEl: string;
+    copyHintEl: string;
+    snapshotHintEl: string;
+  };
+};
+
 export type SlackConnectionResponse = {
   configured: boolean;
   entitled: boolean;
@@ -426,6 +607,8 @@ export type SlackConnectionResponse = {
     freeLockedEl: string;
     planPausedEl: string;
     needsReconnectEl: string;
+    adminsOnlyEl: string;
+    connectHintEl: string;
   };
   connection: null | {
     id: string;
@@ -435,6 +618,8 @@ export type SlackConnectionResponse = {
       | "PLAN_PAUSED"
       | "NEEDS_RECONNECT"
       | "DISCONNECTED";
+    deliveryState: SlackDeliveryState;
+    deliveryStateLabelEl: string;
     teamName: string;
     channelName: string;
     channelLabel: string;
@@ -1015,6 +1200,8 @@ export type KimdisSearchItem = {
   winnerName?: string | null;
 };
 
+export type KimdisRequestKind = "any" | "initial" | "approved" | "approval";
+
 export type KimdisSearchFilters = {
   recordFamily: "REQ" | "PROC";
   page?: number;
@@ -1030,13 +1217,40 @@ export type KimdisSearchFilters = {
   searchAllHistory?: boolean;
   totalCostFrom?: number;
   totalCostTo?: number;
-  requestKind?: "initial" | "approved" | "approval";
+  requestKind?: KimdisRequestKind;
   procedureType?: string;
   finalSubmissionDateFrom?: string;
   finalSubmissionDateTo?: string;
   cancelDateFrom?: string;
   cancelDateTo?: string;
   signer?: string;
+  regions?: string[];
+  includeUnclassifiedRegion?: boolean;
+};
+
+export type KimdisSearchResult = {
+  items: KimdisSearchItem[];
+  page: number;
+  totalElements: number;
+  totalPages: number;
+  last: boolean;
+  mode?: "standard" | "exact_adam";
+  exactAdam?: string;
+  exactAdamFound?: boolean;
+  regionFilter?: {
+    applied: boolean;
+    partial: boolean;
+    scannedUpstreamPages: number;
+    matchedSoFar: number;
+    regions: string[];
+    includeUnclassified: boolean;
+  };
+  publicUiEnrichment?: {
+    attempted: boolean;
+    ok: boolean;
+    added: number;
+    errorSafe?: string;
+  };
 };
 
 export type VaultFolder = {
@@ -1523,13 +1737,145 @@ export const saasApi = {
       body: JSON.stringify({ paused }),
     }),
   sendSlackTest: (organizationId: string) =>
-    request<{ ok: true; messageEl: string; channelLabel: string }>(
-      "/api/saas/integrations/slack/test",
-      { method: "POST", organizationId, body: "{}" },
-    ),
+    request<{
+      ok: true;
+      delivery: "queued" | "delivered";
+      messageEl: string;
+      channelLabel: string;
+      lastTestSentAt?: string | null;
+    }>("/api/saas/integrations/slack/test", {
+      method: "POST",
+      organizationId,
+      body: "{}",
+    }),
   disconnectSlack: (organizationId: string) =>
     request<SlackConnectionResponse>(
       "/api/saas/integrations/slack/disconnect",
+      { method: "POST", organizationId, body: "{}" },
+    ),
+  getGoogleIntegrations: (organizationId: string) =>
+    request<GoogleIntegrationsResponse>("/api/saas/integrations/google", {
+      organizationId,
+    }),
+  startGoogleOAuth: (
+    organizationId: string,
+    input: {
+      capabilities: Array<"calendar" | "drive" | "sheets">;
+      purpose?: "CONNECT" | "REPLACE" | "INCREMENTAL";
+    },
+  ) =>
+    request<{ authorizeUrl: string }>(
+      "/api/saas/integrations/google/oauth/start",
+      {
+        method: "POST",
+        organizationId,
+        body: JSON.stringify(input),
+      },
+    ),
+  pauseGoogleCalendar: (organizationId: string, paused: boolean) =>
+    request<GoogleIntegrationsResponse>(
+      "/api/saas/integrations/google/calendar/pause",
+      {
+        method: "POST",
+        organizationId,
+        body: JSON.stringify({ paused }),
+      },
+    ),
+  syncGoogleCalendarNow: (organizationId: string) =>
+    request<GoogleIntegrationsResponse>(
+      "/api/saas/integrations/google/calendar/sync",
+      { method: "POST", organizationId, body: "{}" },
+    ),
+  recreateGoogleCalendar: (organizationId: string) =>
+    request<GoogleIntegrationsResponse>(
+      "/api/saas/integrations/google/calendar/recreate",
+      { method: "POST", organizationId, body: "{}" },
+    ),
+  disconnectGoogle: (
+    organizationId: string,
+    capability?: "calendar" | "drive" | "sheets",
+  ) =>
+    request<GoogleIntegrationsResponse>(
+      "/api/saas/integrations/google/disconnect",
+      {
+        method: "POST",
+        organizationId,
+        body: JSON.stringify(capability ? { capability } : {}),
+      },
+    ),
+  mintGoogleDrivePickerToken: (organizationId: string) =>
+    request<GoogleDrivePickerToken>(
+      "/api/saas/integrations/google/drive/picker-token",
+      { method: "POST", organizationId, body: "{}" },
+    ),
+  previewGoogleDriveFiles: (
+    organizationId: string,
+    files: Array<{ id: string; name?: string; mimeType?: string; sizeBytes?: number }>,
+  ) =>
+    request<{ files: GoogleDriveFilePreview[]; copyHintEl: string }>(
+      "/api/saas/integrations/google/drive/preview",
+      {
+        method: "POST",
+        organizationId,
+        body: JSON.stringify({ files }),
+      },
+    ),
+  startGoogleDriveImport: (
+    organizationId: string,
+    input: {
+      folderId: string;
+      files: Array<{ googleFileId: string; name?: string }>;
+    },
+  ) =>
+    request<GoogleDriveImportBatch>(
+      "/api/saas/integrations/google/drive/import",
+      {
+        method: "POST",
+        organizationId,
+        body: JSON.stringify(input),
+      },
+    ),
+  getGoogleDriveImportStatus: (organizationId: string, recordIds: string[]) =>
+    request<GoogleDriveImportBatch>(
+      `/api/saas/integrations/google/drive/import/status?ids=${encodeURIComponent(recordIds.join(","))}`,
+      { organizationId },
+    ),
+  listTenderDriveFolders: (organizationId: string, tenderId: string) =>
+    request<{ folders: GoogleDriveFolder[] }>(
+      `/api/saas/integrations/google/drive/folders?tenderId=${encodeURIComponent(tenderId)}`,
+      { organizationId },
+    ),
+  previewTenderDriveFolder: (
+    organizationId: string,
+    input: { tenderId: string; vaultDocumentIds?: string[] },
+  ) =>
+    request<TenderDriveFolderPreview>(
+      "/api/saas/integrations/google/drive/folders/preview",
+      { method: "POST", organizationId, body: JSON.stringify(input) },
+    ),
+  startTenderDriveFolder: (
+    organizationId: string,
+    input: {
+      tenderId: string;
+      folderName?: string;
+      vaultDocumentIds: string[];
+      includeOfficialDocs: boolean;
+      includeChecklistSummary: boolean;
+      clientRequestId: string;
+    },
+  ) =>
+    request<{ folder: GoogleDriveFolder }>(
+      "/api/saas/integrations/google/drive/folders",
+      { method: "POST", organizationId, body: JSON.stringify(input) },
+    ),
+  getTenderDriveFolderStatus: (organizationId: string, folderId: string) =>
+    request<{ folder: GoogleDriveFolder }>(
+      `/api/saas/integrations/google/drive/folders/jobs/${encodeURIComponent(folderId)}`,
+      { organizationId },
+    ),
+  retryTenderDriveFolder: (organizationId: string, folderId: string) =>
+    request<{ folder: GoogleDriveFolder }>(
+      `/api/saas/integrations/google/drive/folders/${encodeURIComponent(folderId)}/retry`,
       { method: "POST", organizationId, body: "{}" },
     ),
   updateOnboarding: (
@@ -1677,13 +2023,7 @@ export const saasApi = {
       requestKinds: Array<{ id: string; label: string }>;
     }>("/api/saas/kimdis/meta", { organizationId }),
   kimdisSearch: (organizationId: string, filters: KimdisSearchFilters) =>
-    request<{
-      items: KimdisSearchItem[];
-      page: number;
-      totalElements: number;
-      totalPages: number;
-      last: boolean;
-    }>("/api/saas/kimdis/search", {
+    request<KimdisSearchResult>("/api/saas/kimdis/search", {
       method: "POST",
       organizationId,
       body: JSON.stringify(filters),

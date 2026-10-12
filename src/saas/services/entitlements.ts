@@ -13,6 +13,11 @@ import {
   type ScanAccess,
 } from "./scan-access.js";
 import { isSaasSlackNotificationsConfigured } from "./slack-config.js";
+import {
+  isSaasGoogleCalendarEnabled,
+  isSaasGoogleDriveEnabled,
+  isSaasGoogleSheetsEnabled,
+} from "./google-config.js";
 
 /**
  * Organization commercial entitlements + scan access.
@@ -36,6 +41,9 @@ export type OrganizationEntitlements = {
   awardHistory: boolean;
   priceMemory: boolean;
   slackNotifications: boolean;
+  googleCalendar: boolean;
+  googleDrive: boolean;
+  googleSheets: boolean;
   companyVault: boolean;
   outreachWorkflow: boolean;
   submissionWorkflow: boolean;
@@ -78,6 +86,9 @@ export const getOrganizationEntitlements = async (
       awardHistory: plan.awardHistory,
       priceMemory: plan.priceMemory,
       slackNotifications: plan.slackNotifications,
+      googleCalendar: plan.googleCalendar,
+      googleDrive: plan.googleDrive,
+      googleSheets: plan.googleSheets,
       companyVault: plan.companyVault,
       outreachWorkflow: plan.outreachWorkflow,
       submissionWorkflow: plan.submissionWorkflow,
@@ -127,7 +138,12 @@ export const getEntitlementsView = async (
     }),
     getWatchProfileUsage(prisma, organizationId),
   ]);
-  const slackLive = isSaasSlackNotificationsConfigured();
+  const liveFlags = {
+    slack: isSaasSlackNotificationsConfigured(),
+    googleCalendar: isSaasGoogleCalendarEnabled(),
+    googleDrive: isSaasGoogleDriveEnabled(),
+    googleSheets: isSaasGoogleSheetsEnabled(),
+  };
   return {
     entitlements,
     usage,
@@ -165,10 +181,13 @@ export const getEntitlementsView = async (
         expiringContractList: plan.expiringContractList,
         awardHistory: plan.awardHistory,
         priceMemory: plan.priceMemory,
-        slackNotifications: plan.slackNotifications && slackLive,
+        slackNotifications: plan.slackNotifications && liveFlags.slack,
+        googleCalendar: plan.googleCalendar && liveFlags.googleCalendar,
+        googleDrive: plan.googleDrive && liveFlags.googleDrive,
+        googleSheets: plan.googleSheets && liveFlags.googleSheets,
       },
       positioningEl: plan.positioningEl,
-      featuresEl: featuresElForDisplay(plan, slackLive),
+      featuresEl: featuresElForDisplay(plan, liveFlags),
     },
     catalog: publicPlans().map((entry) => ({
       key: entry.planKey,
@@ -187,7 +206,7 @@ export const getEntitlementsView = async (
       periodicScansPerDay: entry.maxDigestHoursPerDay,
       maxDigestHoursPerDay: entry.maxDigestHoursPerDay,
       emailCadence: entry.emailCadence,
-      featuresEl: featuresElForDisplay(entry, slackLive),
+      featuresEl: featuresElForDisplay(entry, liveFlags),
     })),
     contactForMoreSeatsMessage: CONTACT_FOR_MORE_SEATS_EL,
   };

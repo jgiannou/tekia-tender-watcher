@@ -19,6 +19,8 @@ export const onTransitionToFreeEmailPolicy = async (
   );
   const { onSlackPlanDowngradeToFree } = await import("./slack-connection.js");
   await onSlackPlanDowngradeToFree(prisma, organizationId);
+  const { onGooglePlanDowngradeToFree } = await import("./google-connection.js");
+  await onGooglePlanDowngradeToFree(prisma, organizationId);
   const settings = await prisma.organizationSettings.findUnique({
     where: { organizationId },
     select: { notifications: true },

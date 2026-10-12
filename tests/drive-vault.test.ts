@@ -222,8 +222,13 @@ describe("drive security boundary", () => {
       for (const entry of readdirSync(dirPath)) {
         const full = join(dirPath, entry);
         const st = statSync(full);
-        if (st.isDirectory()) walk(full, files);
-        else if (full.endsWith(".ts")) files.push(full);
+        // Customer Google OAuth for SaaS lives under src/saas — keep desktop isolation.
+        if (st.isDirectory()) {
+          if (entry === "saas") continue;
+          walk(full, files);
+        } else if (full.endsWith(".ts")) {
+          files.push(full);
+        }
       }
       return files;
     };

@@ -29,12 +29,19 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import {
   saasApi,
+  type KimdisRequestKind,
   type KimdisSearchFilters,
   type KimdisSearchItem,
+  type KimdisSearchResult,
   type WatchProfileInput,
 } from "@/lib/api";
 import { formatCpvBadge } from "@/lib/cpv-options";
-import { evaluateRegionGate, formatRegion, GREEK_NUTS2_REGIONS } from "@/lib/regions";
+import {
+  adamValidationMessageEl,
+  EXACT_ADAM_SEARCH_HINT_EL,
+  parseKimdisAdamInput,
+} from "@/lib/kimdis-adam";
+import { formatRegion, GREEK_NUTS2_REGIONS } from "@/lib/regions";
 
 type TedNoticeRow = {
   publicationNumber: string;
@@ -93,7 +100,7 @@ type SearchFormState = {
   cpv: string;
   authority: string;
   contractType: string;
-  requestKind: "initial" | "approved" | "approval";
+  requestKind: KimdisRequestKind;
   procedureType: string;
   dateFrom: string;
   dateTo: string;
@@ -110,15 +117,25 @@ type SearchFormState = {
   run: boolean;
 };
 
+const parseRequestKind = (raw: string | null): KimdisRequestKind => {
+  if (raw === "initial" || raw === "approved" || raw === "approval" || raw === "any") {
+    return raw;
+  }
+  // New manual searches default to all request kinds (explicit URL still wins).
+  return "any";
+};
+
 const parseState = (params: URLSearchParams): SearchFormState => {
-  const requestKindRaw = params.get("requestKind");
-  const requestKind: SearchFormState["requestKind"] =
-    requestKindRaw === "approved" || requestKindRaw === "approval"
-      ? requestKindRaw
-      : "initial";
   const allHistory = params.get("allHistory") === "1";
   const recent = defaultRecentDates();
   const hasExplicitDates = Boolean(params.get("dateFrom") || params.get("dateTo"));
+  const hasRun = params.get("run") === "1";
+  // Preserve legacy bookmarked searches that omitted requestKind (= initial).
+  const requestKind: KimdisRequestKind = params.has("requestKind")
+    ? parseRequestKind(params.get("requestKind"))
+    : hasRun
+      ? "initial"
+      : "any";
   return {
     type: params.get("type") === "PROC" ? "PROC" : "REQ",
     q: params.get("q") ?? "",
@@ -144,9 +161,21 @@ const parseState = (params: URLSearchParams): SearchFormState => {
     includeUnclassifiedRegion: params.get("includeUnclassified") === "1",
     sort: params.get("sort") === "date_asc" ? "date_asc" : "date_desc",
     page: Math.max(1, Number(params.get("page") ?? "1") || 1),
-    run: params.get("run") === "1",
+    run: hasRun,
   };
 };
+
+const requestKindLabel = (
+  kind: KimdisRequestKind,
+  metaKinds?: Array<{ id: string; label: string }>,
+): string => metaKinds?.find((row) => row.id === kind)?.label
+  ?? (kind === "any"
+    ? "Όλοι οι τύποι αιτημάτων"
+    : kind === "approved"
+      ? "Εγκεκριμένα"
+      : kind === "approval"
+        ? "Εγκρίσεις"
+        : "Πρωτογενή");
 
 const toSearchParams = (state: SearchFormState): URLSearchParams => {
   const params = new URLSearchParams();
@@ -156,7 +185,7 @@ const toSearchParams = (state: SearchFormState): URLSearchParams => {
   if (state.cpv.trim()) params.set("cpv", state.cpv.trim());
   if (state.authority.trim()) params.set("authority", state.authority.trim());
   if (state.contractType) params.set("contractType", state.contractType);
-  if (state.type === "REQ" && state.requestKind !== "initial") {
+  if (state.type === "REQ") {
     params.set("requestKind", state.requestKind);
   }
   if (state.type === "PROC" && state.procedureType) {
@@ -185,32 +214,97 @@ const toSearchParams = (state: SearchFormState): URLSearchParams => {
   return params;
 };
 
-const toApiFilters = (state: SearchFormState): KimdisSearchFilters => ({
-  recordFamily: state.type,
-  page: Math.max(0, state.page - 1),
-  pageSize: KIMDIS_PAGE_SIZE,
-  sort: state.sort,
-  title: state.q.trim() || undefined,
-  referenceNumber: state.adam.trim() || undefined,
-  cpv: state.cpv.trim() || undefined,
-  organization: state.authority.trim() || undefined,
-  contractType: state.contractType || undefined,
-  dateFrom: state.allHistory ? undefined : state.dateFrom || undefined,
-  dateTo: state.allHistory ? undefined : state.dateTo || undefined,
-  searchAllHistory: state.allHistory || undefined,
-  totalCostFrom: state.amountMin ? Number(state.amountMin) : undefined,
-  totalCostTo: state.amountMax ? Number(state.amountMax) : undefined,
-  requestKind: state.type === "REQ" ? state.requestKind : undefined,
-  procedureType: state.type === "PROC" && state.procedureType ? state.procedureType : undefined,
-  finalSubmissionDateFrom: state.type === "PROC" && state.finalFrom ? state.finalFrom : undefined,
-  finalSubmissionDateTo: state.type === "PROC" && state.finalTo ? state.finalTo : undefined,
-  signer: state.signer.trim() || undefined,
-});
+const toApiFilters = (state: SearchFormState): KimdisSearchFilters => {
+  const adamParsed = parseKimdisAdamInput(state.adam);
+  const exactAdam = adamParsed.status === "exact" ? adamParsed.adam : undefined;
+  return {
+    recordFamily: state.type,
+    page: Math.max(0, state.page - 1),
+    pageSize: KIMDIS_PAGE_SIZE,
+    sort: state.sort,
+    // Exact ADAM: send identity only — server ignores other filters.
+    title: exactAdam ? undefined : state.q.trim() || undefined,
+    referenceNumber: exactAdam ?? (state.adam.trim() || undefined),
+    cpv: exactAdam ? undefined : state.cpv.trim() || undefined,
+    organization: exactAdam ? undefined : state.authority.trim() || undefined,
+    contractType: exactAdam ? undefined : state.contractType || undefined,
+    dateFrom: exactAdam || state.allHistory ? undefined : state.dateFrom || undefined,
+    dateTo: exactAdam || state.allHistory ? undefined : state.dateTo || undefined,
+    searchAllHistory: exactAdam ? true : state.allHistory || undefined,
+    totalCostFrom:
+      exactAdam || !state.amountMin ? undefined : Number(state.amountMin),
+    totalCostTo:
+      exactAdam || !state.amountMax ? undefined : Number(state.amountMax),
+    requestKind: exactAdam
+      ? state.type === "REQ"
+        ? "any"
+        : undefined
+      : state.type === "REQ"
+        ? state.requestKind
+        : undefined,
+    procedureType:
+      exactAdam || state.type !== "PROC" || !state.procedureType
+        ? undefined
+        : state.procedureType,
+    finalSubmissionDateFrom:
+      exactAdam || state.type !== "PROC" || !state.finalFrom
+        ? undefined
+        : state.finalFrom,
+    finalSubmissionDateTo:
+      exactAdam || state.type !== "PROC" || !state.finalTo
+        ? undefined
+        : state.finalTo,
+    signer: exactAdam ? undefined : state.signer.trim() || undefined,
+    regions: exactAdam || state.regions.length === 0 ? undefined : state.regions,
+    includeUnclassifiedRegion:
+      exactAdam || state.regions.length === 0
+        ? undefined
+        : state.includeUnclassifiedRegion,
+  };
+};
 
-const activeCriteriaSummary = (state: SearchFormState): string => {
+const criteriaFingerprint = (state: SearchFormState): string =>
+  [
+    state.type,
+    state.q.trim(),
+    state.adam.trim(),
+    state.cpv.trim(),
+    state.authority.trim(),
+    state.contractType,
+    state.requestKind,
+    state.procedureType,
+    state.allHistory ? "all" : `${state.dateFrom}|${state.dateTo}`,
+    state.amountMin,
+    state.amountMax,
+    state.finalFrom,
+    state.finalTo,
+    state.signer.trim(),
+    [...state.regions].sort().join(","),
+    state.includeUnclassifiedRegion ? "1" : "0",
+  ].join("::");
+
+const activeCriteriaSummary = (
+  state: SearchFormState,
+  metaKinds?: Array<{ id: string; label: string }>,
+): string => {
+  const adamParsed = parseKimdisAdamInput(state.adam);
+  if (adamParsed.status === "exact") {
+    return [
+      state.type,
+      `ΑΔΑΜ ${adamParsed.adam}`,
+      EXACT_ADAM_SEARCH_HINT_EL,
+    ].join(" · ");
+  }
+
+  const regionNames = state.regions
+    .map((code) => GREEK_NUTS2_REGIONS.find((r) => r.code === code)?.label ?? code)
+    .filter(Boolean);
+
   const parts = [
     state.type,
     state.q.trim() ? `«${state.q.trim()}»` : null,
+    state.adam.trim() ? `ΑΔΑΜ ${state.adam.trim()}` : null,
+    state.type === "REQ" ? requestKindLabel(state.requestKind, metaKinds) : null,
     state.allHistory
       ? "όλο το ιστορικό"
       : state.dateFrom && state.dateTo
@@ -221,8 +315,14 @@ const activeCriteriaSummary = (state: SearchFormState): string => {
             ? `έως ${state.dateTo}`
             : "τελευταίες 30 ημέρες",
     state.sort === "date_asc" ? "παλαιότερα πρώτα" : "πιο πρόσφατες πρώτα",
-    state.regions.length
-      ? `περιφέρειες: ${state.regions.length}`
+    regionNames.length ? `περιφέρειες: ${regionNames.join(", ")}` : null,
+    state.regions.length > 0 && state.includeUnclassifiedRegion
+      ? "συμπεριλαμβάνονται χωρίς περιοχή"
+      : null,
+    state.cpv.trim() ? `CPV ${state.cpv.trim()}` : null,
+    state.authority.trim() ? `αρχή ${state.authority.trim()}` : null,
+    state.contractType
+      ? `χαρακτήρας ${state.contractType}`
       : null,
   ].filter(Boolean);
   return parts.join(" · ");
@@ -247,6 +347,10 @@ export const SearchPage = () => {
   const [totalElements, setTotalElements] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [last, setLast] = useState(true);
+  const [searchMeta, setSearchMeta] = useState<Pick<
+    KimdisSearchResult,
+    "mode" | "exactAdam" | "exactAdamFound" | "regionFilter" | "publicUiEnrichment"
+  > | null>(null);
   const [selected, setSelected] = useState<KimdisSearchItem | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
@@ -372,6 +476,7 @@ export const SearchPage = () => {
   useEffect(() => {
     if (!activeOrganization || !urlState.run) return;
     let cancelled = false;
+    const requestId = searchParams.toString();
     const run = async () => {
       setLoading(true);
       setError(null);
@@ -381,14 +486,35 @@ export const SearchPage = () => {
           toApiFilters(urlState),
         );
         if (cancelled) return;
+        // Drop stale responses that finished after a newer search started.
+        if (searchParams.toString() !== requestId) return;
         setItems(result.items);
         setTotalElements(result.totalElements);
         setTotalPages(result.totalPages);
         setLast(result.last);
+        setSearchMeta({
+          mode: result.mode,
+          exactAdam: result.exactAdam,
+          exactAdamFound: result.exactAdamFound,
+          regionFilter: result.regionFilter,
+          publicUiEnrichment: result.publicUiEnrichment,
+        });
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Αποτυχία αναζήτησης ΚΗΜΔΗΣ");
+        if (searchParams.toString() !== requestId) return;
+        const raw = err instanceof Error ? err.message : "";
+        if (raw.includes("adam_")) {
+          setError(adamValidationMessageEl(raw));
+        } else {
+          setError(
+            "Δεν ήταν δυνατή η ολοκλήρωση της αναζήτησης στο ΚΗΜΔΗΣ. Δοκιμάστε ξανά.",
+          );
+        }
         setItems([]);
+        setTotalElements(0);
+        setTotalPages(0);
+        setLast(true);
+        setSearchMeta(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -399,11 +525,35 @@ export const SearchPage = () => {
     };
   }, [activeOrganization?.id, searchParams.toString()]);
 
+  const draftAdamParsed = useMemo(
+    () => parseKimdisAdamInput(draft.adam),
+    [draft.adam],
+  );
+  const appliedAdamParsed = useMemo(
+    () => parseKimdisAdamInput(urlState.adam),
+    [urlState.adam],
+  );
+  const filtersDirty =
+    urlState.run && criteriaFingerprint(draft) !== criteriaFingerprint(urlState);
+
   const commitSearch = (next: SearchFormState) => {
     setSearchParams(toSearchParams({ ...next, run: true }), { replace: false });
   };
 
   const handleSearchSubmit = () => {
+    const adamParsed = parseKimdisAdamInput(draft.adam);
+    if (adamParsed.status === "invalid") {
+      toast.error(adamValidationMessageEl(adamParsed.reason));
+      return;
+    }
+    if (
+      adamParsed.status === "exact" &&
+      (adamParsed.recordType === "REQ" || adamParsed.recordType === "PROC") &&
+      adamParsed.recordType !== draft.type
+    ) {
+      toast.error(adamValidationMessageEl(`adam_family_mismatch:expected_${adamParsed.recordType}_got_${draft.type}`));
+      return;
+    }
     commitSearch({ ...draft, page: 1, run: true });
   };
 
@@ -434,18 +584,6 @@ export const SearchPage = () => {
     source: "SAVED_FROM_SEARCH",
     skipSimilarCheck,
   });
-
-  const visibleItems = useMemo(() => {
-    if (urlState.regions.length === 0) return items;
-    return items.filter(
-      (item) =>
-        evaluateRegionGate(
-          item.nutsCode,
-          urlState.regions,
-          urlState.includeUnclassifiedRegion,
-        ) === "ok",
-    );
-  }, [items, urlState.regions, urlState.includeUnclassifiedRegion]);
 
   const handleOpenSave = async () => {
     if (!activeOrganization) return;
@@ -823,7 +961,15 @@ export const SearchPage = () => {
                 value={draft.adam}
                 onChange={(e) => setDraft((prev) => ({ ...prev, adam: e.target.value }))}
                 placeholder={draft.type === "REQ" ? "26REQ…" : "26PROC…"}
+                aria-label="ΑΔΑΜ"
               />
+              {draftAdamParsed.status === "exact" ? (
+                <p className="text-xs text-muted-foreground">{EXACT_ADAM_SEARCH_HINT_EL}</p>
+              ) : draftAdamParsed.status === "invalid" ? (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  {adamValidationMessageEl(draftAdamParsed.reason)}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label>Κωδικός αναθέτουσας αρχής</Label>
@@ -858,6 +1004,7 @@ export const SearchPage = () => {
                 <Label>Τύπος αιτήματος</Label>
                 <Select
                   value={draft.requestKind}
+                  disabled={draftAdamParsed.status === "exact"}
                   onChange={(e) =>
                     setDraft((prev) => ({
                       ...prev,
@@ -865,7 +1012,15 @@ export const SearchPage = () => {
                     }))
                   }
                 >
-                  {(meta?.requestKinds ?? []).map((kind) => (
+                  {(meta?.requestKinds?.length
+                    ? meta.requestKinds
+                    : [
+                        { id: "any", label: "Όλοι οι τύποι αιτημάτων" },
+                        { id: "initial", label: "Πρωτογενή" },
+                        { id: "approved", label: "Εγκεκριμένα" },
+                        { id: "approval", label: "Εγκρίσεις" },
+                      ]
+                  ).map((kind) => (
                     <option key={kind.id} value={kind.id}>
                       {kind.label}
                     </option>
@@ -1069,6 +1224,12 @@ export const SearchPage = () => {
             </div>
           ) : null}
 
+          {filtersDirty ? (
+            <p className="text-sm text-amber-700 dark:text-amber-400" role="status">
+              Έχετε αλλάξει τα φίλτρα. Πατήστε «Αναζήτηση» για ενημέρωση των αποτελεσμάτων.
+            </p>
+          ) : null}
+
           <Button onClick={handleSearchSubmit} disabled={loading}>
             {loading ? "Αναζήτηση…" : "Αναζήτηση"}
           </Button>
@@ -1084,11 +1245,36 @@ export const SearchPage = () => {
       {urlState.run && !error ? (
         <div className="space-y-3">
           <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-            Ενεργά κριτήρια: {activeCriteriaSummary(urlState)}
-            {urlState.allHistory ? (
+            Ενεργά κριτήρια: {activeCriteriaSummary(urlState, meta?.requestKinds)}
+            {appliedAdamParsed.status === "exact" || searchMeta?.mode === "exact_adam" ? (
+              <span className="mt-1 block">{EXACT_ADAM_SEARCH_HINT_EL}</span>
+            ) : null}
+            {urlState.allHistory && searchMeta?.mode !== "exact_adam" ? (
               <span className="mt-1 block text-amber-700 dark:text-amber-400">
                 Προσοχή: η αναζήτηση καλύπτει όλο το ιστορικό — προτιμήστε φίλτρο ημερομηνιών
                 όταν είναι δυνατό.
+              </span>
+            ) : null}
+            {searchMeta?.regionFilter?.partial ? (
+              <span className="mt-1 block text-amber-700 dark:text-amber-400">
+                Μερική γεωγραφική κάλυψη: σαρώθηκαν{" "}
+                {searchMeta.regionFilter.scannedUpstreamPages} σελίδες ΚΗΜΔΗΣ. Το πλήθος μπορεί να
+                μην είναι πλήρες — συνεχίστε στις επόμενες σελίδες αποτελεσμάτων.
+              </span>
+            ) : null}
+            {searchMeta?.publicUiEnrichment?.attempted &&
+            searchMeta.publicUiEnrichment.ok &&
+            searchMeta.publicUiEnrichment.added > 0 ? (
+              <span className="mt-1 block text-sky-800 dark:text-sky-300">
+                Συμπληρώθηκαν {searchMeta.publicUiEnrichment.added} επιπλέον πράξεις από το δημόσιο
+                μητρώο ΚΗΜΔΗΣ (δεν εμφανίζονταν ακόμη στο Open Data). Χωρίς διπλότυπα ΑΔΑΜ.
+              </span>
+            ) : null}
+            {searchMeta?.publicUiEnrichment?.attempted &&
+            !searchMeta.publicUiEnrichment.ok ? (
+              <span className="mt-1 block text-muted-foreground">
+                Η συμπλήρωση από το δημόσιο μητρώο δεν ολοκληρώθηκε — εμφανίζονται μόνο τα
+                αποτελέσματα Open Data.
               </span>
             ) : null}
             {urlState.sort === "date_asc" &&
@@ -1104,14 +1290,15 @@ export const SearchPage = () => {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-muted-foreground">
-              {totalElements === 1 ? "1 αποτέλεσμα" : `${totalElements} αποτελέσματα`}
+              {searchMeta?.regionFilter?.partial
+                ? `Τουλάχιστον ${totalElements} αποτελέσματα στην επιλεγμένη περιοχή`
+                : totalElements === 1
+                  ? "1 αποτέλεσμα"
+                  : `${totalElements} αποτελέσματα`}
               {totalPages ? ` · σελίδα ${currentPage} από ${totalPages}` : ""}
               {items.length > 0
                 ? ` · ${items.length} ανά σελίδα`
                 : ` · έως ${KIMDIS_PAGE_SIZE} ανά σελίδα`}
-              {urlState.regions.length > 0 && items.length > 0
-                ? ` · ${visibleItems.length} στην επιλεγμένη περιφέρεια`
-                : null}
             </div>
             <div className="flex items-center gap-2">
               <Label htmlFor="sort" className="text-xs text-muted-foreground">
@@ -1131,17 +1318,31 @@ export const SearchPage = () => {
             </div>
           </div>
 
-          {!loading && visibleItems.length === 0 ? (
+          {!loading && items.length === 0 ? (
             <EmptyState
-              title="Δεν βρέθηκαν αποτελέσματα"
+              title={
+                searchMeta?.mode === "exact_adam" && searchMeta.exactAdamFound === false
+                  ? "Ο ΑΔΑΜ δεν βρέθηκε στην πηγή"
+                  : searchMeta?.regionFilter?.applied &&
+                      searchMeta.regionFilter.matchedSoFar === 0 &&
+                      searchMeta.regionFilter.partial
+                    ? "Δεν βρέθηκαν αντιστοιχίες στην σάρωση"
+                    : "Δεν βρέθηκαν αποτελέσματα"
+              }
               description={
-                urlState.regions.length > 0 && items.length > 0
-                  ? "Υπάρχουν αποτελέσματα από το ΚΗΜΔΗΣ, αλλά κανένα δεν ταιριάζει στις επιλεγμένες περιφέρειες σε αυτή τη σελίδα."
-                  : "Δοκιμάστε διαφορετικά κριτήρια ή ευρύτερο διάστημα ημερομηνιών."
+                searchMeta?.mode === "exact_adam" &&
+                searchMeta.exactAdamFound === false &&
+                searchMeta.exactAdam
+                  ? `Δεν βρέθηκε η πράξη με ΑΔΑΜ ${searchMeta.exactAdam} στην πηγή αναζήτησης.`
+                  : searchMeta?.regionFilter?.applied &&
+                      searchMeta.regionFilter.matchedSoFar === 0 &&
+                      searchMeta.regionFilter.partial
+                    ? "Στις πρώτες σελίδες του ΚΗΜΔΗΣ δεν υπήρχαν πράξεις στις επιλεγμένες περιφέρειες. Συνεχίστε στην επόμενη σελίδα αποτελεσμάτων ή διευρύνετε τα κριτήρια."
+                    : "Δοκιμάστε διαφορετικά κριτήρια ή ευρύτερο διάστημα ημερομηνιών."
               }
             />
           ) : (
-            visibleItems.map((item) => (
+            items.map((item) => (
               <Card key={item.adam}>
                 <CardContent className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-start md:justify-between">
                   <div className="min-w-0 space-y-2">
