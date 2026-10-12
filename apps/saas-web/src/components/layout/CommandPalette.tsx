@@ -29,7 +29,7 @@ const items = [
   { label: "Έγγραφα", to: "/app/documents", icon: FolderOpen },
   { label: "Αποθηκευμένες αναζητήσεις", to: "/app/saved-searches", icon: Bookmark },
   { label: "Ρύθμιση επιχείρησης", to: "/app/setup", icon: Sparkles },
-  { label: "Ρυθμίσεις", to: "/app/settings", icon: Settings },
+  { label: "Ρυθμίσεις", to: "/app/settings/profile", icon: Settings },
 ] as const;
 
 export const CommandPalette = () => {

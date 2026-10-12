@@ -101,7 +101,16 @@ const prefetchRoute = (to: string) => {
     "/app/documents": () => import("@/pages/DocumentsPage"),
     "/app/saved-searches": () => import("@/pages/SavedSearchesPage"),
     "/app/subscription": () => import("@/pages/SubscriptionPage"),
-    "/app/settings": () => import("@/pages/settings/SettingsLayout"),
+    "/app/settings": () =>
+      Promise.all([
+        import("@/pages/settings/SettingsLayout"),
+        import("@/pages/settings/ProfileSettingsPage"),
+      ]),
+    "/app/settings/profile": () =>
+      Promise.all([
+        import("@/pages/settings/SettingsLayout"),
+        import("@/pages/settings/ProfileSettingsPage"),
+      ]),
     "/app/notifications": () => import("@/pages/NotificationsPage"),
   };
   void loaders[to]?.().catch(() => null);
@@ -254,10 +263,10 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
 
       <div className="mt-auto space-y-1 border-t border-sidebar-border p-3">
         <NavLink
-          to="/app/settings"
+          to="/app/settings/profile"
           onClick={handleNav}
-          onMouseEnter={() => prefetchRoute("/app/settings")}
-          onFocus={() => prefetchRoute("/app/settings")}
+          onMouseEnter={() => prefetchRoute("/app/settings/profile")}
+          onFocus={() => prefetchRoute("/app/settings/profile")}
           className={({ isActive }) =>
             cn(
               "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
