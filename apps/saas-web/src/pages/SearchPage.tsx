@@ -349,7 +349,7 @@ export const SearchPage = () => {
   const [last, setLast] = useState(true);
   const [searchMeta, setSearchMeta] = useState<Pick<
     KimdisSearchResult,
-    "mode" | "exactAdam" | "exactAdamFound" | "regionFilter" | "publicUiEnrichment"
+    "mode" | "exactAdam" | "exactAdamFound" | "regionFilter"
   > | null>(null);
   const [selected, setSelected] = useState<KimdisSearchItem | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
@@ -497,7 +497,6 @@ export const SearchPage = () => {
           exactAdam: result.exactAdam,
           exactAdamFound: result.exactAdamFound,
           regionFilter: result.regionFilter,
-          publicUiEnrichment: result.publicUiEnrichment,
         });
       } catch (err) {
         if (cancelled) return;
@@ -1260,21 +1259,6 @@ export const SearchPage = () => {
                 Μερική γεωγραφική κάλυψη: σαρώθηκαν{" "}
                 {searchMeta.regionFilter.scannedUpstreamPages} σελίδες ΚΗΜΔΗΣ. Το πλήθος μπορεί να
                 μην είναι πλήρες — συνεχίστε στις επόμενες σελίδες αποτελεσμάτων.
-              </span>
-            ) : null}
-            {searchMeta?.publicUiEnrichment?.attempted &&
-            searchMeta.publicUiEnrichment.ok &&
-            searchMeta.publicUiEnrichment.added > 0 ? (
-              <span className="mt-1 block text-sky-800 dark:text-sky-300">
-                Συμπληρώθηκαν {searchMeta.publicUiEnrichment.added} επιπλέον πράξεις από το δημόσιο
-                μητρώο ΚΗΜΔΗΣ (δεν εμφανίζονταν ακόμη στο Open Data). Χωρίς διπλότυπα ΑΔΑΜ.
-              </span>
-            ) : null}
-            {searchMeta?.publicUiEnrichment?.attempted &&
-            !searchMeta.publicUiEnrichment.ok ? (
-              <span className="mt-1 block text-muted-foreground">
-                Η συμπλήρωση από το δημόσιο μητρώο δεν ολοκληρώθηκε — εμφανίζονται μόνο τα
-                αποτελέσματα Open Data.
               </span>
             ) : null}
             {urlState.sort === "date_asc" &&
