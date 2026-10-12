@@ -6,8 +6,7 @@
  * does not yet return. This bridge is best-effort, session-based, and brittle
  * (PrimeFaces partial AJAX + generated component ids).
  *
- * Use only as a supplement after Open Data — never as the sole source for
- * watch-profile scans.
+ * Use only as a supplement after Open Data (manual search + watch scans).
  */
 
 import type { KimdisRequestKind, KimdisSearchItem } from "./kimdis-search.js";

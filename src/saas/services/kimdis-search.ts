@@ -137,8 +137,8 @@ export type KimdisSearchFilters = {
   regions?: string[];
   includeUnclassifiedRegion?: boolean;
   /**
-   * Manual search only: after Open Data, also query the public ΚΗΜΔΗΣ UI and
-   * merge missing ADAMs. Never enable for watch-profile scans.
+   * After Open Data, also query the public ΚΗΜΔΗΣ UI and merge missing ADAMs.
+   * Used for manual search and watch-profile scans (page 0 only).
    */
   enrichFromPublicUi?: boolean;
 };
@@ -855,6 +855,12 @@ const enrichStandardResult = async (
     return openData;
   }
 
+  // One UI round-trip per query, on page 0 only — later Open Data pages stay as-is.
+  const page = filters.page ?? 0;
+  if (page > 0) {
+    return openData;
+  }
+
   const ui = await searchKimdisPublicUi({
     recordFamily: "REQ",
     title: filters.title,
@@ -890,26 +896,7 @@ const enrichStandardResult = async (
     );
   }
 
-  // Prefer merging on the first page / complete Open Data window so extras
-  // surface immediately. Later Open Data pages stay Open-Data-only.
-  const page = filters.page ?? 0;
-  if (page > 0 && !openData.last && openData.totalElements > openData.items.length) {
-    const openAdams = new Set(openData.items.map((i) => i.adam));
-    const extras = uiItems.filter((i) => !openAdams.has(i.adam));
-    return {
-      ...openData,
-      publicUiEnrichment: {
-        attempted: true,
-        ok: true,
-        added: 0,
-        errorSafe:
-          extras.length > 0
-            ? `public_ui_extras_deferred:${extras.length}`
-            : undefined,
-      },
-    };
-  }
-
+  // Append UI-only ADAMs; do not re-slice away Open Data rows from this page.
   const { items: merged, addedFromPublicUi } = mergeKimdisSearchItems(
     openData.items,
     uiItems,
@@ -920,16 +907,14 @@ const enrichStandardResult = async (
     KIMDIS_UPSTREAM_PAGE_SIZE,
   );
   const totalElements = Math.max(openData.totalElements, sorted.length);
-  const start = page * pageSize;
-  const pageItems = sorted.slice(start, start + pageSize);
   const totalPages = Math.max(1, Math.ceil(totalElements / pageSize));
 
   return {
     ...openData,
-    items: pageItems,
+    items: sorted,
     totalElements,
     totalPages,
-    last: start + pageItems.length >= sorted.length && openData.last,
+    last: openData.last,
     publicUiEnrichment: {
       attempted: true,
       ok: true,
