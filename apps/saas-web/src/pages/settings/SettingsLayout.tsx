@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import { PageLoading } from "@/components/states";
 import { cn } from "@/lib/utils";
 
 const sections = [
@@ -70,7 +72,10 @@ export const SettingsLayout = () => (
       </nav>
     </aside>
     <div className="min-w-0 flex-1">
-      <Outlet />
+      {/* Nested Suspense: SPA nav into lazy settings pages must not blank the outlet. */}
+      <Suspense fallback={<PageLoading label="Φόρτωση…" />}>
+        <Outlet />
+      </Suspense>
     </div>
   </div>
 );
