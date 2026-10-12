@@ -18,6 +18,7 @@ import {
 } from "./email-channel-policy.js";
 import { normalizeNotifications } from "./org-settings.js";
 import { queueAttentionPush } from "./push.js";
+import { queueAttentionSlack } from "./slack-delivery.js";
 
 const RELATED_TYPES = new Set<AttentionEventType>([
   "RELATED_PROC_DISCOVERED",
@@ -833,6 +834,7 @@ export const flushOpportunityEmailDigests = async (
 /**
  * Enqueue durable product email (outbox). Push stays immediate / independent.
  * Auth and security emails never use this path.
+ * Slack is independent of email prefs / EMAIL_ENABLED.
  */
 export const queueAttentionEmail = (
   prisma: PrismaClient,
@@ -862,4 +864,6 @@ export const queueAttentionEmail = (
     );
   });
   queueAttentionPush(prisma, attentionEventId);
+  // Related acts still reach Slack here (email coalesces separately).
+  queueAttentionSlack(prisma, attentionEventId);
 };

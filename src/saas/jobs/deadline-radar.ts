@@ -10,6 +10,7 @@ import { pruneAttentionEventsForOrg } from "../services/attention.js";
 import { athensDateKey } from "../services/digest-hours.js";
 import { normalizeNotifications } from "../services/org-settings.js";
 import { queueAttentionPush } from "../services/push.js";
+import { queueAttentionSlack } from "../services/slack-delivery.js";
 
 const daysUntil = (iso: string, now = new Date()): number | null => {
   const target = new Date(iso);
@@ -154,6 +155,7 @@ export const runDeadlineRadarForOrganizations = async (
       anchorEventId = created.id;
       anchorOrgTenderId = created.organizationTenderId;
       queueAttentionPush(prisma, created.id);
+      queueAttentionSlack(prisma, created.id);
     }
     await pruneAttentionEventsForOrg(prisma, organizationId);
 

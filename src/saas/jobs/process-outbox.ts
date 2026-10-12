@@ -1,6 +1,10 @@
 import type { PrismaClient, SaasJob } from "@prisma/client";
 import { deliverAttentionEmail } from "../services/notify.js";
 import {
+  processSlackAttentionJob,
+  processSlackOpportunityBatchJob,
+} from "../services/slack-delivery.js";
+import {
   processSaasOutbox,
   SAAS_JOB_TYPES,
   type SaasJobHandler,
@@ -38,6 +42,8 @@ export const runSaasOutboxWorker = async (
     {
       [SAAS_JOB_TYPES.attentionEmail]: attentionHandler,
       [SAAS_JOB_TYPES.weeklyDigest]: weeklyHandler,
+      [SAAS_JOB_TYPES.slackAttention]: processSlackAttentionJob,
+      [SAAS_JOB_TYPES.slackOpportunityBatch]: processSlackOpportunityBatchJob,
     },
     options,
   );

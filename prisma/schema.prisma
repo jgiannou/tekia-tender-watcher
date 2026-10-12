@@ -55,6 +55,7 @@ model User {
   preference  UserPreference?
   legalAcceptance LegalAcceptance?
   pushDevices PushDevice[]
+  slackInstallations OrganizationSlackConnection[] @relation("SlackInstalledBy")
 
   @@map("users")
 }
@@ -185,8 +186,69 @@ model Organization {
   vaultDocumentVersions VaultDocumentVersion[]
   tenderWorkspaces   TenderWorkspace[]
   submissionDocumentSnapshots SubmissionDocumentSnapshot[]
+  slackConnection    OrganizationSlackConnection?
 
   @@map("organizations")
+}
+
+enum SlackConnectionStatus {
+  ACTIVE
+  PAUSED
+  /// Sends stopped until admin re-enables after upgrade from Free.
+  PLAN_PAUSED
+  /// Webhook revoked / permanent delivery failure — needs reconnect.
+  NEEDS_RECONNECT
+  DISCONNECTED
+}
+
+/// Customer Slack incoming-webhook connection (one channel per organization).
+/// Never reuse the internal SLACK_WEBHOOK_URL env for these rows.
+model OrganizationSlackConnection {
+  id                   String                @id @default(cuid())
+  organizationId       String                @unique
+  status               SlackConnectionStatus @default(PAUSED)
+  slackTeamId          String
+  slackTeamName        String
+  slackChannelId       String
+  slackChannelName     String
+  /// AES-GCM ciphertext of hooks.slack.com webhook URL (never plaintext).
+  webhookUrlCiphertext String
+  webhookUrlNonce      String
+  installedByUserId    String?
+  /// Preferences independent of email: { newOpportunity, relatedActOnFollowed, deadlineRadar }
+  preferences          Json                  @default("{}")
+  /// false until admin saves preferences after first OAuth connect.
+  notificationsArmed   Boolean               @default(false)
+  lastTestSentAt       DateTime?
+  lastSuccessAt        DateTime?
+  lastErrorAt          DateTime?
+  /// Safe, truncated error code/message — never includes webhook URL.
+  lastErrorSafe        String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  installedBy  User?        @relation("SlackInstalledBy", fields: [installedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("organization_slack_connections")
+}
+
+/// Single-use OAuth state for Slack install (bound to user + organization).
+model SlackOAuthState {
+  id             String   @id @default(cuid())
+  state          String   @unique
+  userId         String
+  organizationId String
+  /// CONNECT | REPLACE
+  purpose        String   @default("CONNECT")
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([userId, organizationId])
+  @@index([expiresAt])
+  @@map("slack_oauth_states")
 }
 
 model OrganizationMember {

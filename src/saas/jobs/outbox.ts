@@ -6,7 +6,14 @@ export const SAAS_JOB_TYPES = {
   relatedDigest: "RELATED_DIGEST",
   weeklyDigest: "WEEKLY_DIGEST",
   deadlineRadar: "DEADLINE_RADAR",
+  slackAttention: "SLACK_ATTENTION",
+  slackOpportunityBatch: "SLACK_OPPORTUNITY_BATCH",
 } as const;
+
+export const SLACK_SAAS_JOB_TYPES = [
+  SAAS_JOB_TYPES.slackAttention,
+  SAAS_JOB_TYPES.slackOpportunityBatch,
+] as const;
 
 export type SaasJobType = (typeof SAAS_JOB_TYPES)[keyof typeof SAAS_JOB_TYPES];
 
@@ -87,6 +94,7 @@ export const cancelPendingProductJobsForOrg = async (
     SAAS_JOB_TYPES.relatedDigest,
     SAAS_JOB_TYPES.deadlineRadar,
   ],
+  reason = "plan_downgrade_to_free",
 ): Promise<number> => {
   const result = await prisma.saasJob.updateMany({
     where: {
@@ -99,12 +107,25 @@ export const cancelPendingProductJobsForOrg = async (
       leaseOwner: null,
       leaseExpiresAt: null,
       completedAt: new Date(),
-      lastError: "plan_downgrade_to_free",
+      lastError: reason,
     },
   });
   metrics.cancelled += result.count;
   return result.count;
 };
+
+/** Cancel pending customer Slack delivery jobs (disconnect / downgrade / replace). */
+export const cancelPendingSlackJobsForOrg = async (
+  prisma: PrismaClient,
+  organizationId: string,
+  reason = "slack_connection_stopped",
+): Promise<number> =>
+  cancelPendingProductJobsForOrg(
+    prisma,
+    organizationId,
+    [...SLACK_SAAS_JOB_TYPES],
+    reason,
+  );
 
 /**
  * Atomically claim due jobs with a lease (Postgres SKIP LOCKED).
@@ -178,6 +199,7 @@ export const markSaasJobFailedOrRetry = async (
   prisma: PrismaClient,
   job: SaasJob,
   errorMessage: string,
+  options?: { retryAfterMs?: number },
 ): Promise<"retry" | "failed"> => {
   const message = errorMessage.slice(0, 400);
   if (job.attempts >= job.maxAttempts) {
@@ -194,10 +216,13 @@ export const markSaasJobFailedOrRetry = async (
     metrics.failed += 1;
     return "failed";
   }
-  const backoff = Math.min(
-    BACKOFF_MAX_MS,
-    BACKOFF_BASE_MS * 2 ** Math.max(0, job.attempts - 1),
-  );
+  const backoff =
+    typeof options?.retryAfterMs === "number" && options.retryAfterMs >= 0
+      ? Math.min(BACKOFF_MAX_MS, options.retryAfterMs)
+      : Math.min(
+          BACKOFF_MAX_MS,
+          BACKOFF_BASE_MS * 2 ** Math.max(0, job.attempts - 1),
+        );
   await prisma.saasJob.update({
     where: { id: job.id },
     data: {
@@ -243,7 +268,16 @@ export const processSaasOutbox = async (
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "job_handler_failed";
-      const outcome = await markSaasJobFailedOrRetry(prisma, job, message);
+      const retryAfterMs =
+        error &&
+        typeof error === "object" &&
+        "retryAfterMs" in error &&
+        typeof (error as { retryAfterMs?: unknown }).retryAfterMs === "number"
+          ? (error as { retryAfterMs: number }).retryAfterMs
+          : undefined;
+      const outcome = await markSaasJobFailedOrRetry(prisma, job, message, {
+        retryAfterMs,
+      });
       if (outcome === "failed") failed += 1;
       console.error("[outbox] job failed:", job.type, job.deliveryKey, message);
     }

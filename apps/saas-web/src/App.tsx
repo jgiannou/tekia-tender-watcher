@@ -106,6 +106,11 @@ const NotificationsSettingsPage = lazy(() =>
     default: m.NotificationsSettingsPage,
   })),
 );
+const ConnectionsSettingsPage = lazy(() =>
+  import("@/pages/settings/ConnectionsSettingsPage").then((m) => ({
+    default: m.ConnectionsSettingsPage,
+  })),
+);
 const LegalSettingsPage = lazy(() =>
   import("@/pages/settings/LegalSettingsPage").then((m) => ({
     default: m.LegalSettingsPage,
@@ -170,6 +175,10 @@ export const App = () => (
               <Route
                 path="notifications"
                 element={<NotificationsSettingsPage />}
+              />
+              <Route
+                path="connections"
+                element={<ConnectionsSettingsPage />}
               />
               <Route path="legal" element={<LegalSettingsPage />} />
               <Route path="legal/:docId" element={<LegalSettingsPage />} />

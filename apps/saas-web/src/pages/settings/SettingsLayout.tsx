@@ -19,7 +19,10 @@ const sections = [
   },
   {
     title: "Παρακολούθηση",
-    items: [{ to: "/app/settings/notifications", label: "Ειδοποιήσεις" }],
+    items: [
+      { to: "/app/settings/notifications", label: "Ειδοποιήσεις" },
+      { to: "/app/settings/connections", label: "Συνδέσεις" },
+    ],
   },
   {
     title: "Χρέωση",

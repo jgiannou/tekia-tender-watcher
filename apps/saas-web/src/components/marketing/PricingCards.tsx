@@ -3,6 +3,8 @@ import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   MARKETING_PLANS,
+  marketingFullBullets,
+  marketingTeaserBullets,
   priceWithTaxHint,
   type MarketingPlanKey,
 } from "@/marketing/pricing";
@@ -26,7 +28,10 @@ export const PricingCards = ({ mode, className }: PricingCardsProps) => {
       {keys.map((key) => {
         const plan = MARKETING_PLANS[key];
         const featured = key === "pro";
-        const bullets = mode === "teaser" ? plan.teaserBullets : plan.fullBullets;
+        const bullets =
+          mode === "teaser"
+            ? marketingTeaserBullets(key)
+            : marketingFullBullets(key);
         const includesLabel = plan.includesLabel;
 
         return (

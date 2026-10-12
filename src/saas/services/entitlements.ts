@@ -4,6 +4,7 @@ import { conflict, forbidden } from "../errors.js";
 import {
   CONTACT_FOR_MORE_SEATS_EL,
   entitlementsForPlanKey,
+  featuresElForDisplay,
   publicPlans,
   type PlanEntitlements,
 } from "../plans/catalog.js";
@@ -11,6 +12,7 @@ import {
   resolveOrganizationScanAccess,
   type ScanAccess,
 } from "./scan-access.js";
+import { isSaasSlackNotificationsConfigured } from "./slack-config.js";
 
 /**
  * Organization commercial entitlements + scan access.
@@ -33,6 +35,7 @@ export type OrganizationEntitlements = {
   expiringContractList: boolean;
   awardHistory: boolean;
   priceMemory: boolean;
+  slackNotifications: boolean;
   companyVault: boolean;
   outreachWorkflow: boolean;
   submissionWorkflow: boolean;
@@ -74,6 +77,7 @@ export const getOrganizationEntitlements = async (
       expiringContractList: plan.expiringContractList,
       awardHistory: plan.awardHistory,
       priceMemory: plan.priceMemory,
+      slackNotifications: plan.slackNotifications,
       companyVault: plan.companyVault,
       outreachWorkflow: plan.outreachWorkflow,
       submissionWorkflow: plan.submissionWorkflow,
@@ -123,6 +127,7 @@ export const getEntitlementsView = async (
     }),
     getWatchProfileUsage(prisma, organizationId),
   ]);
+  const slackLive = isSaasSlackNotificationsConfigured();
   return {
     entitlements,
     usage,
@@ -160,9 +165,10 @@ export const getEntitlementsView = async (
         expiringContractList: plan.expiringContractList,
         awardHistory: plan.awardHistory,
         priceMemory: plan.priceMemory,
+        slackNotifications: plan.slackNotifications && slackLive,
       },
       positioningEl: plan.positioningEl,
-      featuresEl: plan.featuresEl,
+      featuresEl: featuresElForDisplay(plan, slackLive),
     },
     catalog: publicPlans().map((entry) => ({
       key: entry.planKey,
@@ -181,7 +187,7 @@ export const getEntitlementsView = async (
       periodicScansPerDay: entry.maxDigestHoursPerDay,
       maxDigestHoursPerDay: entry.maxDigestHoursPerDay,
       emailCadence: entry.emailCadence,
-      featuresEl: entry.featuresEl,
+      featuresEl: featuresElForDisplay(entry, slackLive),
     })),
     contactForMoreSeatsMessage: CONTACT_FOR_MORE_SEATS_EL,
   };
@@ -278,10 +284,17 @@ export const assertPlanFeature = async (
     | "participationChecklist"
     | "expiringContractList"
     | "priceMemory"
-    | "awardHistory",
+    | "awardHistory"
+    | "slackNotifications",
 ) => {
   const { plan } = await getOrganizationEntitlements(prisma, input);
   if (!plan[feature]) {
+    throw forbidden("plan_feature_locked");
+  }
+  if (
+    feature === "slackNotifications" &&
+    !isSaasSlackNotificationsConfigured()
+  ) {
     throw forbidden("plan_feature_locked");
   }
   return plan;

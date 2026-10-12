@@ -10,8 +10,10 @@ import {
   PLAN_KEYS,
   PRO_PLAN,
   PRO_SELF_SERVICE_SEAT_CAP,
+  featuresElForDisplay,
   publicPlans,
 } from "../plans/catalog.js";
+import { isSaasSlackNotificationsConfigured } from "../services/slack-config.js";
 import {
   checkoutCancelUrl,
   checkoutSuccessUrl,
@@ -69,7 +71,9 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
         contactForMoreSeatsMessage: CONTACT_FOR_MORE_SEATS_EL,
         proSelfServiceSeatCap: PRO_SELF_SERVICE_SEAT_CAP,
       },
-      plans: publicPlans().map((plan) => ({
+      plans: publicPlans().map((plan) => {
+        const slackLive = isSaasSlackNotificationsConfigured();
+        return {
         key: plan.planKey,
         code: plan.plan,
         label: plan.label,
@@ -96,11 +100,13 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
         expiringContractList: plan.expiringContractList,
         awardHistory: plan.awardHistory,
         priceMemory: plan.priceMemory,
-        featuresEl: plan.featuresEl,
+        slackNotifications: plan.slackNotifications && slackLive,
+        featuresEl: featuresElForDisplay(plan, slackLive),
         footnoteEl: plan.footnoteEl,
         ctaEl: plan.ctaEl,
         includesLabelEl: plan.includesLabelEl,
-      })),
+      };
+      }),
       trial: {
         days: 7,
         noteEl:

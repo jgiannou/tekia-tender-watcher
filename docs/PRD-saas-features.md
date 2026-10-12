@@ -1,11 +1,14 @@
 # PRD — ARC Tenders SaaS features (competition)
 
-**Status:** Implemented spec for the commercial SaaS  
-**Date:** 2026-10-09  
+> **Canonical product PRD (as-built overview):** [PRD-arc-tenders.md](./PRD-arc-tenders.md) — use that for the full product picture (plans, surfaces, outbox/ops, launch gates).  
+> This file keeps the **competition feature decisions** (F1–F11). Where they diverge from code (e.g. TED adapter now exists behind env), prefer [PRD-arc-tenders.md](./PRD-arc-tenders.md).
+
+**Status:** Implemented competition-feature spec (see canonical PRD for updates)  
+**Date:** 2026-10-09 (pointer updated 2026-10-11)  
 **Surface:** `apps/saas-web`, `apps/mobile`, `src/saas`  
 **Out of surface:** internal Electron / Slack / SQLite tool
 
-**English:** A free plan and one shared KIMDIS ingest (alert within 5 minutes) apply to every plan. Region filtering, the procurement-thread screen, the participation checklist, expiring contracts, and a thin price memory follow the practical scope below. Διαύγεια is an ADA link on the same act. TED, authority-site crawls, micro-procurement sites, and ΕΣΗΔΗΣ submission stay out.
+**English:** A free plan and one shared KIMDIS ingest (alert within 5 minutes) apply to every plan. Region filtering, the procurement-thread screen, the participation checklist, expiring contracts, and a thin price memory follow the practical scope below. Διαύγεια is an ADA link on the same act. Authority-site crawls, micro-procurement sites, and ΕΣΗΔΗΣ submission stay out. TED has a code adapter (env-gated) but is not a core marketing promise.
 
 ## Decisions
 
