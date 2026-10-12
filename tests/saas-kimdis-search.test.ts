@@ -574,7 +574,7 @@ describe("saas kimdis search", () => {
     expect(response.json.publicUiEnrichment?.added).toBe(1);
   });
 
-  it("watch-style searchKimdis does not call public UI without flag", async () => {
+  it("searchKimdis without enrich flag does not call public UI", async () => {
     const searchRequestsPage = vi.fn(async () => ({
       content: [sampleRequest()],
       last: true,
@@ -592,6 +592,27 @@ describe("saas kimdis search", () => {
     expect(result.items).toHaveLength(1);
     expect(searchKimdisPublicUiMock).not.toHaveBeenCalled();
     expect(result.publicUiEnrichment).toBeUndefined();
+  });
+
+  it("enrichFromPublicUi skips public UI on page > 0", async () => {
+    const searchRequestsPage = vi.fn(async () => ({
+      content: [sampleRequest()],
+      last: false,
+      totalElements: 100,
+      totalPages: 2,
+      number: 1,
+    }));
+    const result = await searchKimdis(createMockKimdis({ searchRequestsPage }), {
+      recordFamily: "REQ",
+      title: "ιστοσελ",
+      requestKind: "any",
+      dateFrom: "2026-10-09",
+      dateTo: "2026-10-12",
+      page: 1,
+      enrichFromPublicUi: true,
+    });
+    expect(result.items).toHaveLength(1);
+    expect(searchKimdisPublicUiMock).not.toHaveBeenCalled();
   });
 
   it("rejects incomplete ADAM with validation error", async () => {

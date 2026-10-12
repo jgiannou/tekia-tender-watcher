@@ -726,7 +726,6 @@ export const createSaasApp = (deps: SaasAppDeps) => {
         includeUnclassifiedRegion: z.boolean().optional(),
       })
       .parse(await c.req.json());
-    // Manual interactive search only — watch scans call searchKimdis without this flag.
     const result = await searchKimdis(deps.kimdis, {
       ...body,
       enrichFromPublicUi: true,

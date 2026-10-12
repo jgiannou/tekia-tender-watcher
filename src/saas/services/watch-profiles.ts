@@ -894,7 +894,12 @@ const fetchAllKimdisItems = async (
   let page = 0;
   while (page < MAX_SCAN_PAGES) {
     assertScanBudget(startedAtMs, cancel);
-    const result = await searchKimdis(kimdis, { ...filters, page });
+    const result = await searchKimdis(kimdis, {
+      ...filters,
+      page,
+      // Same completeness as interactive search: Open Data first, then public UI.
+      enrichFromPublicUi: true,
+    });
     items.push(...result.items);
     if (result.last || result.items.length === 0) break;
     if (result.totalPages > 0 && page + 1 >= result.totalPages) break;
