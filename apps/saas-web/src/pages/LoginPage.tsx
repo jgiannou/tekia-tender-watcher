@@ -25,6 +25,10 @@ export const LoginPage = () => {
   if (isPending) {
     return <PageLoading label="Έλεγχος συνεδρίας…" />;
   }
+  // Do not auto-redirect while sign-in is still finishing (same race as signup).
+  if (submitting) {
+    return <PageLoading label="Σύνδεση…" />;
+  }
   if (session?.user) {
     return <Navigate to={next.startsWith("/") ? next : "/app"} replace />;
   }
@@ -46,21 +50,20 @@ export const LoginPage = () => {
       // Wait for an explicit session fetch before navigating, otherwise RequireAuth
       // briefly sees session=null and bounces back to /login.
       await refetch();
-      const session = await authClient.getSession();
-      if (!session.data?.user) {
+      const sessionResult = await authClient.getSession();
+      if (!sessionResult.data?.user) {
         throw new Error("Η συνεδρία δεν δημιουργήθηκε. Δοκιμάστε ξανά.");
       }
-      if (session.data) {
-        authClient.hydrateSession(session.data);
+      if (sessionResult.data) {
+        authClient.hydrateSession(sessionResult.data);
       }
-      setAnalyticsUserId(session.data.user.id);
+      setAnalyticsUserId(sessionResult.data.user.id);
       trackAnalyticsEvent("login", { method: "email" });
 
       toast.success("Καλωσήρθατε");
       navigate(next.startsWith("/") ? next : "/app", { replace: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Αποτυχία σύνδεσης");
-    } finally {
       setSubmitting(false);
     }
   };

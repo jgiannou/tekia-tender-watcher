@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { useSessionContext } from "@/auth/SessionProvider";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { SeoHead } from "@/components/SeoHead";
 import { PageLoading } from "@/components/states";
@@ -16,11 +17,11 @@ import { readStashedParam } from "@/lib/safe-page-path";
 import { MARKETING_SEO } from "@/lib/seo";
 
 export const SignupPage = () => {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
   const next = params.get("next")?.trim() || readStashedParam("next") || "/app";
   const inviteFlow = next.startsWith("/accept-invite");
   const { data: session, isPending, refetch } = authClient.useSession();
+  const { refresh: refreshMe } = useSessionContext();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,6 +31,11 @@ export const SignupPage = () => {
 
   if (isPending) {
     return <PageLoading label="Έλεγχος συνεδρίας…" />;
+  }
+  // While signup is in flight, refetch()/hydrate fills session and would otherwise
+  // trigger <Navigate to="/app"> before org + legal finish → blank /app until refresh.
+  if (submitting) {
+    return <PageLoading label="Δημιουργία λογαριασμού…" />;
   }
   if (session?.user) {
     return <Navigate to={next.startsWith("/") ? next : "/app"} replace />;
@@ -71,10 +77,10 @@ export const SignupPage = () => {
       trackSignUpSuccess({ userId: registeredUserId, method: "email" });
 
       await refetch();
-      const session = await authClient.getSession();
-      const sessionUserId = session.data?.user?.id ?? null;
-      if (session.data?.user) {
-        authClient.hydrateSession(session.data);
+      const sessionResult = await authClient.getSession();
+      const sessionUserId = sessionResult.data?.user?.id ?? null;
+      if (sessionResult.data?.user) {
+        authClient.hydrateSession(sessionResult.data);
       }
 
       // requireEmailVerification is false today → session cookie is expected.
@@ -83,9 +89,8 @@ export const SignupPage = () => {
         toast.success(
           "Ο λογαριασμός δημιουργήθηκε. Ελέγξτε το email σας για επιβεβαίωση και συνδεθείτε.",
         );
-        navigate(
+        window.location.assign(
           `/login?next=${encodeURIComponent(next.startsWith("/") ? next : "/app")}`,
-          { replace: true },
         );
         return;
       }
@@ -127,15 +132,23 @@ export const SignupPage = () => {
         }
       }
 
+      // Pull /me with the new org before leaving signup (SPA race otherwise).
+      await refreshMe().catch(() => null);
+
       toast.success(
         inviteFlow
           ? "Ο λογαριασμός δημιουργήθηκε. Αποδεχτείτε την πρόσκληση."
           : "Ο λογαριασμός δημιουργήθηκε. Ελέγξτε το email σας για επιβεβαίωση.",
       );
-      navigate(next.startsWith("/") ? next : "/app", { replace: true });
+      // Full load remounts SessionProvider cleanly — same as the manual refresh that fixed it.
+      const dest = !inviteFlow
+        ? "/app/setup"
+        : next.startsWith("/")
+          ? next
+          : "/app";
+      window.location.assign(dest);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Αποτυχία εγγραφής");
-    } finally {
       setSubmitting(false);
     }
   };
