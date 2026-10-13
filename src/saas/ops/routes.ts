@@ -1363,7 +1363,8 @@ export const registerOpsAdminRoutes = (
       });
 
       opsLogger.warn("ops_promo_capacity", {
-        previousCapacity: result.previousCapacity,
+        previousCapacity:
+          "previousCapacity" in result ? result.previousCapacity : undefined,
         capacity: result.capacity,
         consumedSlots: result.consumedSlots,
         replayed: result.replayed,

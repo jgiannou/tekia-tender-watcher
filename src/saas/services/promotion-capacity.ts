@@ -165,7 +165,12 @@ export const setPromotionCapacity = async (
     });
     if (existing) {
       const snap = await getPromotionCapacitySnapshot(prisma, promotionKey, env);
-      return { ...snap, replayed: true as const, auditId: existing.id };
+      return {
+        ...snap,
+        previousCapacity: existing.previousCapacity ?? snap.capacity,
+        replayed: true as const,
+        auditId: existing.id,
+      };
     }
   }
 
