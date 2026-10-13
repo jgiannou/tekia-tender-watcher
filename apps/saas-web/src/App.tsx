@@ -9,6 +9,7 @@ import { PageLoading } from "@/components/states";
 // Eager-load public marketing pages so crawlers see real content (not «Φόρτωση…»).
 import { LandingPage } from "@/pages/marketing/LandingPage";
 import { PricingPage } from "@/pages/marketing/PricingPage";
+import { ProLaunch30Page } from "@/pages/marketing/ProLaunch30Page";
 
 const LoginPage = lazy(() =>
   import("@/pages/LoginPage").then((m) => ({ default: m.LoginPage })),
@@ -142,6 +143,7 @@ export const App = () => (
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/pricing" element={<PricingPage />} />
+        <Route path="/pro-30" element={<ProLaunch30Page />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />

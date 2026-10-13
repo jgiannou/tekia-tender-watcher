@@ -24,7 +24,7 @@ const items = [
   { label: "Επισκόπηση", to: "/app", icon: LayoutDashboard },
   { label: "Αναζήτηση στο ΚΗΜΔΗΣ", to: "/app/search", icon: FileSearch },
   { label: "Ευκαιρίες", to: "/app/opportunities", icon: Radar },
-  { label: "Παρακολούθηση", to: "/app/monitoring", icon: Binoculars },
+  { label: "Παρακολουθούμενα", to: "/app/monitoring", icon: Binoculars },
   { label: "Υποβολές", to: "/app/submissions", icon: Send },
   { label: "Έγγραφα", to: "/app/documents", icon: FolderOpen },
   { label: "Αποθηκευμένες αναζητήσεις", to: "/app/saved-searches", icon: Bookmark },

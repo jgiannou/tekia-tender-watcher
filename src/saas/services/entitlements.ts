@@ -62,11 +62,8 @@ export const getOrganizationEntitlements = async (
   scanAccess: ScanAccess;
 }> => {
   const scanAccess = await resolveOrganizationScanAccess(prisma, input);
-  const plan = entitlementsForPlanKey(
-    scanAccess.status === "active" || scanAccess.status === "trial"
-      ? scanAccess.planKey
-      : scanAccess.planKey,
-  );
+  // promo / trial / active all resolve planKey to a real catalog key already.
+  const plan = entitlementsForPlanKey(scanAccess.planKey);
   return {
     entitlements: {
       maxActiveWatchProfiles: scanAccess.limits.maxActiveWatchProfiles,

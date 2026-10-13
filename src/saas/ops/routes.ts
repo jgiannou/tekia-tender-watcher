@@ -1123,4 +1123,256 @@ export const registerOpsAdminRoutes = (
       );
     }
   });
+
+  // -------------------------------------------------------------------------
+  // ARC_PRO_LAUNCH_30 — Promotions admin (Ops Desktop)
+  // -------------------------------------------------------------------------
+
+  const promoAdminError = async (c: {
+    json: (body: unknown, status?: number) => Response;
+  }, error: unknown) => {
+    const { SaasError } = await import("../errors.js");
+    if (error instanceof z.ZodError) {
+      return c.json({ error: error.issues.map((i) => i.message).join("; ") }, 400);
+    }
+    if (error instanceof SaasError) {
+      return c.json(
+        { error: error.message, code: error.code },
+        error.status as 400 | 401 | 403 | 404 | 409,
+      );
+    }
+    return c.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      500,
+    );
+  };
+
+  app.get("/admin/ops/promotions/arc-pro-launch-30/summary", async (c) => {
+    try {
+      const { getPrisma } = await import("../../db/prisma.js");
+      const { getPromotionAdminSummary } = await import(
+        "../services/promotion-admin.js"
+      );
+      const data = await getPromotionAdminSummary(getPrisma());
+      return c.json({ data, syncedAt: new Date().toISOString() });
+    } catch (error) {
+      return promoAdminError(c, error);
+    }
+  });
+
+  app.get("/admin/ops/promotions/arc-pro-launch-30/redemptions", async (c) => {
+    try {
+      const { getPrisma } = await import("../../db/prisma.js");
+      const { listPromotionRedemptions } = await import(
+        "../services/promotion-admin.js"
+      );
+      const data = await listPromotionRedemptions(getPrisma(), {
+        status: c.req.query("status"),
+        q: c.req.query("q"),
+        limit: clampLimit(c.req.query("limit")),
+        offset: clampOffset(c.req.query("offset")),
+      });
+      return c.json({ data, syncedAt: new Date().toISOString() });
+    } catch (error) {
+      return promoAdminError(c, error);
+    }
+  });
+
+  app.get("/admin/ops/promotions/arc-pro-launch-30/audit", async (c) => {
+    try {
+      const { getPrisma } = await import("../../db/prisma.js");
+      const { listPromotionAuditEvents } = await import(
+        "../services/promotion-admin.js"
+      );
+      const data = await listPromotionAuditEvents(getPrisma(), {
+        limit: clampLimit(c.req.query("limit")),
+        offset: clampOffset(c.req.query("offset")),
+      });
+      return c.json({ data, syncedAt: new Date().toISOString() });
+    } catch (error) {
+      return promoAdminError(c, error);
+    }
+  });
+
+  app.post("/admin/ops/promotions/arc-pro-launch-30/grant", async (c) => {
+    try {
+      const { getPrisma } = await import("../../db/prisma.js");
+      const { adminGrantPromotion, getPromotionAdminSummary } = await import(
+        "../services/promotion-admin.js"
+      );
+      const body = z
+        .object({
+          organizationId: z.string().min(1),
+          reason: z.string().min(3).max(1000),
+          forceWhenDisabled: z.boolean().optional().default(false),
+          idempotencyKey: z.string().min(8).max(120).optional(),
+        })
+        .parse(await c.req.json());
+
+      const result = await adminGrantPromotion(getPrisma(), {
+        organizationId: body.organizationId,
+        performedBy: "ops:admin_token",
+        reason: body.reason,
+        forceWhenDisabled: body.forceWhenDisabled,
+        idempotencyKey: body.idempotencyKey ?? null,
+      });
+
+      opsLogger.warn("ops_promo_grant", {
+        organizationId: body.organizationId,
+        redemptionId: result.redemption.id,
+        forceWhenDisabled: body.forceWhenDisabled,
+        replayed: result.replayed,
+      });
+
+      const summary = await getPromotionAdminSummary(getPrisma());
+      return c.json({
+        data: {
+          ok: true,
+          replayed: result.replayed,
+          redemption: {
+            id: result.redemption.id,
+            organizationId: result.redemption.organizationId,
+            status: result.redemption.status,
+            expiresAt: result.redemption.expiresAt.toISOString(),
+            activatedAt: result.redemption.activatedAt.toISOString(),
+            source: result.redemption.source,
+            slotConsumed: result.redemption.slotConsumed,
+          },
+          summary,
+        },
+      });
+    } catch (error) {
+      return promoAdminError(c, error);
+    }
+  });
+
+  app.post("/admin/ops/promotions/arc-pro-launch-30/revoke", async (c) => {
+    try {
+      const { getPrisma } = await import("../../db/prisma.js");
+      const { adminRevokePromotion, getPromotionAdminSummary } = await import(
+        "../services/promotion-admin.js"
+      );
+      const body = z
+        .object({
+          organizationId: z.string().min(1),
+          reason: z.string().min(3).max(1000),
+          restoreSlot: z.boolean().optional().default(false),
+          idempotencyKey: z.string().min(8).max(120).optional(),
+        })
+        .parse(await c.req.json());
+
+      const result = await adminRevokePromotion(getPrisma(), {
+        organizationId: body.organizationId,
+        performedBy: "ops:admin_token",
+        reason: body.reason,
+        restoreSlot: body.restoreSlot,
+        idempotencyKey: body.idempotencyKey ?? null,
+      });
+
+      opsLogger.warn("ops_promo_revoke", {
+        organizationId: body.organizationId,
+        restoreSlot: body.restoreSlot,
+        replayed: result.replayed,
+      });
+
+      const summary = await getPromotionAdminSummary(getPrisma());
+      const redemption =
+        "redemption" in result && result.redemption
+          ? {
+              id: result.redemption.id,
+              status: result.redemption.status,
+              slotConsumed: result.redemption.slotConsumed,
+              slotRestoredAt:
+                result.redemption.slotRestoredAt?.toISOString() ?? null,
+            }
+          : null;
+      return c.json({
+        data: {
+          ok: true,
+          replayed: result.replayed,
+          redemption,
+          summary,
+        },
+      });
+    } catch (error) {
+      return promoAdminError(c, error);
+    }
+  });
+
+  app.post("/admin/ops/promotions/arc-pro-launch-30/restore-slot", async (c) => {
+    try {
+      const { getPrisma } = await import("../../db/prisma.js");
+      const { adminRestoreSlot, getPromotionAdminSummary } = await import(
+        "../services/promotion-admin.js"
+      );
+      const body = z
+        .object({
+          organizationId: z.string().min(1),
+          reason: z.string().min(3).max(1000),
+          idempotencyKey: z.string().min(8).max(120).optional(),
+        })
+        .parse(await c.req.json());
+
+      const result = await adminRestoreSlot(getPrisma(), {
+        organizationId: body.organizationId,
+        performedBy: "ops:admin_token",
+        reason: body.reason,
+        idempotencyKey: body.idempotencyKey ?? null,
+      });
+
+      opsLogger.warn("ops_promo_restore_slot", {
+        organizationId: body.organizationId,
+        replayed: result.replayed,
+      });
+
+      const summary = await getPromotionAdminSummary(getPrisma());
+      return c.json({
+        data: {
+          ok: true,
+          replayed: result.replayed,
+          summary,
+        },
+      });
+    } catch (error) {
+      return promoAdminError(c, error);
+    }
+  });
+
+  app.patch("/admin/ops/promotions/arc-pro-launch-30/capacity", async (c) => {
+    try {
+      const { getPrisma } = await import("../../db/prisma.js");
+      const { setPromotionCapacity } = await import(
+        "../services/promotion-capacity.js"
+      );
+      const { getPromotionAdminSummary } = await import(
+        "../services/promotion-admin.js"
+      );
+      const body = z
+        .object({
+          capacity: z.number().int().positive(),
+          reason: z.string().min(3).max(1000),
+          idempotencyKey: z.string().min(8).max(120).optional(),
+        })
+        .parse(await c.req.json());
+
+      const result = await setPromotionCapacity(getPrisma(), {
+        capacity: body.capacity,
+        reason: body.reason,
+        performedBy: "ops:admin_token",
+        idempotencyKey: body.idempotencyKey ?? null,
+      });
+
+      opsLogger.warn("ops_promo_capacity", {
+        previousCapacity: result.previousCapacity,
+        capacity: result.capacity,
+        consumedSlots: result.consumedSlots,
+        replayed: result.replayed,
+      });
+
+      const summary = await getPromotionAdminSummary(getPrisma());
+      return c.json({ data: { ...result, summary } });
+    } catch (error) {
+      return promoAdminError(c, error);
+    }
+  });
 };

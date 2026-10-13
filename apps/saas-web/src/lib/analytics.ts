@@ -25,6 +25,12 @@ export const ANALYTICS_EVENT_NAMES = [
   "watch_profile_created",
   "tender_followed",
   "button_click",
+  "promo_landing_viewed",
+  "promo_cta_clicked",
+  "pro_trial_started",
+  "pro_trial_expired",
+  "pro_trial_upgraded",
+  "paid_subscription_started",
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
@@ -48,7 +54,18 @@ const PARAM_KEYS = new Set([
   "content_type",
   "item_id",
   "source",
+  "promotion_key",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_content",
+  "utm_term",
+  "days",
 ]);
+
+const PROMO_INTENT_KEY = "arc.promo.intent";
+const PROMO_ATTR_KEY = "arc.promo.attribution";
+const PRO_TRIAL_STARTED_PREFIX = "arc.analytics.proTrialStarted.";
 
 const CHECKOUT_KEY = "arc.analytics.checkout";
 const PURCHASE_SENT_KEY = "arc.analytics.purchaseSent";
@@ -338,8 +355,91 @@ export const trackPurchaseFromReturn = (): void => {
     value: pending.value,
     currency: pending.currency ?? "EUR",
   };
+  // Paid conversion only — never fire for cardless promotional trials.
   trackAnalyticsEvent("purchase", params);
   trackAnalyticsEvent("subscription_started", params);
+  trackAnalyticsEvent("paid_subscription_started", params);
+};
+
+/** Preserve promo intent across signup / org creation (session only). */
+export const rememberPromoIntent = (
+  promotionKey = "ARC_PRO_LAUNCH_30",
+): void => {
+  if (typeof window === "undefined") return;
+  writeSessionItem(PROMO_INTENT_KEY, promotionKey);
+  const params = new URLSearchParams(window.location.search);
+  const attribution: Record<string, string> = {};
+  for (const key of [
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_content",
+    "utm_term",
+  ] as const) {
+    const value = params.get(key);
+    if (value) attribution[key] = cleanText(value, 120);
+  }
+  if (Object.keys(attribution).length) {
+    writeSessionItem(PROMO_ATTR_KEY, JSON.stringify(attribution));
+  }
+};
+
+export const consumePromoIntent = (): {
+  promotionKey: string | null;
+  attribution: Record<string, string>;
+} => {
+  if (typeof window === "undefined") {
+    return { promotionKey: null, attribution: {} };
+  }
+  const promotionKey = readSessionItem(PROMO_INTENT_KEY);
+  removeSessionItem(PROMO_INTENT_KEY);
+  let attribution: Record<string, string> = {};
+  const raw = readSessionItem(PROMO_ATTR_KEY);
+  removeSessionItem(PROMO_ATTR_KEY);
+  if (raw) {
+    try {
+      attribution = JSON.parse(raw) as Record<string, string>;
+    } catch {
+      attribution = {};
+    }
+  }
+  return { promotionKey, attribution };
+};
+
+export const peekPromoAttribution = (): Record<string, string> => {
+  if (typeof window === "undefined") return {};
+  const raw = readSessionItem(PROMO_ATTR_KEY);
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * Trusted backend activation result only — never fire on CTA click alone.
+ * Not a purchase event.
+ */
+export const trackProTrialStartedFromActivation = (input: {
+  userId?: string | null;
+  promotionKey: string;
+  already?: boolean;
+  days?: number;
+}): void => {
+  if (input.already) return;
+  const id = normalizeUserId(input.userId ?? currentUserId);
+  const dedupeKey = id
+    ? `${PRO_TRIAL_STARTED_PREFIX}${id}.${input.promotionKey}`
+    : null;
+  if (dedupeKey && !claimOnceLocal(dedupeKey)) return;
+  const attr = peekPromoAttribution();
+  trackAnalyticsEvent("pro_trial_started", {
+    promotion_key: input.promotionKey,
+    days: input.days ?? 30,
+    source: "arc_pro_launch_30",
+    ...attr,
+  });
 };
 
 const linkUrlFrom = (href: string | null): string | undefined => {

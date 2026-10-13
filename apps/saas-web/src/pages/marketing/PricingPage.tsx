@@ -5,6 +5,10 @@ import { SeoHead } from "@/components/SeoHead";
 import { Button } from "@/components/ui/button";
 import { MARKETING_SEO } from "@/lib/seo";
 import {
+  PROMO_LAUNCH_PATH,
+  useArcProLaunchAvailability,
+} from "@/lib/promo-launch";
+import {
   COMPARISON_ROWS,
   FAQ_EMAIL_WHEN,
   FAQ_SUBMIT_OFFER,
@@ -16,50 +20,59 @@ import {
   formatEur,
 } from "@/marketing/pricing";
 
-const faqs = [
-  {
-    q: "Είναι το ARC Tenders επίσημη υπηρεσία του ΚΗΜΔΗΣ;",
-    a: "Όχι. Το ARC Tenders είναι ανεξάρτητη ιδιωτική υπηρεσία που χρησιμοποιεί δημόσια διαθέσιμα δεδομένα για δημόσιες συμβάσεις.",
-  },
-  {
-    q: "Μπορώ να υποβάλω προσφορά μέσα από το ARC Tenders;",
-    a: FAQ_SUBMIT_OFFER,
-  },
-  {
-    q: "Μπορώ να ακυρώσω τη συνδρομή μου;",
-    a: "Ναι. Μπορείτε να ακυρώσετε τη συνδρομή σας από τη «Διαχείριση πληρωμών». Διατηρείτε την πρόσβαση στο πακέτο σας μέχρι τη λήξη της περιόδου που έχετε ήδη πληρώσει.",
-  },
-  {
-    q: "Υπάρχει δωρεάν πακέτο;",
-    a: "Ναι. Το δωρεάν πακέτο διατίθεται χωρίς χρονικό περιορισμό και χωρίς κάρτα. Αν θέλετε να γνωρίσετε τις επιπλέον δυνατότητες του Pro, μπορείτε να ενεργοποιήσετε δοκιμή 7 ημερών.",
-  },
-  {
-    q: "Τι συμβαίνει όταν λήξει η δοκιμή του Pro;",
-    a: "Η δοκιμή του Pro ολοκληρώθηκε. Συνεχίζετε με το δωρεάν πακέτο και έως μία εβδομαδιαία σύνοψη email.",
-  },
-  {
-    q: "Μπορώ να προσθέσω περισσότερους χρήστες;",
-    a: `Το Basic περιλαμβάνει 1 χρήστη και το Pro ${MARKETING_PLANS.pro.includedSeats} χρήστες. Στο Pro μπορείτε να προσθέσετε επιπλέον χρήστες με ${formatEur(MARKETING_PLANS.pro.extraSeatMonthlyEur!)} € ανά χρήστη τον μήνα, έως ${MARKETING_PLANS.pro.maxSeatsSelfService} χρήστες συνολικά.`,
-  },
-  {
-    q: "Πότε λαμβάνω email;",
-    a: FAQ_EMAIL_WHEN,
-  },
-  {
-    q: "Η εβδομαδιαία ενημέρωση καθυστερεί τα αποτελέσματά μου;",
-    a: FAQ_WEEKLY_DELAY,
-  },
-  {
-    q: "Χρησιμοποιεί AI η εφαρμογή;",
-    a: FAQ_USES_AI,
-  },
-  {
-    q: "Πόσο συχνά ελέγχεται το ΚΗΜΔΗΣ;",
-    a: INGEST_SPEED_HELP,
-  },
-] as const;
+export const PricingPage = () => {
+  const { meta: promo } = useArcProLaunchAvailability();
+  const promoOpen = Boolean(promo?.promotionActive && promo.acceptingRedemptions);
+  const trialDaysLabel = promoOpen ? 30 : TRIAL_DAYS;
 
-export const PricingPage = () => (
+  const faqs = [
+    {
+      q: "Είναι το ARC Tenders επίσημη υπηρεσία του ΚΗΜΔΗΣ;",
+      a: "Όχι. Το ARC Tenders είναι ανεξάρτητη ιδιωτική υπηρεσία που χρησιμοποιεί δημόσια διαθέσιμα δεδομένα για δημόσιες συμβάσεις.",
+    },
+    {
+      q: "Μπορώ να υποβάλω προσφορά μέσα από το ARC Tenders;",
+      a: FAQ_SUBMIT_OFFER,
+    },
+    {
+      q: "Μπορώ να ακυρώσω τη συνδρομή μου;",
+      a: "Ναι. Μπορείτε να ακυρώσετε τη συνδρομή σας από τη «Διαχείριση πληρωμών». Διατηρείτε την πρόσβαση στο πακέτο σας μέχρι τη λήξη της περιόδου που έχετε ήδη πληρώσει.",
+    },
+    {
+      q: "Υπάρχει δωρεάν πακέτο;",
+      a: promoOpen
+        ? `Ναι. Το δωρεάν πακέτο διατίθεται χωρίς χρονικό περιορισμό και χωρίς κάρτα. Διατίθεται επίσης προσφορά γνωριμίας: 30 ημέρες Pro δωρεάν για τους πρώτους ${promo?.totalSlots ?? 25} λογαριασμούς, χωρίς κάρτα και χωρίς αυτόματη χρέωση.`
+        : `Ναι. Το δωρεάν πακέτο διατίθεται χωρίς χρονικό περιορισμό και χωρίς κάρτα. Αν θέλετε να γνωρίσετε τις επιπλέον δυνατότητες του Pro, μπορείτε να ενεργοποιήσετε δοκιμή ${TRIAL_DAYS} ημερών.`,
+    },
+    {
+      q: "Τι συμβαίνει όταν λήξει η δοκιμή του Pro;",
+      a: promoOpen
+        ? "Μετά τις 30 ημέρες της προσφοράς επιστρέφετε στο Free. Δεν γίνεται αυτόματη χρέωση. Μπορείτε να αγοράσετε Pro ρητά οποιαδήποτε στιγμή."
+        : "Η δοκιμή του Pro ολοκληρώθηκε. Συνεχίζετε με το δωρεάν πακέτο και έως μία εβδομαδιαία σύνοψη email.",
+    },
+    {
+      q: "Μπορώ να προσθέσω περισσότερους χρήστες;",
+      a: `Το Basic περιλαμβάνει 1 χρήστη και το Pro ${MARKETING_PLANS.pro.includedSeats} χρήστες. Στο Pro μπορείτε να προσθέσετε επιπλέον χρήστες με ${formatEur(MARKETING_PLANS.pro.extraSeatMonthlyEur!)} € ανά χρήστη τον μήνα, έως ${MARKETING_PLANS.pro.maxSeatsSelfService} χρήστες συνολικά.`,
+    },
+    {
+      q: "Πότε λαμβάνω email;",
+      a: FAQ_EMAIL_WHEN,
+    },
+    {
+      q: "Η εβδομαδιαία ενημέρωση καθυστερεί τα αποτελέσματά μου;",
+      a: FAQ_WEEKLY_DELAY,
+    },
+    {
+      q: "Χρησιμοποιεί AI η εφαρμογή;",
+      a: FAQ_USES_AI,
+    },
+    {
+      q: "Πόσο συχνά ελέγχεται το ΚΗΜΔΗΣ;",
+      a: INGEST_SPEED_HELP,
+    },
+  ] as const;
+
+  return (
   <PublicShell>
     <SeoHead {...MARKETING_SEO.pricing} />
     <main className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:py-16">
@@ -71,8 +84,10 @@ export const PricingPage = () => (
           Επιλέξτε το πακέτο που ταιριάζει στην επιχείρησή σας
         </h1>
         <p className="mt-3 text-sm text-muted-foreground sm:text-base">
-          Ξεκινήστε δωρεάν, χωρίς κάρτα, ή δοκιμάστε το Pro για {TRIAL_DAYS} ημέρες. Το Basic
-          ξεκινά από {formatEur(MARKETING_PLANS.basic.priceMonthlyEur)} € και το Pro από{" "}
+          {promoOpen
+            ? "Ξεκινήστε δωρεάν, χωρίς κάρτα, ή δοκιμάστε το Pro δωρεάν για 30 ημέρες (προσφορά γνωριμίας)."
+            : `Ξεκινήστε δωρεάν, χωρίς κάρτα, ή δοκιμάστε το Pro για ${trialDaysLabel} ημέρες.`}{" "}
+          Το Basic ξεκινά από {formatEur(MARKETING_PLANS.basic.priceMonthlyEur)} € και το Pro από{" "}
           {formatEur(MARKETING_PLANS.pro.priceMonthlyEur)} € τον μήνα, πλέον ΦΠΑ.
         </p>
       </div>
@@ -131,12 +146,23 @@ export const PricingPage = () => (
         <h2 className="text-xl font-semibold">Ξεκινήστε δωρεάν — χωρίς κάρτα</h2>
         <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">
           Ξεκινήστε με το δωρεάν πακέτο και επιλέξτε Basic ή Pro όταν χρειαστείτε περισσότερες
-          δυνατότητες. Διατίθεται δοκιμή Pro για {TRIAL_DAYS} ημέρες.
+          δυνατότητες.{" "}
+          {promoOpen
+            ? "Διατίθεται προσφορά γνωριμίας: 30 ημέρες Pro δωρεάν."
+            : `Διατίθεται δοκιμή Pro για ${trialDaysLabel} ημέρες.`}
         </p>
-        <Button asChild className="mt-5" size="lg">
-          <Link to="/signup">Ξεκινήστε δωρεάν</Link>
-        </Button>
+        <div className="mt-5 flex flex-wrap justify-center gap-3">
+          <Button asChild size="lg">
+            <Link to="/signup">Ξεκινήστε δωρεάν</Link>
+          </Button>
+          {promoOpen ? (
+            <Button asChild size="lg" variant="outline">
+              <Link to={PROMO_LAUNCH_PATH}>Δοκίμασε Pro 30 ημέρες</Link>
+            </Button>
+          ) : null}
+        </div>
       </section>
     </main>
   </PublicShell>
-);
+  );
+};

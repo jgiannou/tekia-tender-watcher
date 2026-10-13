@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { CpvCombobox } from "@/components/CpvCombobox";
 import { PdfAction } from "@/components/PdfAction";
+import { InvitationIssuedBadge } from "@/components/InvitationIssuedBadge";
 import { SourceBadge } from "@/components/SourceBadge";
 import { DateInput } from "@/components/ui/date-input";
 import { Pagination } from "@/components/Pagination";
@@ -1327,7 +1328,14 @@ export const SearchPage = () => {
             />
           ) : (
             items.map((item) => (
-              <Card key={item.adam}>
+              <Card
+                key={item.adam}
+                className={
+                  item.invitationIssued
+                    ? "border-destructive/40 bg-destructive/[0.04] ring-1 ring-destructive/15"
+                    : undefined
+                }
+              >
                 <CardContent className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-start md:justify-between">
                   <div className="min-w-0 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1353,6 +1361,9 @@ export const SearchPage = () => {
                                 ? "Ματαίωση"
                                 : "Άγνωστη κατάσταση"}
                         </Badge>
+                      ) : null}
+                      {item.invitationIssued ? (
+                        <InvitationIssuedBadge relatedProcAdam={item.relatedProcAdam} />
                       ) : null}
                       <span className="font-mono text-xs text-muted-foreground">
                         {item.adam}

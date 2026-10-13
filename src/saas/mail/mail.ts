@@ -1220,3 +1220,122 @@ ${section("Επερχόμενες προθεσμίες", input.deadlines)}
     text: `${subject}\n${preheader}\n${appUrl}/app`,
   };
 };
+
+const formatElDate = (value: Date): string =>
+  value.toLocaleDateString("el-GR", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+export const promoActivationEmailCopy = (input: {
+  name: string;
+  organizationName: string;
+  expiresAt: Date;
+  upgradeUrl: string;
+}) => {
+  const appUrl = resolveSaasAppUrl();
+  const expiresLabel = formatElDate(input.expiresAt);
+  const subject = "Το Pro σας είναι ενεργό για 30 ημέρες — χωρίς χρέωση";
+  const preheader =
+    "Χωρίς πιστωτική κάρτα και χωρίς αυτόματη χρέωση. Μετά συνεχίζετε στο Free.";
+  const bodyHtml = `
+<p style="margin:0 0 14px;">Γεια σας${input.name.trim() ? ` ${escapeHtml(input.name.trim())}` : ""},</p>
+<p style="margin:0 0 14px;">Η προσφορά γνωριμίας <strong>ARC Tenders Pro — 30 ημέρες δωρεάν</strong> ενεργοποιήθηκε για τον οργανισμό <strong>${escapeHtml(input.organizationName || "σας")}</strong>.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 16px;">
+  ${metaRow("Λήξη", escapeHtml(expiresLabel))}
+  ${metaRow("Χρέωση", "Καμία — δεν απαιτείται κάρτα")}
+  ${metaRow("Μετά τη λήξη", "Επιστροφή στο Free Plan")}
+</table>
+<p style="margin:0 0 14px;">Δεν θα πραγματοποιηθεί αυτόματη χρέωση. Μπορείτε να επιλέξετε συνδρομή οποιαδήποτε στιγμή.</p>
+<p style="margin:20px 0 10px;">${ctaButton(input.upgradeUrl || `${appUrl}/app/subscription`, "Δείτε το Pro")}</p>
+`;
+  return {
+    subject,
+    html: wrapEmailLayout({
+      locale: "el",
+      appUrl,
+      preheader,
+      eyebrow: "Προσφορά γνωριμίας",
+      heading: "30 ημέρες Pro δωρεάν",
+      bodyHtml,
+      companyName: input.organizationName,
+    }),
+    text: `${subject}\nΛήξη: ${expiresLabel}\nΧωρίς αυτόματη χρέωση.\n${input.upgradeUrl || `${appUrl}/app/subscription`}`,
+  };
+};
+
+export const promoReminderEmailCopy = (input: {
+  name: string;
+  organizationName: string;
+  expiresAt: Date;
+  daysRemaining: number;
+  upgradeUrl: string;
+  kind: "7d" | "2d";
+}) => {
+  const appUrl = resolveSaasAppUrl();
+  const expiresLabel = formatElDate(input.expiresAt);
+  const days =
+    input.daysRemaining === 1
+      ? "1 ημέρα"
+      : `${input.daysRemaining} ημέρες`;
+  const subject =
+    input.kind === "7d"
+      ? `Το Pro λήγει σε ${days} — χωρίς αυτόματη χρέωση`
+      : `Υπενθύμιση: το Pro λήγει σε ${days}`;
+  const preheader =
+    "Μετά τη λήξη συνεχίζετε στο Free. Δεν θα χρεωθείτε αυτόματα.";
+  const bodyHtml = `
+<p style="margin:0 0 14px;">Γεια σας${input.name.trim() ? ` ${escapeHtml(input.name.trim())}` : ""},</p>
+<p style="margin:0 0 14px;">Η δωρεάν πρόσβαση Pro για <strong>${escapeHtml(input.organizationName || "τον οργανισμό σας")}</strong> λήγει στις <strong>${escapeHtml(expiresLabel)}</strong> (απομένουν ${escapeHtml(days)}).</p>
+<p style="margin:0 0 14px;"><strong>Δεν θα πραγματοποιηθεί χρέωση.</strong> Μετά θα συνεχίσετε στο Free Plan, εκτός αν επιλέξετε συνδρομή.</p>
+<p style="margin:20px 0 10px;">${ctaButton(input.upgradeUrl || `${appUrl}/app/subscription`, "Δείτε τα πακέτα")}</p>
+`;
+  return {
+    subject,
+    html: wrapEmailLayout({
+      locale: "el",
+      appUrl,
+      preheader,
+      eyebrow: "Υπενθύμιση Pro",
+      heading: `Απομένουν ${days}`,
+      bodyHtml,
+      companyName: input.organizationName,
+    }),
+    text: `${subject}\nΛήξη: ${expiresLabel}\nΧωρίς αυτόματη χρέωση.\n${input.upgradeUrl || `${appUrl}/app/subscription`}`,
+  };
+};
+
+export const promoExpiredEmailCopy = (input: {
+  name: string;
+  organizationName: string;
+  expiresAt: Date;
+  upgradeUrl: string;
+}) => {
+  const appUrl = resolveSaasAppUrl();
+  const expiresLabel = formatElDate(input.expiresAt);
+  const subject = "Η δωρεάν περίοδος Pro έληξε — συνεχίζετε στο Free";
+  const preheader =
+    "Τα δεδομένα σας παραμένουν. Δεν πραγματοποιήθηκε χρέωση.";
+  const bodyHtml = `
+<p style="margin:0 0 14px;">Γεια σας${input.name.trim() ? ` ${escapeHtml(input.name.trim())}` : ""},</p>
+<p style="margin:0 0 14px;">Η προσφορά Pro για <strong>${escapeHtml(input.organizationName || "τον οργανισμό σας")}</strong> έληξε στις <strong>${escapeHtml(expiresLabel)}</strong>.</p>
+<p style="margin:0 0 14px;"><strong>Δεν πραγματοποιήθηκε χρέωση.</strong> Συνεχίζετε στο Free Plan. Οι αποθηκευμένες αναζητήσεις, οι διαγωνισμοί και τα έγγραφά σας παραμένουν.</p>
+<p style="margin:0 0 14px;">Αν έχετε περισσότερες ενεργές αναζητήσεις από το όριο του Free, ορισμένες έχουν γίνει ανενεργές — μπορείτε να επιλέξετε ποιες θα κρατήσετε ενεργές από τις Αποθηκευμένες αναζητήσεις.</p>
+<p style="margin:20px 0 10px;">${ctaButton(input.upgradeUrl || `${appUrl}/app/subscription`, "Αναβάθμιση σε Pro")}</p>
+`;
+  return {
+    subject,
+    html: wrapEmailLayout({
+      locale: "el",
+      appUrl,
+      preheader,
+      eyebrow: "Λήξη προσφοράς",
+      heading: "Επιστροφή στο Free",
+      bodyHtml,
+      companyName: input.organizationName,
+    }),
+    text: `${subject}\nΛήξη: ${expiresLabel}\nΧωρίς χρέωση.\n${input.upgradeUrl || `${appUrl}/app/subscription`}`,
+  };
+};

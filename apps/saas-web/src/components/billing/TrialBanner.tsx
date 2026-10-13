@@ -11,9 +11,9 @@ import {
 import { cn } from "@/lib/utils";
 
 type BannerState =
-  | { kind: "trial"; trialEndsAt: string | null }
+  | { kind: "trial"; trialEndsAt: string | null; promotional?: boolean }
   | { kind: "trial_expired"; trialEndsAt: string | null }
-  | { kind: "free"; canStartProTrial: boolean };
+  | { kind: "free"; canStartProTrial: boolean; canStartLaunchPromo?: boolean };
 
 const formatPrice = (amount: number) =>
   amount.toLocaleString("el-GR", {
@@ -61,10 +61,14 @@ export const TrialBanner = () => {
         const status = entitlements.scanAccess?.status;
         const planKey =
           billing?.planKey ?? entitlements.scanAccess?.planKey ?? null;
-        if (status === "trial") {
+        if (status === "promo" || status === "trial") {
           setBanner({
             kind: "trial",
-            trialEndsAt: entitlements.scanAccess.trialEndsAt ?? null,
+            trialEndsAt:
+              entitlements.scanAccess?.promo?.expiresAt ??
+              entitlements.scanAccess.trialEndsAt ??
+              null,
+            promotional: status === "promo",
           });
           return;
         }
@@ -75,10 +79,18 @@ export const TrialBanner = () => {
           });
           return;
         }
-        if (planKey === "free") {
+        if (planKey === "free" || status === "active") {
+          const isFree =
+            planKey === "free" ||
+            (!billing?.hasStripeSubscription && planKey !== "basic" && planKey !== "pro");
+          if (!isFree) {
+            setBanner(null);
+            return;
+          }
           setBanner({
             kind: "free",
             canStartProTrial: Boolean(billing?.canStartProTrial),
+            canStartLaunchPromo: Boolean(billing?.launchPromo?.canActivate),
           });
           return;
         }
@@ -98,6 +110,7 @@ export const TrialBanner = () => {
   const basicPrice = formatPrice(MARKETING_PLANS.basic.priceMonthlyEur);
 
   if (banner.kind === "free") {
+    const launchPromo = Boolean(banner.canStartLaunchPromo);
     return (
       <div
         className="mb-4 flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
@@ -105,18 +118,31 @@ export const TrialBanner = () => {
         aria-live="polite"
       >
         <div className="min-w-0 space-y-1">
-          <p className="text-sm font-medium">Είστε στο δωρεάν πακέτο</p>
+          <p className="text-sm font-medium">
+            {launchPromo
+              ? "Δοκίμασε το ARC Tenders Pro δωρεάν για 30 ημέρες."
+              : "Είστε στο δωρεάν πακέτο"}
+          </p>
           <p className="text-sm text-muted-foreground">
-            1 ενεργή αποθηκευμένη αναζήτηση, έως 5 διαγωνισμοί σε παρακολούθηση και
-            εβδομαδιαία σύνοψη email όταν υπάρχουν νέα.
-            {banner.canStartProTrial
-              ? ` Δοκιμάστε το Pro για ${TRIAL_DAYS} ημέρες χωρίς κάρτα.`
-              : ""}
+            {launchPromo
+              ? "Χωρίς κάρτα · Χωρίς αυτόματη χρέωση · Μία ενεργοποίηση ανά οργανισμό."
+              : `1 ενεργή αποθηκευμένη αναζήτηση, έως 5 διαγωνισμοί σε παρακολούθηση και εβδομαδιαία σύνοψη email όταν υπάρχουν νέα.${
+                  banner.canStartProTrial
+                    ? ` Δοκιμάστε το Pro για ${TRIAL_DAYS} ημέρες χωρίς κάρτα.`
+                    : ""
+                }`}
           </p>
         </div>
         <Button asChild size="sm" className="shrink-0">
-          <Link to="/app/subscription" aria-label="Δείτε τα πακέτα">
-            Δείτε τα πακέτα
+          <Link
+            to={
+              launchPromo
+                ? "/app/subscription?promo=arc-pro-launch-30"
+                : "/app/subscription"
+            }
+            aria-label={launchPromo ? "Ενεργοποίηση Pro" : "Δείτε τα πακέτα"}
+          >
+            {launchPromo ? "Ενεργοποίηση Pro" : "Δείτε τα πακέτα"}
           </Link>
         </Button>
       </div>
@@ -129,6 +155,7 @@ export const TrialBanner = () => {
     banner.trialEndsAt && !expired
       ? new Date(banner.trialEndsAt).toLocaleDateString("el-GR")
       : null;
+  const promotional = banner.kind === "trial" && banner.promotional;
 
   return (
     <div
@@ -143,19 +170,37 @@ export const TrialBanner = () => {
     >
       <div className="min-w-0 space-y-1">
         <p className="text-sm font-medium">
-          {expired ? "Η δοκιμή Pro έληξε" : "Είστε σε δοκιμή Pro"}
+          {expired
+            ? "Η δοκιμή Pro έληξε"
+            : promotional
+              ? "Το Pro είναι ενεργό"
+              : "Είστε σε δοκιμή Pro"}
         </p>
         <p className="text-sm text-muted-foreground">
           {expired
             ? "Επιστρέφετε στο Free. Ενεργοποιήστε Basic ή Pro για vault, checklist και περισσότερες αναζητήσεις."
-            : [remaining, endsLabel ? `έως ${endsLabel}` : null]
-                .filter(Boolean)
-                .join(" · ") || "Pro preview."}{" "}
-          Basic από{" "}
-          <span className="font-semibold text-foreground">
-            €{basicPrice}/μήνα
-          </span>
-          . {PRICING_TAX_LABEL}
+            : promotional
+              ? [
+                  endsLabel
+                    ? `Το Pro είναι ενεργό δωρεάν μέχρι ${endsLabel}.`
+                    : "Το Pro είναι ενεργό δωρεάν.",
+                  "Δεν θα πραγματοποιηθεί αυτόματη χρέωση.",
+                  remaining,
+                ]
+                  .filter(Boolean)
+                  .join(" ")
+              : (
+                <>
+                  {[remaining, endsLabel ? `έως ${endsLabel}` : null]
+                    .filter(Boolean)
+                    .join(" · ") || "Pro preview."}{" "}
+                  Basic από{" "}
+                  <span className="font-semibold text-foreground">
+                    €{basicPrice}/μήνα
+                  </span>
+                  . {PRICING_TAX_LABEL}
+                </>
+              )}
         </p>
       </div>
       <Button
@@ -164,8 +209,13 @@ export const TrialBanner = () => {
         className="shrink-0"
         variant={expired ? "destructive" : "default"}
       >
-        <Link to="/app/subscription" aria-label="Μετάβαση στις συνδρομές">
-          Δείτε τα πακέτα
+        <Link
+          to="/app/subscription"
+          aria-label={
+            promotional ? "Αναβάθμιση σε πληρωμένο Pro" : "Μετάβαση στις συνδρομές"
+          }
+        >
+          {promotional ? "Αναβάθμιση Pro" : "Δείτε τα πακέτα"}
         </Link>
       </Button>
     </div>

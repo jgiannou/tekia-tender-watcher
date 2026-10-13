@@ -41,9 +41,20 @@ export type KimdisRequestRecord = {
   contractTypes?: Array<{ contractType?: KimdisKeyValue | null }> | null;
 };
 
+export type KimdisApprovedRequestRef = {
+  code?: string | null;
+  referenceNumber?: string | null;
+};
+
 export type KimdisNoticeRecord = KimdisRequestRecord & {
   finalSubmissionDate?: string | null;
   procedureTypes?: Array<{ procedureType?: KimdisKeyValue | null }> | null;
+  /**
+   * Official parent REQ ADAMs on PROC / notice Open Data rows.
+   * Prefer this over empty noticeRefNo on the parent REQ.
+   */
+  approvedRequests?: KimdisApprovedRequestRef[] | null;
+  requestRefNo?: string[] | null;
 };
 
 export type KimdisPage<T> = {

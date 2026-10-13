@@ -63,6 +63,9 @@ export const resetSaasDatabase = async (prisma: PrismaClient) => {
   await prisma.watchProfile.deleteMany();
   await prisma.alertDestination.deleteMany();
   await prisma.organizationSettings.deleteMany();
+  await prisma.organizationPromotionRedemption.deleteMany();
+  await prisma.promotionAuditEvent.deleteMany();
+  await prisma.promotionCampaignConfig.deleteMany();
   await prisma.subscription.deleteMany();
   await prisma.invitation.deleteMany();
   await prisma.organizationMember.deleteMany();

@@ -70,9 +70,17 @@ const INACTIVE_LIMITS: PlanLimits = {
 export type ScanAccessStatus =
   | "unverified"
   | "trial"
+  | "promo"
   | "trial_expired"
   | "active"
   | "inactive";
+
+export type ScanAccessPromo = {
+  promotionKey: string;
+  activatedAt: string;
+  expiresAt: string;
+  daysRemaining: number;
+};
 
 export type ScanAccess = {
   emailVerified: boolean;
@@ -80,6 +88,8 @@ export type ScanAccess = {
   planKey: string;
   plan: PlanEntitlements["plan"] | "INACTIVE";
   trialEndsAt: string | null;
+  /** Active cardless launch promo, when present. */
+  promo: ScanAccessPromo | null;
   limits: PlanLimits;
   usage: { day: string; periodic: number; manual: number };
   seats: {
@@ -116,14 +126,25 @@ const readScanUsage = (meta: unknown, now = new Date()): ScanUsage => {
   };
 };
 
-const isTrialingActive = (sub: Subscription | null, now: Date): boolean => {
+export const isTrialingActiveSubscription = (
+  sub: Subscription | null,
+  now: Date,
+): boolean => {
   if (!sub || sub.status !== "TRIALING") return false;
   if (!sub.trialEndsAt) return true;
   return sub.trialEndsAt.getTime() > now.getTime();
 };
 
+const isTrialingActive = isTrialingActiveSubscription;
+
 const isPaidActive = (status: SubscriptionStatus): boolean =>
   status === "ACTIVE";
+
+const isPaidCommercialPlan = (sub: Subscription): boolean => {
+  if (!isPaidActive(sub.status) && sub.status !== "PAST_DUE") return false;
+  const key = normalizePlanKey(sub.planKey);
+  return key === PLAN_KEYS.basic || key === PLAN_KEYS.pro;
+};
 
 /** Legacy orgs created before trial rows existed get a fresh 7-day trial once. */
 export const ensureOrganizationSubscription = async (
@@ -191,6 +212,8 @@ export const resolveOrganizationScanAccess = async (
     };
   };
 
+  const emptyPromo = null as ScanAccessPromo | null;
+
   if (!emailVerified) {
     // Plan limits stay visible (e.g. Free = 1 active search). Automation stays
     // gated until verify — do not collapse commercial limits to zero.
@@ -202,6 +225,7 @@ export const resolveOrganizationScanAccess = async (
       planKey,
       plan: plan.plan,
       trialEndsAt,
+      promo: emptyPromo,
       limits,
       usage,
       seats: seatsFor(planKey),
@@ -212,9 +236,9 @@ export const resolveOrganizationScanAccess = async (
     };
   }
 
-  if (isPaidActive(subscription.status)) {
-    const paidKey =
-      planKey === PLAN_KEYS.trial ? PLAN_KEYS.basic : planKey;
+  // Paid Basic/Pro always wins over promotional Pro.
+  if (isPaidCommercialPlan(subscription)) {
+    const paidKey = planKey === PLAN_KEYS.trial ? PLAN_KEYS.basic : planKey;
     const limits = limitsForPlanKey(paidKey);
     const plan = entitlementsForPlanKey(paidKey);
     return {
@@ -223,6 +247,7 @@ export const resolveOrganizationScanAccess = async (
       planKey: paidKey,
       plan: plan.plan,
       trialEndsAt,
+      promo: emptyPromo,
       limits,
       usage,
       seats: seatsFor(paidKey),
@@ -238,6 +263,47 @@ export const resolveOrganizationScanAccess = async (
     };
   }
 
+  // Cardless launch promo — Pro entitlements without Stripe. Expiry is
+  // enforced via expiresAt even if the lifecycle job is delayed.
+  {
+    const { expirePromotionIfNeeded, findActivePromotionRedemption, daysRemainingUtc } =
+      await import("./promotions.js");
+    await expirePromotionIfNeeded(prisma, input.organizationId, now);
+    const activePromo = await findActivePromotionRedemption(
+      prisma,
+      input.organizationId,
+      now,
+    );
+    if (activePromo) {
+      const limits = limitsForPlanKey(PLAN_KEYS.trial);
+      return {
+        emailVerified: true,
+        status: "promo",
+        planKey: PLAN_KEYS.trial,
+        plan: "TRIAL",
+        trialEndsAt: activePromo.expiresAt.toISOString(),
+        promo: {
+          promotionKey: activePromo.promotionKey,
+          activatedAt: activePromo.activatedAt.toISOString(),
+          expiresAt: activePromo.expiresAt.toISOString(),
+          daysRemaining: daysRemainingUtc(activePromo.expiresAt, now),
+        },
+        limits,
+        usage,
+        seats: seatsFor(PLAN_KEYS.trial),
+        canManualKimdisSearch: true,
+        canRunManualProfileScan: usage.manual < limits.manualProfileScansPerDay,
+        canRunPeriodicScan: usage.periodic < limits.periodicScansPerDay,
+        blockCode:
+          usage.periodic >= limits.periodicScansPerDay
+            ? "periodic_scan_quota_exceeded"
+            : usage.manual >= limits.manualProfileScansPerDay
+              ? "manual_scan_quota_exceeded"
+              : null,
+      };
+    }
+  }
+
   if (isTrialingActive(subscription, now)) {
     const limits = limitsForPlanKey(PLAN_KEYS.trial);
     return {
@@ -246,6 +312,7 @@ export const resolveOrganizationScanAccess = async (
       planKey: PLAN_KEYS.trial,
       plan: "TRIAL",
       trialEndsAt,
+      promo: emptyPromo,
       limits,
       usage,
       seats: seatsFor(PLAN_KEYS.trial),
@@ -270,6 +337,13 @@ export const resolveOrganizationScanAccess = async (
       "./plan-email-transition.js"
     );
     await onTransitionToFreeEmailPolicy(prisma, subscription.organizationId);
+    const { enforceFreePlanCapacityAfterDowngrade } = await import(
+      "./plan-capacity.js"
+    );
+    await enforceFreePlanCapacityAfterDowngrade(
+      prisma,
+      subscription.organizationId,
+    );
     const limits = limitsForPlanKey(PLAN_KEYS.free);
     const plan = entitlementsForPlanKey(PLAN_KEYS.free);
     return {
@@ -278,6 +352,7 @@ export const resolveOrganizationScanAccess = async (
       planKey: PLAN_KEYS.free,
       plan: plan.plan,
       trialEndsAt,
+      promo: emptyPromo,
       limits,
       usage,
       seats: seatsFor(PLAN_KEYS.free),
@@ -288,12 +363,41 @@ export const resolveOrganizationScanAccess = async (
     };
   }
 
+  // Permanent Free (ACTIVE + free) and other ACTIVE non-commercial rows.
+  if (isPaidActive(subscription.status)) {
+    const freeKey =
+      planKey === PLAN_KEYS.trial ? PLAN_KEYS.free : planKey;
+    const limits = limitsForPlanKey(freeKey);
+    const plan = entitlementsForPlanKey(freeKey);
+    return {
+      emailVerified: true,
+      status: "active",
+      planKey: freeKey,
+      plan: plan.plan,
+      trialEndsAt,
+      promo: emptyPromo,
+      limits,
+      usage,
+      seats: seatsFor(freeKey),
+      canManualKimdisSearch: true,
+      canRunManualProfileScan: usage.manual < limits.manualProfileScansPerDay,
+      canRunPeriodicScan: usage.periodic < limits.periodicScansPerDay,
+      blockCode:
+        usage.periodic >= limits.periodicScansPerDay
+          ? "periodic_scan_quota_exceeded"
+          : usage.manual >= limits.manualProfileScansPerDay
+            ? "manual_scan_quota_exceeded"
+            : null,
+    };
+  }
+
   return {
     emailVerified: true,
     status: "inactive",
     planKey,
     plan: "INACTIVE",
     trialEndsAt,
+    promo: emptyPromo,
     limits: { ...INACTIVE_LIMITS },
     usage,
     seats: seatsFor(planKey),

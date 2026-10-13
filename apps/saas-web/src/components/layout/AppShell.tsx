@@ -48,6 +48,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { TenderNavProvider, useTenderNav } from "@/lib/tender-nav-context";
 
 type NavItem = {
   to: string;
@@ -71,7 +72,7 @@ const navSections: NavSection[] = [
     items: [
       { to: "/app/search", label: "Αναζήτηση στο ΚΗΜΔΗΣ", icon: FileSearch },
       { to: "/app/opportunities", label: "Ευκαιρίες", icon: Radar },
-      { to: "/app/monitoring", label: "Παρακολούθηση", icon: Binoculars },
+      { to: "/app/monitoring", label: "Παρακολουθούμενα", icon: Binoculars },
       { to: "/app/expiring-contracts", label: "Συμβάσεις που λήγουν", icon: FileText },
       { to: "/app/saved-searches", label: "Αποθηκευμένες αναζητήσεις", icon: Bookmark },
     ],
@@ -123,7 +124,7 @@ const titleForPath = (pathname: string): string => {
   if (pathname.startsWith("/app/search")) return "Αναζήτηση στο ΚΗΜΔΗΣ";
   if (pathname.startsWith("/app/tenders/")) return "Δημοσίευση στο ΚΗΜΔΗΣ";
   if (pathname.startsWith("/app/opportunities")) return "Ευκαιρίες";
-  if (pathname.startsWith("/app/monitoring")) return "Παρακολούθηση";
+  if (pathname.startsWith("/app/monitoring")) return "Παρακολουθούμενα";
   if (pathname.startsWith("/app/submissions")) return "Υποβολές";
   if (pathname.startsWith("/app/documents")) return "Έγγραφα";
   if (pathname.startsWith("/app/saved-searches")) return "Αποθηκευμένες αναζητήσεις";
@@ -140,6 +141,8 @@ type SidebarPanelProps = {
 
 const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { viewingFollowedTender } = useTenderNav();
   const {
     organizations,
     activeOrganization,
@@ -245,13 +248,17 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
                     onClick={handleNav}
                     onMouseEnter={() => prefetchRoute(item.to)}
                     onFocus={() => prefetchRoute(item.to)}
-                    className={({ isActive }) =>
-                      cn(
+                    className={({ isActive }) => {
+                      const highlightFollowedTender =
+                        item.to === "/app/monitoring" &&
+                        viewingFollowedTender &&
+                        location.pathname.startsWith("/app/tenders/");
+                      return cn(
                         "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                        isActive &&
+                        (isActive || highlightFollowedTender) &&
                           "bg-sidebar-accent font-medium text-sidebar-foreground",
-                      )
-                    }
+                      );
+                    }}
                   >
                   <item.icon className="h-4 w-4 shrink-0" />
                   <span className="truncate">{item.label}</span>
@@ -392,6 +399,7 @@ export const AppShell = () => {
   const handleCreateOrganization = () => setCreateOrgOpen(true);
 
   return (
+    <TenderNavProvider>
     <div className="flex min-h-screen overflow-x-clip">
       <SeoHead
         title="Εφαρμογή | ARC Tenders"
@@ -496,5 +504,6 @@ export const AppShell = () => {
       />
       <Separator className="hidden" />
     </div>
+    </TenderNavProvider>
   );
 };

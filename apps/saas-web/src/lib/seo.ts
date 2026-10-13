@@ -46,4 +46,11 @@ export const MARKETING_SEO = {
       "Ξεκινήστε δωρεάν στο ARC Tenders χωρίς κάρτα — αυτόματες αναζητήσεις ΚΗΜΔΗΣ και οργανωμένη ροή διαγωνισμών.",
     path: "/signup",
   },
+  pro30: {
+    title: "30 Ημέρες ARC Tenders Pro Δωρεάν | Προσφορά Γνωριμίας",
+    description:
+      "Δοκίμασε το ARC Tenders Pro δωρεάν για 30 ημέρες. Αναζήτησε δημόσιους διαγωνισμούς, λάβε ειδοποιήσεις και παρακολούθησε ευκαιρίες χωρίς πιστωτική κάρτα.",
+    path: "/pro-30",
+    imagePath: "/og-pro-30.png",
+  },
 } as const satisfies Record<string, SeoConfig>;

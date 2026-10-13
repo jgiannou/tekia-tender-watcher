@@ -41,6 +41,8 @@ import {
   canStartProTrial,
   startProTrial,
 } from "../services/pro-trial.js";
+import { getArcProLaunchPublicState } from "../services/promotions.js";
+import { isArcProLaunchEnabled } from "../promotions/arc-pro-launch.js";
 
 type BillingVariables = {
   userId: string;
@@ -153,21 +155,45 @@ export const registerBillingRoutes = (input: RegisterBillingRoutesInput) => {
         (await syncSubscriptionFromStripe(prisma, orgId)) ?? subscription;
     }
 
+    const promo = await getArcProLaunchPublicState(prisma, {
+      userId,
+      organizationId: orgId,
+    }).catch(() => null);
+
+    const effectivePlanKey =
+      promo?.redemption?.status === "ACTIVE"
+        ? PLAN_KEYS.trial
+        : (subscription?.planKey ?? PLAN_KEYS.free);
+
     return c.json({
       configured: isStripeConfigured(),
       canManageBilling: canManage,
-      planKey: subscription?.planKey ?? PLAN_KEYS.free,
+      planKey: effectivePlanKey,
       status: subscription?.status ?? "INCOMPLETE",
       extraSeats: subscription?.extraSeats ?? 0,
-      trialEndsAt: subscription?.trialEndsAt?.toISOString() ?? null,
+      trialEndsAt:
+        promo?.redemption?.status === "ACTIVE"
+          ? promo.redemption.expiresAt
+          : (subscription?.trialEndsAt?.toISOString() ?? null),
       currentPeriodEnd: subscription?.currentPeriodEnd?.toISOString() ?? null,
       cancelAtPeriodEnd: Boolean(subscription?.cancelAtPeriodEnd),
       stripeCustomerId: subscription?.stripeCustomerId ?? null,
       stripeSubscriptionId: subscription?.stripeSubscriptionId ?? null,
       hasStripeSubscription: Boolean(subscription?.stripeSubscriptionId),
       canStartProTrial: subscription
-        ? canStartProTrial(subscription)
+        ? canStartProTrial(subscription) &&
+          promo?.redemption?.status !== "ACTIVE"
         : true,
+      launchPromo: {
+        enabled: isArcProLaunchEnabled(),
+        canActivate: Boolean(promo?.canActivate),
+        reason: promo?.reason ?? "promo_disabled",
+        totalSlots: promo?.totalSlots ?? 25,
+        redeemedSlots: promo?.redeemedSlots ?? 0,
+        remainingSlots: promo?.remainingSlots ?? 0,
+        acceptingRedemptions: Boolean(promo?.acceptingRedemptions),
+        redemption: promo?.redemption ?? null,
+      },
     });
   });
 

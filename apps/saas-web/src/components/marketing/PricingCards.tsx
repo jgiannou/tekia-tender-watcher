@@ -8,6 +8,10 @@ import {
   priceWithTaxHint,
   type MarketingPlanKey,
 } from "@/marketing/pricing";
+import {
+  PROMO_LAUNCH_PATH,
+  useArcProLaunchAvailability,
+} from "@/lib/promo-launch";
 import { cn } from "@/lib/utils";
 
 type PricingCardsProps = {
@@ -17,6 +21,8 @@ type PricingCardsProps = {
 
 export const PricingCards = ({ mode, className }: PricingCardsProps) => {
   const keys: MarketingPlanKey[] = ["free", "basic", "pro"];
+  const { meta: promo } = useArcProLaunchAvailability();
+  const promoOpen = Boolean(promo?.promotionActive && promo.acceptingRedemptions);
 
   return (
     <div
@@ -93,14 +99,22 @@ export const PricingCards = ({ mode, className }: PricingCardsProps) => {
               <Link
                 to={
                   key === "pro"
-                    ? "/signup?next=/app/subscription"
+                    ? promoOpen
+                      ? PROMO_LAUNCH_PATH
+                      : "/signup?next=/app/subscription"
                     : key === "basic"
                       ? "/signup?next=/app/subscription"
                       : "/signup"
                 }
-                aria-label={plan.ctaEl}
+                aria-label={
+                  key === "pro" && promoOpen
+                    ? "Δοκιμάστε το Pro δωρεάν για 30 ημέρες"
+                    : plan.ctaEl
+                }
               >
-                {plan.ctaEl}
+                {key === "pro" && promoOpen
+                  ? "Δοκιμάστε το Pro δωρεάν για 30 ημέρες"
+                  : plan.ctaEl}
               </Link>
             </Button>
           </article>

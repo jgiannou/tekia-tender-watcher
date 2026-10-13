@@ -6,6 +6,7 @@ import { PdfAction } from "@/components/PdfAction";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
+import { InvitationIssuedBadge } from "@/components/InvitationIssuedBadge";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { SourceBadge } from "@/components/SourceBadge";
 import { Badge } from "@/components/ui/badge";
@@ -532,12 +533,16 @@ export const OpportunitiesPage = () => {
             const profilesMatched = meta?.matchedProfiles ?? [];
             const topScore = meta?.highestScore ?? opportunity.score ?? 0;
             const isNew = Boolean(opportunity.isNew);
+            const invitationIssued = Boolean(opportunity.invitationIssued);
             return (
               <Card
                 key={opportunity.id}
                 className={cn(
                   isNew &&
                     "border-primary/50 bg-primary/5 shadow-md shadow-primary/10 ring-1 ring-primary/20",
+                  invitationIssued &&
+                    !isNew &&
+                    "border-destructive/40 bg-destructive/[0.04] ring-1 ring-destructive/15",
                 )}
                 onPointerEnter={() => {
                   if (isNew) void handleMarkSeen(opportunity);
@@ -551,6 +556,11 @@ export const OpportunitiesPage = () => {
                       <SourceBadge
                         referenceNumber={opportunity.tender.referenceNumber}
                       />
+                      {invitationIssued ? (
+                        <InvitationIssuedBadge
+                          relatedProcAdam={opportunity.relatedProcAdam}
+                        />
+                      ) : null}
                       <span className="font-mono text-xs text-muted-foreground">
                         {opportunity.tender.referenceNumber}
                       </span>

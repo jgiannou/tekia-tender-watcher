@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { trackAnalyticsEvent } from "@/lib/analytics";
+import { useArcProLaunchAvailability } from "@/lib/promo-launch";
 
 const MAX_OWNED_ORGANIZATIONS = 3;
 
@@ -32,6 +33,8 @@ export const CreateOrganizationDialog = ({
 }: CreateOrganizationDialogProps) => {
   const navigate = useNavigate();
   const { createOrganization, organizations } = useSessionContext();
+  const { meta: promo } = useArcProLaunchAvailability();
+  const promoOpen = Boolean(promo?.promotionActive && promo.acceptingRedemptions);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -98,7 +101,9 @@ export const CreateOrganizationDialog = ({
           <li>
             • Ξεκινά με{" "}
             <span className="text-foreground">δωρεάν πλάνο (Free)</span>
-            {" "}χωρίς κάρτα — προαιρετική δοκιμή Pro 7 ημερών
+            {promoOpen
+              ? " χωρίς κάρτα — προαιρετική προσφορά 30 ημερών Pro"
+              : " χωρίς κάρτα — προαιρετική δοκιμή Pro 7 ημερών"}
           </li>
           <li>
             • Παρακολουθήσεις, έγγραφα και μέλη δεν μοιράζονται με άλλους οργανισμούς

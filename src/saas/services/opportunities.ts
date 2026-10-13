@@ -1,6 +1,10 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { requireOrgMembership } from "../auth/org-context.js";
 import { notFound } from "../errors.js";
+import {
+  loadRelatedProcFlagsByTenderIds,
+  type RelatedProcFlag,
+} from "./related-proc-flags.js";
 import { parseMatchMeta } from "./watch-match.js";
 
 const opportunityWhere = (organizationId: string, tenderId?: string) => ({
@@ -181,17 +185,36 @@ export const listOpportunities = async (
     filtered.map((row) => row.id),
   );
 
+  const relatedFlags = await loadRelatedProcFlagsByTenderIds(
+    prisma,
+    filtered.map((row) => row.tenderId),
+  );
+
   const withFlags = filtered.map((row) => {
     const attentionEventId = unreadNew.get(row.id) ?? null;
+    const relatedProc: RelatedProcFlag =
+      relatedFlags.get(row.tenderId) ?? {
+        invitationIssued: false,
+        relatedProcAdam: null,
+        confidence: null,
+      };
     return {
       ...row,
       isNew: Boolean(attentionEventId),
       attentionEventId,
+      invitationIssued: relatedProc.invitationIssued,
+      relatedProcAdam: relatedProc.relatedProcAdam,
+      relatedProcConfidence: relatedProc.confidence,
     };
   });
 
   // Keep unread search matches at the top so new arrivals are obvious.
-  withFlags.sort((a, b) => Number(b.isNew) - Number(a.isNew));
+  // Invitation-issued REQs stay visible but sort slightly after fresh unread.
+  withFlags.sort((a, b) => {
+    const byNew = Number(b.isNew) - Number(a.isNew);
+    if (byNew !== 0) return byNew;
+    return Number(b.invitationIssued) - Number(a.invitationIssued);
+  });
 
   const unfollowed = withFlags.filter((row) => !row.following).length;
   const opportunities =
@@ -204,6 +227,7 @@ export const listOpportunities = async (
     total: withFlags.length,
     unfollowed,
     unreadNewCount: unreadNew.size,
+    invitationIssuedCount: withFlags.filter((row) => row.invitationIssued).length,
   };
 };
 

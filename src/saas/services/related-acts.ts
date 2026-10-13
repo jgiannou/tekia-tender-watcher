@@ -10,6 +10,7 @@ import {
 } from "../../relations/req-proc-match.js";
 import { requireOrgMembership } from "../auth/org-context.js";
 import { badRequest, notFound } from "../errors.js";
+import { fetchKimdisPublicRelatedActs } from "./kimdis-public-ui.js";
 
 export type DiscoveredRelatedAct = {
   sourceTenderId: string;
@@ -120,6 +121,56 @@ export const discoverRelatedProcsFromLocalDb = async (
     });
   }
 
+  return out;
+};
+
+/**
+ * Official public-UI discovery: followed REQs often show linked PROC ADAMs under
+ * «Άμεσα συνδεδεμένες πράξεις» before Open Data exposes them (or ever does).
+ * Invitee identity does not matter — we still surface the invitation.
+ */
+export const discoverRelatedProcsFromPublicUi = async (
+  sourceTender: Tender,
+  options?: {
+    fetchRelated?: typeof fetchKimdisPublicRelatedActs;
+    timeoutMs?: number;
+  },
+): Promise<DiscoveredRelatedAct[]> => {
+  if (sourceTender.recordType !== "REQ") return [];
+  const adam = sourceTender.referenceNumber?.trim();
+  if (!adam) return [];
+
+  const fetchRelated = options?.fetchRelated ?? fetchKimdisPublicRelatedActs;
+  const result = await fetchRelated({
+    referenceNumber: adam,
+    timeoutMs: options?.timeoutMs,
+    enrichTargets: true,
+  });
+  if (!result.ok) return [];
+
+  const out: DiscoveredRelatedAct[] = [];
+  for (const related of result.related) {
+    if (related.recordType !== "PROC") continue;
+    const details = result.detailsByAdam[related.adam];
+    out.push({
+      sourceTenderId: sourceTender.id,
+      target: {
+        referenceNumber: related.adam,
+        recordType: "PROC",
+        title:
+          details?.title?.trim() ||
+          sourceTender.title ||
+          `Πρόσκληση ${related.adam}`,
+        contractingAuthority:
+          details?.contractingAuthority?.trim() ||
+          sourceTender.contractingAuthority,
+        parentTenderId: sourceTender.id,
+      },
+      relationType: "REQ_TO_PROC",
+      confidence: "CONFIRMED",
+      detectionMethod: "public_ui_related_acts",
+    });
+  }
   return out;
 };
 

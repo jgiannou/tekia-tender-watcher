@@ -15,6 +15,7 @@ import { authClient } from "@/lib/auth-client";
 import { saasApi } from "@/lib/api";
 import { readStashedParam } from "@/lib/safe-page-path";
 import { MARKETING_SEO } from "@/lib/seo";
+import { useArcProLaunchAvailability } from "@/lib/promo-launch";
 
 export const SignupPage = () => {
   const [params] = useSearchParams();
@@ -22,6 +23,8 @@ export const SignupPage = () => {
   const inviteFlow = next.startsWith("/accept-invite");
   const { data: session, isPending, refetch } = authClient.useSession();
   const { refresh: refreshMe } = useSessionContext();
+  const { meta: promo } = useArcProLaunchAvailability();
+  const promoOpen = Boolean(promo?.promotionActive && promo.acceptingRedemptions);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -161,7 +164,9 @@ export const SignupPage = () => {
       description={
         inviteFlow
           ? "Ολοκληρώστε την εγγραφή για να αποδεχτείτε την πρόσκληση ομάδας."
-          : "Χωρίς κάρτα. Δημιουργήστε οργανισμό στο Free πλάνο· μπορείτε να δοκιμάσετε το Pro για 7 ημέρες ή να επιλέξετε Basic όταν είστε έτοιμοι."
+          : promoOpen
+            ? "Χωρίς κάρτα. Δημιουργήστε οργανισμό στο Free πλάνο· μπορείτε να ενεργοποιήσετε 30 ημέρες Pro δωρεάν ή να επιλέξετε Basic όταν είστε έτοιμοι."
+            : "Χωρίς κάρτα. Δημιουργήστε οργανισμό στο Free πλάνο· μπορείτε να δοκιμάσετε το Pro για 7 ημέρες ή να επιλέξετε Basic όταν είστε έτοιμοι."
       }
       footer={
         <p className="text-center text-sm text-muted-foreground">

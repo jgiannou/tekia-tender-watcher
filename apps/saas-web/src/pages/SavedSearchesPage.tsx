@@ -4,6 +4,7 @@ import { Eye, MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { IconAction } from "@/components/IconAction";
+import { InvitationIssuedBadge } from "@/components/InvitationIssuedBadge";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
@@ -816,6 +817,15 @@ export const SavedSearchesPage = () => {
                       <span className="text-muted-foreground">Αποτελέσματα: </span>
                       {profile.matchCount ?? 0}
                     </div>
+                    {(profile.invitationIssuedMatchCount ?? 0) > 0 ? (
+                      <div className="flex flex-wrap items-center gap-2 md:col-span-2">
+                        <InvitationIssuedBadge compact />
+                        <span className="text-xs text-muted-foreground">
+                          {profile.invitationIssuedMatchCount} από τα matches έχουν ήδη
+                          επίσημη πρόσκληση — δείτε τα στις ευκαιρίες πριν αφιερώσετε χρόνο.
+                        </span>
+                      </div>
+                    ) : null}
                     <div>
                       <span className="text-muted-foreground">Ειδοποιήσεις: </span>
                       {notificationLabel(profile.notificationOverride)}

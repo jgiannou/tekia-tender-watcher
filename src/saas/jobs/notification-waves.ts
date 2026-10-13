@@ -11,6 +11,7 @@ import {
   listOrganizationsDueAtHour,
   runPeriodicWatchProfileScans,
 } from "./periodic-watch-scans.js";
+import { processPromotionLifecycleEmails } from "../services/promotions.js";
 
 /**
  * Hourly Athens wave: orgs whose selected digest hour matches now.
@@ -28,6 +29,7 @@ export const runHourlyNotificationWave = async (
   opportunityFlush: Awaited<ReturnType<typeof flushOpportunityEmailDigests>>;
   relatedFlush: Awaited<ReturnType<typeof flushRelatedActEmailDigests>>;
   deadlineRadar: Awaited<ReturnType<typeof runDeadlineRadarForOrganizations>>;
+  promotions: Awaited<ReturnType<typeof processPromotionLifecycleEmails>>;
 }> => {
   const hour = athensHourKey(now);
   const dueOrgIds = await listOrganizationsDueAtHour(prisma, hour);
@@ -37,8 +39,8 @@ export const runHourlyNotificationWave = async (
     organizationIds: dueOrgIds,
   });
 
-  // Discover related acts globally, then email only orgs due this hour.
-  await monitorFollowedThreads(prisma);
+  // Discover related acts globally (incl. public-UI linked PROCs), then email due orgs.
+  await monitorFollowedThreads(prisma, { enablePublicUiDiscovery: true });
 
   const opportunityFlush = await flushOpportunityEmailDigests(prisma, {
     organizationIds: dueOrgIds,
@@ -53,6 +55,8 @@ export const runHourlyNotificationWave = async (
     dueOrgIds,
   );
 
+  const promotions = await processPromotionLifecycleEmails(prisma, { now });
+
   return {
     hour,
     dueOrgs: dueOrgIds.length,
@@ -60,5 +64,6 @@ export const runHourlyNotificationWave = async (
     opportunityFlush,
     relatedFlush,
     deadlineRadar,
+    promotions,
   };
 };

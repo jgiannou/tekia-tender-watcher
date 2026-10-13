@@ -25,6 +25,7 @@ import {
 } from "./api";
 import { ArcMark } from "./ArcMark";
 import { DetailModal, type DrillState } from "./DetailModal";
+import { PromotionsPanel } from "./PromotionsPanel";
 
 const formatTime = (iso: string) => {
   try {
@@ -102,6 +103,7 @@ export const App = () => {
   const [grantPlanKey, setGrantPlanKey] = useState<"free" | "trial" | "basic" | "pro">("pro");
   const [grantPassword, setGrantPassword] = useState("");
   const [grantBusy, setGrantBusy] = useState(false);
+  const [mainView, setMainView] = useState<"overview" | "promotions">("overview");
 
   const isElectron = Boolean(window.arcTendersOps?.isElectron);
   const connected = Boolean(config.token.trim() && config.apiUrl.trim());
@@ -520,6 +522,33 @@ export const App = () => {
         <main className="main">
           {error ? <div className="error-banner fade-in">{error}</div> : null}
 
+          <div className="env-switch main-view-switch" role="tablist" aria-label="Main view">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mainView === "overview"}
+              className={`env-tab ${mainView === "overview" ? "active" : ""}`}
+              onClick={() => setMainView("overview")}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mainView === "promotions"}
+              className={`env-tab ${mainView === "promotions" ? "active" : ""}`}
+              onClick={() => setMainView("promotions")}
+            >
+              Promotions
+            </button>
+          </div>
+
+          {mainView === "promotions" ? (
+            <PromotionsPanel config={config} connected={connected} />
+          ) : null}
+
+          {mainView === "overview" ? (
+          <>
           <div className="section-head">
             <h2>Overview</h2>
             <span>{stats?.generatedAt ? formatTime(stats.generatedAt) : "—"}</span>
@@ -976,6 +1005,8 @@ export const App = () => {
               )}
             </div>
           </section>
+          </>
+          ) : null}
         </main>
       </div>
 

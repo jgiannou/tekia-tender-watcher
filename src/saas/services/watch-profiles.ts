@@ -23,6 +23,7 @@ import {
   normalizeDataSources,
   parseDataSources,
 } from "./source-provenance.js";
+import { countInvitationIssuedByWatchProfile } from "./related-proc-flags.js";
 
 /** Fields gated by Pro `advancedWatchProfileFilters`. */
 const hasAdvancedWatchProfileFilters = (input: {
@@ -461,10 +462,20 @@ export const listWatchProfiles = async (
     input.organizationId,
   );
   await reclaimStaleWatchProfileScans(prisma, organizationId);
-  return prisma.watchProfile.findMany({
+  const profiles = await prisma.watchProfile.findMany({
     where: { organizationId },
     orderBy: { createdAt: "desc" },
   });
+
+  const invitationCounts = await countInvitationIssuedByWatchProfile(prisma, {
+    organizationId,
+    watchProfileIds: profiles.map((profile) => profile.id),
+  });
+
+  return profiles.map((profile) => ({
+    ...profile,
+    invitationIssuedMatchCount: invitationCounts.get(profile.id) ?? 0,
+  }));
 };
 
 export const getWatchProfile = async (
@@ -1807,6 +1818,8 @@ export type WatchProfileDto = WatchProfile & {
   scanEvaluatedCount: number | null;
   dataSources: Array<"kimdis" | "ted" | "diavgeia">;
   lastSourceFetchedAt: string | null;
+  /** Opportunity matches for this profile that already have a published PROC. */
+  invitationIssuedMatchCount?: number;
 };
 
 const readCustomFilters = (profile: WatchProfile): Record<string, unknown> =>
@@ -1815,7 +1828,9 @@ const readCustomFilters = (profile: WatchProfile): Record<string, unknown> =>
     : {};
 
 /** Scan diagnostics the Saved Searches card renders. Source never changes scoring. */
-export const toWatchProfileDto = (profile: WatchProfile): WatchProfileDto => {
+export const toWatchProfileDto = (
+  profile: WatchProfile & { invitationIssuedMatchCount?: number },
+): WatchProfileDto => {
   const meta = readCustomFilters(profile);
   const source = String(meta.source ?? "MANUAL") as WatchProfileSource;
   return {
@@ -1834,6 +1849,7 @@ export const toWatchProfileDto = (profile: WatchProfile): WatchProfileDto => {
       typeof meta.lastSourceFetchedAt === "string"
         ? meta.lastSourceFetchedAt
         : null,
+    invitationIssuedMatchCount: profile.invitationIssuedMatchCount ?? 0,
   };
 };
 

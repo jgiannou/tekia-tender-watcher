@@ -158,7 +158,7 @@ export const resolveNextAction = (input: {
   if (input.hasOutreach || input.pipelineStage === "OUTREACH_SENT") {
     return {
       code: "WAIT_PROC",
-      label: "Αναμένεται η δημοσίευση πρόσκλησης.",
+      label: "Αναμένεται η δημοσίευση σχετικής πρόσκλησης.",
       description: "Παρακολουθούμε το ΚΗΜΔΗΣ για σχετική επίσημη πρόσκληση.",
     };
   }

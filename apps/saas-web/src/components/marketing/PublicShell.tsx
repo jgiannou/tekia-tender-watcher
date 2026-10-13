@@ -3,6 +3,7 @@ import { Link, NavLink } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
 import { ArcBrand } from "@/components/brand/ArcMark";
+import { PromoAnnouncementBar } from "@/components/marketing/PromoAnnouncementBar";
 import { Button } from "@/components/ui/button";
 import { LEGAL_CONTROLLER } from "@/legal/meta";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ export const PublicShell = ({
 
   return (
     <div className="arc-public-atmosphere relative min-h-screen overflow-x-clip bg-background text-foreground">
+      <PromoAnnouncementBar />
       <header className="relative z-20 border-b border-border/60 bg-background/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
           <Link

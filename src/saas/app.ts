@@ -89,6 +89,7 @@ import {
   getEntitlementsView,
 } from "./services/entitlements.js";
 import { registerBillingRoutes } from "./billing/routes.js";
+import { registerPromotionRoutes } from "./billing/promotion-routes.js";
 import { registerSlackIntegrationRoutes } from "./integrations/slack-routes.js";
 import { registerGoogleIntegrationRoutes } from "./integrations/google-routes.js";
 import { createOpsEnterHandler } from "./ops/enter.js";
@@ -146,6 +147,7 @@ import {
   getKimdisRecordByAdam,
   searchKimdis,
 } from "./services/kimdis-search.js";
+import { loadRelatedProcFlagsByAdams } from "./services/related-proc-flags.js";
 type SaasVariables = {
   userId: string;
   sessionToken: string;
@@ -172,8 +174,9 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     forceAll: true,
   }).catch(() => null);
 
+  // Scope to SaaS API paths only — do not intercept /admin/* OPTIONS (Ops Desk CORS).
   app.use(
-    "*",
+    "/api/*",
     cors({
       origin: [
         ...config.SAAS_TRUSTED_ORIGINS,
@@ -231,6 +234,13 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     c.req.header("X-Organization-Id") ?? c.get("activeOrganizationId");
 
   registerBillingRoutes({
+    app,
+    prisma: deps.prisma,
+    requireSession: requireSession as never,
+    resolveOrgId,
+  });
+
+  registerPromotionRoutes({
     app,
     prisma: deps.prisma,
     requireSession: requireSession as never,
@@ -730,7 +740,27 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       ...body,
       enrichFromPublicUi: true,
     });
-    return c.json(result);
+    // Stamp known REQ→PROC invitation links from our DB (no extra live crawl).
+    const flags = await loadRelatedProcFlagsByAdams(
+      deps.prisma,
+      result.items
+        .filter((item) => item.recordType === "REQ")
+        .map((item) => item.adam),
+    );
+    return c.json({
+      ...result,
+      items: result.items.map((item) => {
+        if (item.recordType !== "REQ") return item;
+        const flag = flags.get(item.adam.toUpperCase());
+        if (!flag?.invitationIssued) return item;
+        return {
+          ...item,
+          invitationIssued: true,
+          relatedProcAdam: flag.relatedProcAdam,
+          relatedProcConfidence: flag.confidence,
+        };
+      }),
+    });
   });
 
   app.get(
@@ -1981,7 +2011,9 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       c.get("userId"),
       organizationId,
     );
-    const result = await monitorFollowedThreads(deps.prisma);
+    const result = await monitorFollowedThreads(deps.prisma, {
+      enablePublicUiDiscovery: true,
+    });
     return c.json({ result });
   });
 

@@ -363,6 +363,10 @@ const normalizeItem = (
       ...(record.noticeRefNo ?? []),
       ...(record.auctionRefNo ?? []),
       ...(record.contractRefNo ?? []),
+      ...((record as KimdisNoticeRecord).requestRefNo ?? []),
+      ...((record as KimdisNoticeRecord).approvedRequests ?? [])
+        .map((row) => row?.code?.trim() || row?.referenceNumber?.trim() || "")
+        .filter(Boolean),
     ].filter((value): value is string => Boolean(value)),
   };
 };

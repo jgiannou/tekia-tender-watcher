@@ -85,7 +85,7 @@ export const MonitoringPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Παρακολούθηση</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">Παρακολουθούμενα</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Παρακολουθήστε τις εξελίξεις και οργανώστε τις ενέργειές σας για τους διαγωνισμούς που σας ενδιαφέρουν.
         </p>

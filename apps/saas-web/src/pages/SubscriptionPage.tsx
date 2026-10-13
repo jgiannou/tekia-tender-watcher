@@ -13,8 +13,10 @@ import {
   type BillingStatusResponse,
 } from "@/lib/api";
 import {
+  peekPromoAttribution,
   rememberPendingCheckout,
   trackAnalyticsEvent,
+  trackProTrialStartedFromActivation,
   trackPurchaseFromReturn,
 } from "@/lib/analytics";
 import { humanSaasError } from "@/lib/labels";
@@ -89,19 +91,77 @@ export const SubscriptionPage = () => {
   const seatCap = notes.proSelfServiceSeatCap ?? 20;
   const maxExtra = Math.max(0, seatCap - (pro?.includedSeats ?? 3));
 
+  const launchPromo = status?.launchPromo;
+  const activeLaunchPromo = launchPromo?.redemption?.status === "ACTIVE";
+
   const currentLabel = useMemo(() => {
     if (!status) return "—";
+    if (activeLaunchPromo) return "Pro (προσφορά)";
     if (status.planKey === "trial") return "Δοκιμή Pro";
     if (status.planKey === "free") return "Δωρεάν";
     if (status.planKey === "basic") return "Basic";
     if (status.planKey === "pro") return "Pro";
     return status.planKey;
-  }, [status]);
+  }, [status, activeLaunchPromo]);
 
   const priceFor = (plan: BillingCatalogPlan | undefined) => {
     if (!plan) return null;
     return interval === "annual" ? plan.annualEur : plan.monthlyEur;
   };
+
+  const handleActivateLaunchPromo = async () => {
+    if (!activeOrganization) return;
+    if (user?.emailVerified === false) {
+      toast.error(
+        "Επιβεβαιώστε το email σας πριν την ενεργοποίηση της προσφοράς Pro.",
+      );
+      return;
+    }
+    if (status?.launchPromo && !status.launchPromo.canActivate) {
+      if (status.launchPromo.reason === "promo_cap_reached") {
+        toast.message("Η προσφορά ολοκληρώθηκε.");
+        return;
+      }
+    }
+    setBusyKey("launch-promo");
+    try {
+      const attribution = peekPromoAttribution();
+      const result = await saasApi.activateArcProLaunch(
+        activeOrganization.id,
+        attribution,
+      );
+      trackProTrialStartedFromActivation({
+        userId: user?.id,
+        promotionKey: result.promotionKey,
+        already: result.already,
+        days: 30,
+      });
+      if (result.already) {
+        toast.message("Η προσφορά Pro είναι ήδη ενεργή.");
+      } else {
+        toast.success("Ενεργοποιήθηκαν 30 ημέρες Pro — χωρίς χρέωση.");
+      }
+      await load();
+    } catch (error) {
+      toast.error(
+        humanSaasError(
+          error instanceof Error ? error.message : "Αποτυχία ενεργοποίησης προσφοράς",
+        ),
+      );
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!activeOrganization || loading || !status) return;
+    if (params.get("promo") !== "arc-pro-launch-30") return;
+    if (!status.launchPromo?.canActivate) return;
+    if (busyKey) return;
+    void handleActivateLaunchPromo();
+    // One-shot from landing / signup deep link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrganization?.id, loading, status?.launchPromo?.canActivate, params]);
 
   const handleStartProTrial = async () => {
     if (!activeOrganization) return;
@@ -226,14 +286,24 @@ export const SubscriptionPage = () => {
           </p>
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Συνδρομή</h1>
           <p className="text-sm text-white/90 md:text-base">
-            Επιλέξτε το πακέτο που ταιριάζει στις ανάγκες σας. Ξεκινήστε δωρεάν ή δοκιμάστε
-            το Pro για 7 ημέρες, χωρίς κάρτα.
+            {activeLaunchPromo
+              ? "Το Pro είναι ενεργό μέσω προσφοράς γνωριμίας (30 ημέρες), χωρίς κάρτα και χωρίς αυτόματη χρέωση."
+              : launchPromo?.canActivate
+                ? "Επιλέξτε το πακέτο που ταιριάζει στις ανάγκες σας. Διατίθεται προσφορά γνωριμίας: 30 ημέρες Pro δωρεάν, χωρίς κάρτα."
+                : "Επιλέξτε το πακέτο που ταιριάζει στις ανάγκες σας. Ξεκινήστε δωρεάν ή δοκιμάστε το Pro για 7 ημέρες, χωρίς κάρτα."}
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-semibold">
               Το πακέτο σας: {currentLabel}
             </span>
-            {status?.trialEndsAt && status.planKey === "trial" ? (
+            {activeLaunchPromo && status?.launchPromo?.redemption?.expiresAt ? (
+              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs">
+                Προσφορά έως{" "}
+                {new Date(
+                  status.launchPromo.redemption.expiresAt,
+                ).toLocaleDateString("el-GR")}
+              </span>
+            ) : status?.trialEndsAt && status.planKey === "trial" ? (
               <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs">
                 Δοκιμή έως{" "}
                 {new Date(status.trialEndsAt).toLocaleDateString("el-GR")}
@@ -271,6 +341,96 @@ export const SubscriptionPage = () => {
           ) : null}
         </div>
       </section>
+
+      {activeLaunchPromo && status?.launchPromo?.redemption ? (
+        <Card className="border-primary/35 bg-primary/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Προσφορά Pro — 30 ημέρες</CardTitle>
+            <CardDescription>
+              Κατάσταση: Προωθητική δοκιμή · χωρίς μέθοδο πληρωμής · χωρίς αυτόματη χρέωση
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <div className="text-xs text-muted-foreground">Έναρξη</div>
+                <div className="font-medium">
+                  {new Date(
+                    status.launchPromo.redemption.activatedAt,
+                  ).toLocaleDateString("el-GR")}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Λήξη</div>
+                <div className="font-medium">
+                  {new Date(
+                    status.launchPromo.redemption.expiresAt,
+                  ).toLocaleDateString("el-GR")}
+                  {status.launchPromo.redemption.daysRemaining != null
+                    ? ` · ${status.launchPromo.redemption.daysRemaining} ημ.`
+                    : ""}
+                </div>
+              </div>
+            </div>
+            <p className="text-muted-foreground">
+              Το Pro είναι δωρεάν μέχρι{" "}
+              {new Date(
+                status.launchPromo.redemption.expiresAt,
+              ).toLocaleDateString("el-GR")}
+              . Δεν θα πραγματοποιηθεί χρέωση. Μετά θα συνεχίσεις στο Free Plan, εκτός αν
+              επιλέξεις συνδρομή.
+            </p>
+            <Button
+              disabled={busyKey === "pro"}
+              onClick={() => void handleCheckout("pro")}
+            >
+              Αναβάθμιση σε πληρωμένο Pro
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {launchPromo?.enabled &&
+      launchPromo.canActivate &&
+      status?.canManageBilling ? (
+        <Card className="border-primary/30 bg-primary/[0.04]">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              Προσφορά γνωριμίας: 30 ημέρες Pro δωρεάν
+            </CardTitle>
+            <CardDescription>
+              Χωρίς πιστωτική κάρτα · χωρίς αυτόματη χρέωση · μία φορά ανά οργανισμό ·
+              {typeof status.launchPromo?.totalSlots === "number"
+                ? `μόνο ${status.launchPromo.totalSlots} λογαριασμοί συνολικά`
+                : "περιορισμένες θέσεις"}
+              {typeof status.launchPromo?.remainingSlots === "number"
+                ? ` · Απομένουν ${status.launchPromo.remainingSlots}`
+                : ""}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              disabled={busyKey === "launch-promo"}
+              onClick={() => void handleActivateLaunchPromo()}
+            >
+              {busyKey === "launch-promo"
+                ? "Ενεργοποίηση…"
+                : "Ενεργοποίηση 30 ημερών Pro"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {launchPromo?.enabled &&
+      launchPromo.reason === "promo_cap_reached" &&
+      !activeLaunchPromo ? (
+        <Card className="border-border/70">
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            Η προσφορά ολοκληρώθηκε. Οι διαθέσιμες θέσεις έχουν καλυφθεί. Μπορείτε να
+            συνεχίσετε με το Free Plan ή να επιλέξετε πληρωμένη συνδρομή.
+          </CardContent>
+        </Card>
+      ) : null}
 
       {status?.configured === false ? (
         <Card className="border-amber-500/40 bg-amber-500/5">
@@ -440,7 +600,7 @@ export const SubscriptionPage = () => {
                 ) : null}
 
                 <div className="mt-auto space-y-2 pt-2">
-                  {canTryPro ? (
+                  {canTryPro && !launchPromo?.canActivate ? (
                     <Button
                       className="w-full"
                       variant="default"
@@ -448,6 +608,18 @@ export const SubscriptionPage = () => {
                       onClick={() => void handleStartProTrial()}
                     >
                       {busyKey === "trial" ? "Ενεργοποίηση…" : "Δοκίμασε Pro 7 ημερών"}
+                    </Button>
+                  ) : null}
+                  {canTryPro && launchPromo?.canActivate ? (
+                    <Button
+                      className="w-full"
+                      variant="default"
+                      disabled={Boolean(busyKey) || user?.emailVerified === false}
+                      onClick={() => void handleActivateLaunchPromo()}
+                    >
+                      {busyKey === "launch-promo"
+                        ? "Ενεργοποίηση…"
+                        : "Ενεργοποίηση 30 ημερών Pro"}
                     </Button>
                   ) : null}
                   <Button
@@ -488,8 +660,12 @@ export const SubscriptionPage = () => {
           <CardTitle className="text-base">Δωρεάν πακέτο και δοκιμή Pro</CardTitle>
           <CardDescription>
             Με την εγγραφή σας αποκτάτε το δωρεάν πακέτο, χωρίς κάρτα και χωρίς χρονικό
-            περιορισμό. Μπορείτε να δοκιμάσετε το Pro για 7 ημέρες. Αν δεν επιλέξετε
-            συνδρομή, μετά τη δοκιμή συνεχίζετε με το δωρεάν πακέτο.
+            περιορισμό.{" "}
+            {activeLaunchPromo
+              ? "Έχετε ενεργή προσφορά γνωριμίας Pro (30 ημέρες). Δεν απαιτείται κάρτα και δεν γίνεται αυτόματη χρέωση. Μετά τη λήξη συνεχίζετε με το Free, εκτός αν επιλέξετε συνδρομή."
+              : launchPromo?.canActivate
+                ? "Διατίθεται προσφορά γνωριμίας: 30 ημέρες Pro δωρεάν, χωρίς κάρτα και χωρίς αυτόματη χρέωση. Μετά τη λήξη συνεχίζετε με το Free."
+                : "Μπορείτε να δοκιμάσετε το Pro για 7 ημέρες. Αν δεν επιλέξετε συνδρομή, μετά τη δοκιμή συνεχίζετε με το δωρεάν πακέτο."}
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">

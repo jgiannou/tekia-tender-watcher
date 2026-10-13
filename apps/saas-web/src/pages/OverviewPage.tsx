@@ -8,6 +8,7 @@ import { PdfAction } from "@/components/PdfAction";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
+import { InvitationIssuedBadge } from "@/components/InvitationIssuedBadge";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -401,10 +402,20 @@ export const OverviewPage = () => {
                       return (
                         <div
                           key={opportunity.id}
-                          className="min-w-0 space-y-2 rounded-md border border-border p-3"
+                          className={
+                            opportunity.invitationIssued
+                              ? "min-w-0 space-y-2 rounded-md border border-destructive/40 bg-destructive/[0.04] p-3 ring-1 ring-destructive/15"
+                              : "min-w-0 space-y-2 rounded-md border border-border p-3"
+                          }
                         >
                           <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <Badge>{opportunity.tender.recordType}</Badge>
+                            {opportunity.invitationIssued ? (
+                              <InvitationIssuedBadge
+                                compact
+                                relatedProcAdam={opportunity.relatedProcAdam}
+                              />
+                            ) : null}
                             <ScoreBadge score={topScore} />
                             <span className="min-w-0 break-words text-xs text-muted-foreground">
                               {profileName}

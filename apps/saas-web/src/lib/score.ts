@@ -14,9 +14,10 @@ export const scoreToneClassName = (score: number): string => {
     case "excellent":
       return "border-transparent bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
     case "strong":
-      return "border-transparent bg-orange-500/15 text-orange-700 dark:text-orange-300";
+      // High relevance is positive — use ARC teal, not warning orange.
+      return "border-transparent bg-primary/15 text-primary";
     case "moderate":
-      return "border-transparent bg-amber-500/15 text-amber-800 dark:text-amber-200";
+      return "border-transparent bg-slate-500/15 text-slate-700 dark:text-slate-300";
     default:
       return "border-transparent bg-slate-500/15 text-slate-600 dark:text-slate-300";
   }

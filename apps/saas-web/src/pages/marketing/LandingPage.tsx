@@ -1,21 +1,27 @@
 import { Link, Navigate } from "react-router-dom";
-import { Bell, FolderSearch, Radar } from "lucide-react";
+import { Bell, CheckCircle2, FolderSearch, Radar } from "lucide-react";
 import { PublicShell } from "@/components/marketing/PublicShell";
 import { PricingCards } from "@/components/marketing/PricingCards";
 import { JsonLd } from "@/components/JsonLd";
 import { SeoHead } from "@/components/SeoHead";
 import { PageLoading } from "@/components/states";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArcMark } from "@/components/brand/ArcMark";
 import { LEGAL_CONTROLLER } from "@/legal/meta";
 import { authClient } from "@/lib/auth-client";
 import { MARKETING_SEO } from "@/lib/seo";
 import {
+  PROMO_LAUNCH_PATH,
+  useArcProLaunchAvailability,
+} from "@/lib/promo-launch";
+import {
   FAQ_EMAIL_WHEN,
   FAQ_SUBMIT_OFFER,
   FAQ_USES_AI,
   FAQ_WEEKLY_DELAY,
   MARKETING_PLANS,
+  PRICING_TAX_LABEL,
   TRIAL_DAYS,
   formatEur,
 } from "@/marketing/pricing";
@@ -34,73 +40,32 @@ const values = [
   {
     icon: FolderSearch,
     title: "Όλες οι εξελίξεις σε μία σελίδα",
-    body: "Δείτε συγκεντρωμένα το αίτημα, την πρόσκληση, την προθεσμία και την κατακύρωση. Ξεχωρίστε εύκολα ό,τι έχει αλλάξει από την τελευταία σας επίσκεψη.",
+    body: "Δείτε συγκεντρωμένα το αίτημα, την πρόσκληση, την προθεσμία και το αποτέλεσμα. Ξεχωρίστε εύκολα ό,τι έχει αλλάξει από την τελευταία σας επίσκεψη.",
   },
 ] as const;
 
 const steps = [
   {
     n: "1",
-    title: "Πρωτογενές αίτημα",
-    body: "Αποθηκεύστε μια αναζήτηση με λέξεις-κλειδιά, κωδικούς CPV και περιφέρεια. Η εφαρμογή εντοπίζει νέα αιτήματα που ταιριάζουν στα κριτήριά σας.",
+    title: "Ανακαλύψτε ευκαιρίες",
+    body: "Δημιουργήστε μια αποθηκευμένη αναζήτηση με λέξεις-κλειδιά, κωδικούς CPV και περιφέρεια. Το ARC Tenders εντοπίζει νέα πρωτογενή αιτήματα που ταιριάζουν στα ενδιαφέροντα της επιχείρησής σας.",
   },
   {
     n: "2",
-    title: "Πρόσκληση",
-    body: "Προσθέστε το αίτημα στην παρακολούθηση. Όταν εντοπιστεί σχετική πρόσκληση, θα εμφανιστεί στην ίδια σελίδα και θα ενημερωθείτε.",
+    title: "Παρακολουθήστε τις εξελίξεις",
+    body: "Επιλέξτε τα αιτήματα που σας ενδιαφέρουν και προσθέστε τα στην παρακολούθηση. Όταν εντοπιστεί σχετική πρόσκληση, θα τη δείτε συγκεντρωμένη με το αρχικό αίτημα και θα λάβετε ενημέρωση.",
   },
   {
     n: "3",
-    title: "Προθεσμία υποβολής",
-    body: "Δείτε πότε λήγει η προθεσμία υποβολής και οργανώστε εγκαίρως την προετοιμασία της προσφοράς σας.",
+    title: "Προετοιμαστείτε εγκαίρως",
+    body: "Δείτε τις προθεσμίες υποβολής και οργανώστε τα επόμενα βήματά σας. Συγκεντρώστε τα απαραίτητα δικαιολογητικά και προετοιμάστε την προσφορά σας χωρίς πίεση της τελευταίας στιγμής.",
   },
   {
     n: "4",
-    title: "Κατακύρωση",
-    body: "Η εφαρμογή συνεχίζει να ελέγχει για εξελίξεις μέχρι την κατακύρωση. Μπορείτε να διακόψετε την παρακολούθηση όποτε θέλετε.",
+    title: "Μείνετε ενήμεροι μέχρι το αποτέλεσμα",
+    body: "Παρακολουθήστε την εξέλιξη του διαγωνισμού έως το αποτέλεσμα, με τις σχετικές ενημερώσεις συγκεντρωμένες σε ένα σημείο. Διατηρήστε τον έλεγχο και διακόψτε την παρακολούθηση όποτε επιθυμείτε.",
   },
 ] as const;
-
-const faqs = [
-  {
-    q: "Είναι το ARC Tenders επίσημη υπηρεσία του ΚΗΜΔΗΣ;",
-    a: "Όχι. Το ARC Tenders είναι ανεξάρτητη ιδιωτική υπηρεσία που χρησιμοποιεί δημόσια διαθέσιμα δεδομένα για δημόσιες συμβάσεις.",
-  },
-  {
-    q: "Μπορώ να υποβάλω προσφορά μέσα από το ARC Tenders;",
-    a: FAQ_SUBMIT_OFFER,
-  },
-  {
-    q: "Υπάρχει δωρεάν πακέτο;",
-    a: "Ναι. Το δωρεάν πακέτο διατίθεται χωρίς χρονικό περιορισμό και χωρίς κάρτα. Αν θέλετε να γνωρίσετε τις επιπλέον δυνατότητες του Pro, μπορείτε να ενεργοποιήσετε δοκιμή 7 ημερών.",
-  },
-  {
-    q: "Πότε λαμβάνω email;",
-    a: FAQ_EMAIL_WHEN,
-  },
-  {
-    q: "Η εβδομαδιαία ενημέρωση καθυστερεί τα αποτελέσματά μου;",
-    a: FAQ_WEEKLY_DELAY,
-  },
-  {
-    q: "Χρησιμοποιεί AI η εφαρμογή;",
-    a: FAQ_USES_AI,
-  },
-  {
-    q: "Μπορώ να προσθέσω περισσότερους χρήστες;",
-    a: `Το Basic περιλαμβάνει 1 χρήστη και το Pro ${MARKETING_PLANS.pro.includedSeats} χρήστες. Στο Pro μπορείτε να προσθέσετε επιπλέον χρήστες με ${formatEur(MARKETING_PLANS.pro.extraSeatMonthlyEur!)} € ανά χρήστη τον μήνα, έως ${MARKETING_PLANS.pro.maxSeatsSelfService} χρήστες συνολικά.`,
-  },
-] as const;
-
-const faqJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  mainEntity: faqs.map((item) => ({
-    "@type": "Question",
-    name: item.q,
-    acceptedAnswer: { "@type": "Answer", text: item.a },
-  })),
-};
 
 const ProductVisual = () => (
   <div
@@ -111,7 +76,7 @@ const ProductVisual = () => (
       Πορεία διαγωνισμού
     </p>
     <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-      Από το πρωτογενές αίτημα μέχρι την κατακύρωση
+      Από το πρωτογενές αίτημα μέχρι το αποτέλεσμα
     </p>
     <ol className="mt-6 space-y-0 border-l border-border/80 pl-4">
       {[
@@ -128,7 +93,7 @@ const ProductVisual = () => (
           body: "Υπενθύμιση πριν λήξει η προθεσμία",
         },
         {
-          title: "Κατακύρωση",
+          title: "Αποτέλεσμα",
           body: "Ενημέρωση για την έκβαση του διαγωνισμού",
         },
       ].map((step, index) => (
@@ -149,6 +114,52 @@ const ProductVisual = () => (
 
 export const LandingPage = () => {
   const { data: session, isPending } = authClient.useSession();
+  const { meta: promo } = useArcProLaunchAvailability();
+  const promoOpen = Boolean(promo?.promotionActive && promo.acceptingRedemptions);
+  const trialDaysLabel = promoOpen ? 30 : TRIAL_DAYS;
+
+  const faqs = [
+    {
+      q: "Είναι το ARC Tenders επίσημη υπηρεσία του ΚΗΜΔΗΣ;",
+      a: "Όχι. Το ARC Tenders είναι ανεξάρτητη ιδιωτική υπηρεσία που χρησιμοποιεί δημόσια διαθέσιμα δεδομένα για δημόσιες συμβάσεις.",
+    },
+    {
+      q: "Μπορώ να υποβάλω προσφορά μέσα από το ARC Tenders;",
+      a: FAQ_SUBMIT_OFFER,
+    },
+    {
+      q: "Υπάρχει δωρεάν πακέτο;",
+      a: promoOpen
+        ? `Ναι. Το δωρεάν πακέτο διατίθεται χωρίς χρονικό περιορισμό και χωρίς κάρτα. Διατίθεται επίσης προσφορά γνωριμίας: 30 ημέρες Pro δωρεάν για τους πρώτους ${promo?.totalSlots ?? 25} λογαριασμούς, χωρίς κάρτα και χωρίς αυτόματη χρέωση.`
+        : `Ναι. Το δωρεάν πακέτο διατίθεται χωρίς χρονικό περιορισμό και χωρίς κάρτα. Αν θέλετε να γνωρίσετε τις επιπλέον δυνατότητες του Pro, μπορείτε να ενεργοποιήσετε δοκιμή ${TRIAL_DAYS} ημερών.`,
+    },
+    {
+      q: "Πότε λαμβάνω email;",
+      a: FAQ_EMAIL_WHEN,
+    },
+    {
+      q: "Η εβδομαδιαία ενημέρωση καθυστερεί τα αποτελέσματά μου;",
+      a: FAQ_WEEKLY_DELAY,
+    },
+    {
+      q: "Χρησιμοποιεί AI η εφαρμογή;",
+      a: FAQ_USES_AI,
+    },
+    {
+      q: "Μπορώ να προσθέσω περισσότερους χρήστες;",
+      a: `Το Basic περιλαμβάνει 1 χρήστη και το Pro ${MARKETING_PLANS.pro.includedSeats} χρήστες. Στο Pro μπορείτε να προσθέσετε επιπλέον χρήστες με ${formatEur(MARKETING_PLANS.pro.extraSeatMonthlyEur!)} € ανά χρήστη τον μήνα, έως ${MARKETING_PLANS.pro.maxSeatsSelfService} χρήστες συνολικά.`,
+    },
+  ] as const;
+
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqs.map((item) => ({
+      "@type": "Question",
+      name: item.q,
+      acceptedAnswer: { "@type": "Answer", text: item.a },
+    })),
+  };
 
   // Logged-in users opening the marketing root go straight into the app.
   // Crawlers / logged-out visitors still see the public landing (SEO).
@@ -177,20 +188,32 @@ export const LandingPage = () => {
           </h1>
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
             Το ARC Tenders εντοπίζει δημοσιεύσεις στο ΚΗΜΔΗΣ που σας ενδιαφέρουν και συγκεντρώνει
-            την πορεία κάθε διαγωνισμού σε μία σελίδα. Από το πρωτογενές αίτημα μέχρι την
-            κατακύρωση, βλέπετε τις νέες εξελίξεις και οργανώνετε τις επόμενες ενέργειές σας.
+            την πορεία κάθε διαγωνισμού σε μία σελίδα. Από το πρωτογενές αίτημα μέχρι το
+            αποτέλεσμα, βλέπετε τις νέες εξελίξεις και οργανώνετε τις επόμενες ενέργειές σας.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Button asChild size="lg">
               <Link to="/signup">Ξεκινήστε δωρεάν</Link>
             </Button>
-            <Button asChild size="lg" variant="outline">
-              <Link to="/pricing">Δείτε τα πακέτα</Link>
-            </Button>
+            {promoOpen ? (
+              <Button asChild size="lg" variant="outline">
+                <Link to={PROMO_LAUNCH_PATH}>Δοκίμασε Pro 30 ημέρες δωρεάν</Link>
+              </Button>
+            ) : (
+              <Button asChild size="lg" variant="outline">
+                <Link to="/pricing">Δείτε τα πακέτα</Link>
+              </Button>
+            )}
             <Button asChild size="lg" variant="ghost">
               <Link to="/login">Σύνδεση</Link>
             </Button>
           </div>
+          {promoOpen ? (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Χωρίς κάρτα · Χωρίς αυτόματη χρέωση · Μόνο για{" "}
+              {promo?.totalSlots ?? 25} λογαριασμούς
+            </p>
+          ) : null}
         </div>
         <div className="arc-hero-visual">
           <ProductVisual />
@@ -230,6 +253,63 @@ export const LandingPage = () => {
           </ol>
         </div>
       </section>
+
+      {promoOpen ? (
+        <section
+          id="launch-offer"
+          className="border-t border-border/60 bg-primary/[0.04] scroll-mt-20"
+        >
+          <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
+            <Badge
+              variant="outline"
+              className="border-primary/40 bg-primary/10 text-primary"
+            >
+              LIMITED LAUNCH OFFER
+            </Badge>
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
+              Δοκίμασε όλη τη δύναμη του Pro.
+            </h2>
+            <p className="mt-2 text-3xl font-semibold tracking-tight text-primary">
+              0€ για 30 ημέρες
+            </p>
+            <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
+              Ανακάλυψε σχετικές δημόσιες ευκαιρίες, παρακολούθησε τις εξελίξεις τους και
+              αξιοποίησε τις προηγμένες δυνατότητες του ARC Tenders.
+            </p>
+            <ul className="mt-5 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+              {[
+                "30 ημέρες πρόσβασης στο Pro",
+                "Χωρίς πιστωτική κάρτα",
+                "Χωρίς αυτόματη χρέωση",
+                "Μετά συνεχίζεις στο Free Plan",
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <CheckCircle2
+                    className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                    aria-hidden
+                  />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 text-sm font-medium">
+              Αποκλειστικά για {promo?.totalSlots ?? 25} λογαριασμούς
+              {promo && promo.remainingSlots > 0
+                ? ` · Απομένουν ${promo.remainingSlots} από τις ${promo.totalSlots}`
+                : ""}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Κανονική τιμή Pro: {formatEur(MARKETING_PLANS.pro.priceMonthlyEur)} €/μήνα.{" "}
+              {PRICING_TAX_LABEL}
+            </p>
+            <div className="mt-6">
+              <Button asChild size="lg">
+                <Link to={PROMO_LAUNCH_PATH}>Ενεργοποίησε την προσφορά</Link>
+              </Button>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="border-t border-border/60">
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
@@ -281,14 +361,19 @@ export const LandingPage = () => {
           </h2>
           <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
             Δημιουργήστε λογαριασμό, αποθηκεύστε τα κριτήριά σας και βρείτε τις πρώτες ευκαιρίες
-            για την επιχείρησή σας. Μπορείτε επίσης να δοκιμάσετε το Pro για {TRIAL_DAYS} ημέρες.
+            για την επιχείρησή σας.{" "}
+            {promoOpen
+              ? "Μπορείτε επίσης να δοκιμάσετε το Pro δωρεάν για 30 ημέρες — χωρίς κάρτα."
+              : `Μπορείτε επίσης να δοκιμάσετε το Pro για ${trialDaysLabel} ημέρες.`}
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Button asChild size="lg">
               <Link to="/signup">Ξεκινήστε δωρεάν</Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <Link to="/pricing">Δείτε τα πακέτα</Link>
+              <Link to={promoOpen ? PROMO_LAUNCH_PATH : "/pricing"}>
+                {promoOpen ? "Δοκίμασε Pro 30 ημέρες" : "Δείτε τα πακέτα"}
+              </Link>
             </Button>
           </div>
         </div>

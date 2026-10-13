@@ -139,6 +139,10 @@ export const applyStripeSubscription = async (
       "../services/plan-email-transition.js"
     );
     await onTransitionToFreeEmailPolicy(prisma, input.organizationId);
+    const { enforceFreePlanCapacityAfterDowngrade } = await import(
+      "../services/plan-capacity.js"
+    );
+    await enforceFreePlanCapacityAfterDowngrade(prisma, input.organizationId);
   } else if (
     activeLike &&
     previous?.planKey === PLAN_KEYS.free &&
@@ -152,6 +156,14 @@ export const applyStripeSubscription = async (
       input.organizationId,
       nextPlanKey,
     );
+  }
+
+  // Paid Stripe access supersedes any cardless promotional Pro entitlement.
+  if (activeLike && (nextPlanKey === PLAN_KEYS.basic || nextPlanKey === PLAN_KEYS.pro)) {
+    const { supersedeActivePromotions } = await import(
+      "../services/promotions.js"
+    );
+    await supersedeActivePromotions(prisma, input.organizationId);
   }
 
   return subscription;

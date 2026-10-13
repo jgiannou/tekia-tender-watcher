@@ -299,6 +299,68 @@ describe("SaaS monitoring lifecycle", () => {
     expect(after.monitoringActive).toBe(true);
   });
 
+  it("public UI related acts link followed REQ to PROC Open Data still omits", async () => {
+    const { user, organization } = await seedUserOrg(
+      "publicui@example.com",
+      "Public UI Co",
+    );
+    const req = await upsertCanonicalTender(prisma, {
+      referenceNumber: "26REQ019966687",
+      recordType: "REQ",
+      title:
+        "Παροχή υπηρεσιών τεχνικής υποστήριξης της επίσημης ιστοσελίδας του Δήμου για δύο (2) έτη.",
+      contractingAuthority: "ΔΗΜΟΣ ΚΑΤΩ ΝΕΥΡΟΚΟΠΙΟΥ",
+    });
+    await followTender(prisma, {
+      userId: user.id,
+      organizationId: organization.id,
+      tenderId: req.id,
+    });
+    await recordOutreachSent(prisma, {
+      userId: user.id,
+      organizationId: organization.id,
+      tenderId: req.id,
+    });
+
+    const result = await monitorFollowedThreads(prisma, {
+      enableLocalDiscovery: false,
+      enablePublicUiDiscovery: true,
+      discoverFromPublicUi: async () => [
+        {
+          sourceTenderId: req.id,
+          target: {
+            referenceNumber: "26PROC019972045",
+            recordType: "PROC",
+            title:
+              "Παροχή υπηρεσιών τεχνικής υποστήριξης της επίσημης ιστοσελίδας του Δήμου για δύο (2) έτη.",
+            contractingAuthority: "ΔΗΜΟΣ ΚΑΤΩ ΝΕΥΡΟΚΟΠΙΟΥ",
+            parentTenderId: req.id,
+          },
+          relationType: "REQ_TO_PROC",
+          confidence: "CONFIRMED",
+          detectionMethod: "public_ui_related_acts",
+        },
+      ],
+    });
+
+    expect(result.relatedLinksUpserted).toBe(1);
+    expect(result.attentionEventsCreated).toBe(1);
+
+    const link = await prisma.relatedActLink.findFirst({
+      where: { sourceTenderId: req.id },
+      include: { targetTender: true },
+    });
+    expect(link?.confidence).toBe("CONFIRMED");
+    expect(link?.detectionMethod).toBe("public_ui_related_acts");
+    expect(link?.targetTender.referenceNumber).toBe("26PROC019972045");
+    expect(link?.targetTender.parentTenderId).toBe(req.id);
+
+    const events = await prisma.organizationAttentionEvent.findMany({
+      where: { organizationId: organization.id },
+    });
+    expect(events.some((e) => e.type === "RELATED_PROC_DISCOVERED")).toBe(true);
+  });
+
   it("supports following=true with pipeline OUTREACH_SENT and no submission", async () => {
     const { user, organization } = await seedUserOrg(
       "state@example.com",

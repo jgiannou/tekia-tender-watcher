@@ -1,16 +1,26 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Building2, Landmark, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { CompanyDocumentPicker } from "@/components/CompanyDocumentPicker";
 import { CreateTenderDriveFolderDialog } from "@/components/CreateTenderDriveFolderDialog";
 import { IconAction } from "@/components/IconAction";
-import { PdfAction } from "@/components/PdfAction";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
-import { ScoreBadge } from "@/components/ScoreBadge";
-import { SourceBadge } from "@/components/SourceBadge";
+import { OfficialTimeline } from "@/components/tender-detail/OfficialTimeline";
+import { OrganizationActivityTimeline } from "@/components/tender-detail/OrganizationActivityTimeline";
+import {
+  formatDate,
+  formatDateTime,
+  formatMoney,
+  tenderKindLabel,
+  waitingStatusLabel,
+} from "@/components/tender-detail/format";
+import { TenderHeader } from "@/components/tender-detail/TenderHeader";
+import { TenderNextActionCard } from "@/components/tender-detail/TenderNextActionCard";
+import { TenderPreparationCard } from "@/components/tender-detail/TenderPreparationCard";
+import { TenderRelevanceCard } from "@/components/tender-detail/TenderRelevanceCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,28 +52,7 @@ import {
 import { formatCpvBadge } from "@/lib/cpv-options";
 import { outreachMethodLabel, submissionMethodLabel } from "@/lib/labels";
 import { formatRegion } from "@/lib/regions";
-import { formatMatchReason } from "@/lib/matchReasons";
-
-const formatMoney = (value: number | null) =>
-  value == null
-    ? "—"
-    : new Intl.NumberFormat("el-GR", {
-        style: "currency",
-        currency: "EUR",
-        maximumFractionDigits: 0,
-      }).format(value);
-
-const formatDate = (value: string | null | undefined) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value.slice(0, 10) : date.toLocaleDateString("el-GR");
-};
-
-const formatDateTime = (value: string | null | undefined) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("el-GR");
-};
+import { useTenderNav } from "@/lib/tender-nav-context";
 
 const formatDateTimeLocalValue = (date = new Date()) => {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -73,32 +62,10 @@ const formatDateTimeLocalValue = (date = new Date()) => {
 const OUTREACH_METHODS = ["EMAIL", "PHONE", "PORTAL", "PHYSICAL", "OTHER"] as const;
 const SUBMISSION_METHODS = ["PORTAL", "EMAIL", "PHYSICAL", "OTHER"] as const;
 
-/** REQ → αίτημα, PROC → διαγωνισμός (avoid generic «νήμα»). */
-const tenderKindLabel = (type: string | null | undefined) => {
-  if (type === "PROC") {
-    return {
-      nominative: "διαγωνισμός",
-      genitive: "διαγωνισμού",
-      accusative: "τον διαγωνισμό",
-    };
-  }
-  if (type === "AWRD") {
-    return {
-      nominative: "ανάθεση",
-      genitive: "ανάθεσης",
-      accusative: "την ανάθεση",
-    };
-  }
-  return {
-    nominative: "αίτημα",
-    genitive: "αιτήματος",
-    accusative: "το αίτημα",
-  };
-};
-
 export const TenderDetailPage = () => {
   const { activeOrganization } = useSessionContext();
   const navigate = useNavigate();
+  const { setViewingFollowedTender } = useTenderNav();
   const { recordType: recordTypeParam, adam: adamParam } = useParams();
   const recordType =
     recordTypeParam === "PROC" || recordTypeParam === "REQ" ? recordTypeParam : null;
@@ -265,6 +232,10 @@ export const TenderDetailPage = () => {
   const hasOutreach = Boolean(outreach?.sentAt);
   const isSubmitted = workflow?.organizationTender?.pipelineStage === "SUBMITTED";
   const kind = tenderKindLabel(item?.recordType ?? recordType);
+  useEffect(() => {
+    setViewingFollowedTender(following);
+    return () => setViewingFollowedTender(false);
+  }, [following, setViewingFollowedTender]);
 
   const handleFollow = async () => {
     if (!activeOrganization || !item) return;
@@ -670,28 +641,45 @@ export const TenderDetailPage = () => {
   }
 
   const matchMeta = opportunity?.matchMeta;
+  const relatedProcCount = relatedProcs.length;
+  const relatedAwardCount = relatedAwards.length;
+  const monitoringActive = Boolean(
+    workflow?.organizationTender?.monitoringActive,
+  );
+  const waitingLabel = waitingStatusLabel({
+    following,
+    hasOutreach,
+    hasSubmission: Boolean(workflow?.latestSubmission),
+    relatedProcCount,
+    relatedAwardCount,
+    recordType: item.recordType,
+    nextActionCode,
+  });
+  const hasRelatedProc =
+    item.recordType === "PROC" || relatedProcCount > 0;
+  const canPrepareOutreach = item.recordType === "REQ" && !hasOutreach;
+  const relatedNeedsReview = relatedProcs.filter(
+    (link) => link.confidence === "LIKELY" || link.confidence === "POSSIBLE",
+  );
+  const confirmedRelatedProcs = relatedProcs.filter(
+    (link) =>
+      link.confidence === "CONFIRMED" || link.confidence === "LIKELY",
+  );
+  const invitationIssued =
+    Boolean(opportunity?.invitationIssued) || confirmedRelatedProcs.length > 0;
+  const relatedProcAdam =
+    opportunity?.relatedProcAdam ??
+    confirmedRelatedProcs[0]?.targetTender.referenceNumber ??
+    null;
 
-  const canPrepareOutreach =
-    item.recordType === "REQ" && !hasOutreach;
+  const waitingForRelatedProc =
+    following && item.recordType === "REQ" && relatedProcCount === 0;
 
   const primaryAction = (() => {
-    // Outreach is available before Follow — recording as sent auto-follows.
-    if (canPrepareOutreach && (!following || nextActionCode === "RECORD_OUTREACH")) {
-      return {
-        label: "Προετοιμασία Εκδήλωσης Ενδιαφέροντος",
-        onClick: () => void handleOpenOutreach(),
-      };
-    }
     if (!following) {
       return {
         label: "Έναρξη παρακολούθησης",
         onClick: () => void handleFollow(),
-      };
-    }
-    if (nextActionCode === "START_PREPARATION") {
-      return {
-        label: "Έναρξη προετοιμασίας",
-        onClick: () => void handlePrepare(),
       };
     }
     if (nextActionCode === "RECORD_SUBMISSION") {
@@ -700,416 +688,241 @@ export const TenderDetailPage = () => {
         onClick: () => setSubmissionOpen(true),
       };
     }
+    // Once a related PROC exists, preparation is the operating priority (not Outreach).
+    if (
+      nextActionCode === "START_PREPARATION" ||
+      (hasRelatedProc && !workflow?.latestSubmission)
+    ) {
+      return {
+        label: "Έναρξη προετοιμασίας",
+        onClick: () => void handlePrepare(),
+      };
+    }
+    // Outreach only while still waiting for invitation — never as a fake status chip.
+    if (canPrepareOutreach) {
+      return {
+        label: "Καταγραφή Εκδήλωσης Ενδιαφέροντος",
+        onClick: () => void handleOpenOutreach(),
+      };
+    }
     return null;
   })();
 
+  const overflowAction =
+    canPrepareOutreach &&
+    primaryAction?.label !== "Καταγραφή Εκδήλωσης Ενδιαφέροντος"
+      ? {
+          label: "Καταγραφή Εκδήλωσης Ενδιαφέροντος",
+          onClick: () => void handleOpenOutreach(),
+        }
+      : null;
+
+  const nextActionLabel = waitingForRelatedProc
+    ? "Αναμένεται η δημοσίευση σχετικής πρόσκλησης."
+    : (workflow?.nextAction.label ??
+      (following
+        ? "Παρακολουθούμε εξελίξεις στο ΚΗΜΔΗΣ."
+        : "Προσθέστε στην παρακολούθηση για να ενημερώνεστε."));
+
+  const nextActionDescription = waitingForRelatedProc
+    ? "Παρακολουθούμε το ΚΗΜΔΗΣ για σχετική επίσημη πρόσκληση."
+    : workflow?.nextAction.description;
+
+  const sourceLabel = item.adam.startsWith("TED:")
+    ? "TED"
+    : item.adam.startsWith("DIAVGEIA:")
+      ? "Διαύγεια"
+      : "ΚΗΜΔΗΣ";
+  const publicUrlLabel = item.adam.startsWith("TED:")
+    ? "Άνοιγμα στο TED"
+    : item.adam.startsWith("DIAVGEIA:")
+      ? "Άνοιγμα στη Διαύγεια"
+      : "Άνοιγμα στο ΚΗΜΔΗΣ";
+  const secondaryPdf =
+    item.adam.startsWith("TED:") || item.adam.startsWith("DIAVGEIA:")
+      ? item.officialPdfUrl || item.publicKimdisUrl
+        ? {
+            label: item.adam.startsWith("TED:")
+              ? "Επίσημο έγγραφο TED"
+              : "Επίσημο έγγραφο Διαύγειας",
+            href: item.officialPdfUrl || item.publicKimdisUrl,
+          }
+        : null
+      : {
+          label: "Προβολή PDF",
+          onClick: () => setPdfOpen(true),
+        };
+
+  const driveCreate =
+    googleView?.drive.featureAvailable &&
+    googleView.drive.entitled &&
+    workflow?.organizationTender
+      ? () => setDriveFolderOpen(true)
+      : null;
+  const showDriveUpgrade =
+    Boolean(googleView?.drive.featureAvailable) &&
+    !googleView?.drive.entitled &&
+    Boolean(workflow?.organizationTender);
+
+  const timeline = workflow?.timeline ?? [];
+  const expected = workflow?.expectedDevelopment;
+
   return (
     <div className="space-y-6">
-      {/* 1 — Tender summary */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 space-y-2">
-          <Button variant="ghost" size="sm" className="-ml-2" onClick={() => navigate(-1)}>
-            <ArrowLeft className="h-4 w-4" />
-            Πίσω
-          </Button>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={item.recordType === "REQ" ? "secondary" : "default"}>
-              {item.recordType}
-            </Badge>
-            <SourceBadge referenceNumber={item.adam} />
-            <span className="font-mono text-xs text-muted-foreground">
-              {item.adam.startsWith("TED:") || item.adam.startsWith("DIAVGEIA:")
-                ? item.adam
-                : `ΑΔΑΜ ${item.adam}`}
-            </span>
-            {diavgeia ? (
-              <a
-                href={diavgeia.url}
-                target="_blank"
-                rel="noreferrer"
-                className="font-mono text-xs text-primary underline-offset-2 hover:underline"
-              >
-                ΑΔΑ {diavgeia.ada}
-              </a>
-            ) : null}
-            {following ? <Badge variant="success">Παρακολουθείται</Badge> : null}
-            {workflow?.stageLabel && following ? (
-              <Badge variant="outline">{workflow.stageLabel}</Badge>
-            ) : null}
-          </div>
-          <h2 className="text-xl font-semibold leading-snug tracking-tight sm:text-2xl">
-            {item.title || "—"}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {item.contractingAuthority || "—"}
-          </p>
-          <p
-            className="text-3xl font-bold tracking-tight tabular-nums text-foreground sm:text-4xl"
-            aria-label={`Αξία χωρίς ΦΠΑ ${formatMoney(item.budgetWithoutVat)}`}
-          >
-            {formatMoney(item.budgetWithoutVat)}
-            <span className="ml-2 align-middle text-sm font-medium text-muted-foreground">
-              {item.adam.startsWith("TED:") ? "εκτιμώμενη αξία" : "χωρίς ΦΠΑ"}
-            </span>
-          </p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span>Καταχώριση: {formatDate(item.submissionDate || item.signedDate)}</span>
-            {item.finalSubmissionDate ? (
-              <span>Προθεσμία υποβολής: {formatDate(item.finalSubmissionDate)}</span>
-            ) : null}
-            {item.contractTypeLabel ? <span>{item.contractTypeLabel}</span> : null}
-            {formatRegion(item.nutsCode) ? (
-              <span>{formatRegion(item.nutsCode)}</span>
-            ) : null}
-            <span>
-              Πηγή:{" "}
-              {item.adam.startsWith("TED:")
-                ? "TED"
-                : item.adam.startsWith("DIAVGEIA:")
-                  ? "Διαύγεια"
-                  : "ΚΗΜΔΗΣ"}
-            </span>
-            {item.publicKimdisUrl ? (
-              <a
-                href={item.publicKimdisUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="underline hover:text-foreground"
-              >
-                {item.adam.startsWith("TED:")
-                  ? "Άνοιγμα στο TED"
-                  : item.adam.startsWith("DIAVGEIA:")
-                    ? "Άνοιγμα στη Διαύγεια"
-                    : "Άνοιγμα στο ΚΗΜΔΗΣ"}
-              </a>
-            ) : null}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {item.adam.startsWith("TED:") || item.adam.startsWith("DIAVGEIA:") ? (
-            item.officialPdfUrl || item.publicKimdisUrl ? (
-              <Button variant="outline" size="sm" asChild>
-                <a
-                  href={item.officialPdfUrl || item.publicKimdisUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {item.adam.startsWith("TED:")
-                    ? "Επίσημο έγγραφο TED"
-                    : "Επίσημο έγγραφο Διαύγειας"}
-                </a>
-              </Button>
-            ) : null
-          ) : (
-            <PdfAction onClick={() => setPdfOpen(true)} />
-          )}
-          {primaryAction ? (
-            <Button disabled={busy} onClick={primaryAction.onClick}>
-              {primaryAction.label}
-            </Button>
-          ) : null}
-          {canPrepareOutreach &&
-          following &&
-          nextActionCode !== "RECORD_OUTREACH" ? (
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => void handleOpenOutreach()}
-            >
-              Προετοιμασία / Καταγραφή Ενδιαφέροντος
-            </Button>
-          ) : null}
-          {!following &&
-          primaryAction?.label !== "Έναρξη παρακολούθησης" ? (
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => void handleFollow()}
-            >
-              Έναρξη παρακολούθησης
-            </Button>
-          ) : null}
-          {following ? (
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => void handleUnfollow()}
-            >
-              Διακοπή παρακολούθησης
-            </Button>
-          ) : null}
-          {googleView?.drive.featureAvailable && workflow?.organizationTender ? (
-            googleView.drive.entitled ? (
-              <Button
-                variant="outline"
-                disabled={busy}
-                onClick={() => setDriveFolderOpen(true)}
-                aria-label="Δημιουργία φακέλου στο Drive"
-              >
-                Δημιουργία φακέλου στο Drive
-              </Button>
-            ) : (
-              <span className="text-xs text-muted-foreground">
-                Η δημιουργία φακέλου στο Drive είναι διαθέσιμη στα πακέτα Basic και Pro.{" "}
-                <Link
-                  to="/app/subscription"
-                  className="underline hover:text-foreground"
-                  aria-label="Δείτε τα πακέτα"
-                >
-                  Δείτε τα πακέτα
-                </Link>
-              </span>
-            )
-          ) : null}
-          {tenderId ? (
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => void handleDismiss()}
-            >
-              {isDeadlineExpired ? "Σήμανση ως ληγμένο" : "Απόκρυψη από τις Ευκαιρίες"}
-            </Button>
-          ) : null}
-        </div>
-      </div>
+      <TenderHeader
+        recordType={item.recordType}
+        title={item.title}
+        authority={item.contractingAuthority}
+        adam={item.adam}
+        budgetWithoutVat={item.budgetWithoutVat}
+        budgetLabel={item.adam.startsWith("TED:") ? "εκτιμώμενη αξία" : "χωρίς ΦΠΑ"}
+        submissionDate={item.submissionDate}
+        signedDate={item.signedDate}
+        finalSubmissionDate={item.finalSubmissionDate}
+        contractTypeLabel={item.contractTypeLabel}
+        regionLabel={formatRegion(item.nutsCode)}
+        sourceLabel={sourceLabel}
+        publicUrl={item.publicKimdisUrl}
+        publicUrlLabel={publicUrlLabel}
+        following={following}
+        waitingLabel={waitingLabel}
+        hasOutreach={hasOutreach}
+        invitationIssued={invitationIssued}
+        relatedProcAdam={relatedProcAdam}
+        diavgeiaAda={diavgeia?.ada ?? null}
+        diavgeiaUrl={diavgeia?.url ?? null}
+        busy={busy}
+        primaryAction={primaryAction}
+        overflowAction={overflowAction}
+        secondaryPdf={secondaryPdf}
+        onBack={() => navigate(-1)}
+        onUnfollow={following ? () => void handleUnfollow() : undefined}
+        onDismiss={tenderId ? () => void handleDismiss() : undefined}
+        dismissLabel={
+          isDeadlineExpired ? "Σήμανση ως ληγμένο" : "Απόκρυψη από τις Ευκαιρίες"
+        }
+        onCreateDriveFolder={driveCreate}
+        driveUpgradeHref={showDriveUpgrade ? "/app/subscription" : null}
+        showDriveUpgradeHint={showDriveUpgrade}
+      />
 
-      {/* Living procurement thread */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Πορεία διαγωνισμού</CardTitle>
-          <CardDescription>
-            Δείτε τα στάδια του διαγωνισμού. Οι δικές σας ενέργειες καταγράφονται στο ιστορικό παρακάτω.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ol className="grid gap-3 sm:grid-cols-4">
-            {(
-              [
-                {
-                  label: "Πρωτογενές αίτημα",
-                  done:
-                    item.recordType === "REQ" ||
-                    relatedProcs.length > 0 ||
-                    relatedAwards.length > 0,
-                },
-                {
-                  label: "Πρόσκληση",
-                  done: item.recordType === "PROC" || relatedProcs.length > 0,
-                },
-                {
-                  label: "Προθεσμία υποβολής",
-                  done: Boolean(item.finalSubmissionDate),
-                },
-                {
-                  label: "Κατακύρωση",
-                  done: relatedAwards.length > 0,
-                },
-              ] as const
-            ).map((step, index) => (
-              <li
-                key={step.label}
-                className={`rounded-md border px-3 py-2 text-sm ${
-                  step.done
-                    ? "border-primary/40 bg-primary/5 font-medium"
-                    : "border-border/70 text-muted-foreground"
-                }`}
-              >
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  0{index + 1}
-                </span>
-                <div className="mt-1">{step.label}</div>
-              </li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
-
-      {/* New development — same persisted events as Monitoring / Attention */}
-      {relatedProcs.length > 0 || relatedAwards.length > 0 ? (
-        <Card className="border-primary/40 bg-primary/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Νέα εξέλιξη</CardTitle>
-            <CardDescription>
-              {relatedProcs.some(
-                (link) =>
-                  link.confidence === "LIKELY" || link.confidence === "POSSIBLE",
-              )
-                ? "Πιθανή σχετική δημοσίευση — επιβεβαιώστε ή απορρίψτε."
-                : relatedProcs.length > 0
-                  ? "Εντοπίστηκε σχετική επίσημη πρόσκληση."
-                  : "Δημοσιεύτηκε σχετική απόφαση ανάθεσης."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {[...relatedProcs, ...relatedAwards].map((link) => {
-              const needsReview =
-                link.confidence === "LIKELY" || link.confidence === "POSSIBLE";
-              const type =
-                link.targetTender.recordType === "PROC" ? "PROC" : "REQ";
-              return (
-                <div
-                  key={link.id}
-                  className="flex flex-col gap-2 rounded-md border border-border/70 bg-background/70 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={needsReview ? "outline" : "success"}>
-                        {needsReview
-                          ? "Πιθανή σχέση"
-                          : link.confidence === "CONFIRMED"
-                            ? "Επιβεβαιωμένη"
-                            : link.confidence}
-                      </Badge>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {link.targetTender.recordType} {link.targetTender.referenceNumber}
-                      </span>
-                    </div>
-                    <div className="text-sm font-medium">
-                      {link.targetTender.title || "—"}
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {needsReview ? (
-                      <>
-                        <Button
-                          size="sm"
-                          disabled={busy}
-                          onClick={() => void handleConfirmRelatedAct(link.id)}
-                        >
-                          Επιβεβαίωση
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => void handleDismissRelatedAct(link.id)}
-                        >
-                          Δεν σχετίζεται
-                        </Button>
-                      </>
-                    ) : null}
-                    <Button size="sm" variant="outline" asChild>
-                      <Link
-                        to={`/app/tenders/${type}/${encodeURIComponent(link.targetTender.referenceNumber)}`}
-                      >
-                        Προβολή
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-            {relatedProcs.length > 0 && !isSubmitted && nextActionCode !== "RECORD_SUBMISSION" ? (
-              <Button size="sm" disabled={busy} onClick={() => void handlePrepare()}>
-                Έναρξη προετοιμασίας
-              </Button>
-            ) : null}
-          </CardContent>
-        </Card>
+      {following || workflow?.nextAction ? (
+        <TenderNextActionCard
+          label={nextActionLabel}
+          description={nextActionDescription}
+          monitoringActive={monitoringActive}
+          hasOutreach={hasOutreach}
+          // Header already owns the primary Outreach CTA — avoid duplicating it here.
+          contextualAction={null}
+          busy={busy}
+        />
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          {/* Next action — always in main column so the page is never empty */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Επόμενη ενέργεια</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              <div className="font-medium">{workflow?.nextAction.label}</div>
-              <p className="text-muted-foreground">{workflow?.nextAction.description}</p>
-              {primaryAction ? (
-                <Button size="sm" disabled={busy} onClick={primaryAction.onClick}>
-                  {primaryAction.label}
-                </Button>
-              ) : null}
-              {canPrepareOutreach ? (
-                <p className="text-xs text-muted-foreground">
-                  Η καταγραφή δεν στέλνει email στον φορέα — καταγράφει ό,τι κάνατε εσείς
-                  και ξεκινά αυτόματα παρακολούθηση.
-                </p>
-              ) : null}
-              {following && isSubmitted ? (
-                <Button size="sm" variant="outline" onClick={() => setSubmissionOpen(true)}>
-                  Καταγραφή νέας υποβολής
-                </Button>
-              ) : null}
-            </CardContent>
-          </Card>
+          <OfficialTimeline
+            entries={timeline}
+            expectedLabel={
+              following && expected
+                ? expected.code === "PROC"
+                  ? "Σχετική πρόσκληση / PROC"
+                  : expected.label
+                : null
+            }
+            expectedDescription={following ? expected?.description : null}
+            relatedNeedsReview={relatedNeedsReview}
+            busy={busy}
+            onConfirmRelated={(linkId) => void handleConfirmRelatedAct(linkId)}
+            onDismissRelated={(linkId) => void handleDismissRelatedAct(linkId)}
+          />
 
-          {following && checklist ? (
-            <Card>
+          <OrganizationActivityTimeline
+            entries={timeline}
+            following={following}
+            // Suggested hollow step only when header has no primary Outreach CTA.
+            suggestedAction={
+              canPrepareOutreach && following && !hasOutreach && !primaryAction
+                ? {
+                    label: "Καταγραφή Εκδήλωσης Ενδιαφέροντος",
+                    onClick: () => void handleOpenOutreach(),
+                  }
+                : null
+            }
+            busy={busy}
+          />
+
+          {hasRelatedProc && relatedProcs.length > 0 && !isSubmitted ? (
+            <Card className="border-border/70">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Έλεγχος δικαιολογητικών συμμετοχής</CardTitle>
+                <CardTitle className="text-base">Σχετική πρόσκληση</CardTitle>
                 <CardDescription>
-                  Εντοπίστε τα δικαιολογητικά που ζητά η προκήρυξη και ελέγξτε ποια έχετε ήδη
-                  αποθηκεύσει.
+                  Επίσημη πρόσκληση που συνδέθηκε με αυτό το αίτημα.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                {!checklist.readable ? (
-                  <div className="space-y-2">
-                    <p className="text-muted-foreground">
-                      {checklist.unreadMessage ?? "Δεν διαβάστηκε το PDF"}
-                    </p>
-                    {checklist.officialPdfUrl ? (
-                      <a
-                        href={checklist.officialPdfUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-primary underline-offset-2 hover:underline"
-                      >
-                        Επίσημο PDF
-                      </a>
-                    ) : null}
-                  </div>
-                ) : (
-                  <>
-                    <dl className="grid gap-2 sm:grid-cols-2">
-                      {checklist.fields.map((field) => (
-                        <div key={field.key} className="rounded-md border border-border/70 px-3 py-2">
-                          <dt className="text-xs text-muted-foreground">{field.label}</dt>
-                          <dd className="mt-1 font-medium">
-                            {field.status === "found"
-                              ? field.value
-                              : "Δεν εντοπίστηκε"}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                    <ul className="space-y-1.5">
-                      {checklist.documents.map((doc) => (
-                        <li
-                          key={doc.key}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/60 px-3 py-2"
-                        >
-                          <span>{doc.label}</span>
+              <CardContent className="space-y-3">
+                {relatedProcs.map((link) => {
+                  const type =
+                    link.targetTender.recordType === "PROC" ? "PROC" : "REQ";
+                  return (
+                    <div
+                      key={link.id}
+                      className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/10 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Badge
                             variant={
-                              doc.status === "in_vault"
+                              link.confidence === "CONFIRMED"
                                 ? "success"
-                                : doc.status === "missing"
-                                  ? "warning"
-                                  : "outline"
+                                : "outline"
                             }
                           >
-                            {doc.status === "in_vault"
-                              ? "Στο vault"
-                              : doc.status === "missing"
-                                ? "Λείπει"
-                                : "Δεν ζητείται"}
+                            {link.confidence === "CONFIRMED"
+                              ? "Επιβεβαιωμένη"
+                              : link.confidence === "LIKELY" ||
+                                  link.confidence === "POSSIBLE"
+                                ? "Πιθανή σχέση"
+                                : link.confidence}
                           </Badge>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {link.targetTender.recordType}{" "}
+                            {link.targetTender.referenceNumber}
+                          </span>
+                        </div>
+                        <div className="text-sm font-medium">
+                          {link.targetTender.title || "—"}
+                        </div>
+                      </div>
+                      <Button size="sm" variant="outline" asChild>
+                        <Link
+                          to={`/app/tenders/${type}/${encodeURIComponent(link.targetTender.referenceNumber)}`}
+                        >
+                          Προβολή
+                        </Link>
+                      </Button>
+                    </div>
+                  );
+                })}
+                {nextActionCode === "START_PREPARATION" ? (
+                  <Button size="sm" disabled={busy} onClick={() => void handlePrepare()}>
+                    Έναρξη προετοιμασίας
+                  </Button>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}
 
+          <TenderPreparationCard
+            mode={hasRelatedProc ? "checklist" : "early"}
+            checklist={checklist}
+            following={following}
+            showStartPreparation={nextActionCode === "START_PREPARATION"}
+            onStartPreparation={() => void handlePrepare()}
+            busy={busy}
+          />
+
           {following && priceMemory ? (
-            <Card>
+            <Card className="border-border/70">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Ιστορικό τιμών</CardTitle>
                 <CardDescription>
@@ -1129,13 +942,13 @@ export const TenderDetailPage = () => {
                 ) : null}
                 {priceMemory.samples.length === 0 ? (
                   <p className="text-muted-foreground">
-                    Δεν υπάρχουν ακόμη κατακυρώσεις για αυτό το ζεύγος.
+                    Δεν υπάρχουν ακόμη αποτελέσματα ανάθεσης για αυτό το ζεύγος.
                   </p>
                 ) : (
                   priceMemory.samples.map((sample) => (
                     <div
                       key={sample.referenceNumber}
-                      className="rounded-md border border-border/70 px-3 py-2"
+                      className="rounded-md border border-border/60 bg-muted/10 px-3 py-2"
                     >
                       <div className="font-medium">
                         {sample.winnerName || "Άγνωστος ανάδοχος"}
@@ -1144,7 +957,7 @@ export const TenderDetailPage = () => {
                         <span className="font-mono">{sample.referenceNumber}</span>
                         <span>{formatDate(sample.signedDate)}</span>
                         <span>
-                          Ποσό κατακύρωσης: {formatMoney(sample.awardAmount)}
+                          Ποσό ανάθεσης: {formatMoney(sample.awardAmount)}
                         </span>
                         {sample.ratio != null ? (
                           <span>
@@ -1159,154 +972,81 @@ export const TenderDetailPage = () => {
             </Card>
           ) : null}
 
-          {/* History under next action */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Ιστορικό {kind.genitive}</CardTitle>
-              <CardDescription>
-                Οι δημοσιεύσεις στο ΚΗΜΔΗΣ και οι ενέργειες που έχετε καταγράψει, με χρονολογική σειρά.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="max-h-72 space-y-3 overflow-y-auto pr-1">
-              {(() => {
-                const timeline = (workflow?.timeline ?? []).filter((entry) =>
-                  following ? true : entry.kind === "official",
-                );
-                if (timeline.length === 0) {
-                  return (
-                    <p className="text-sm text-muted-foreground">
-                      Δεν υπάρχουν ακόμη γεγονότα για αυτό το {kind.nominative}.
-                    </p>
-                  );
-                }
-                return timeline.map((entry) => {
-                const official = entry.kind === "official";
-                return (
-                  <div
-                    key={entry.key}
-                    className={`flex gap-3 rounded-md border px-3 py-3 ${
-                      official ? "border-border bg-muted/40" : "border-dashed border-border"
-                    }`}
+          {following ? (
+            <Card className="border-border/70">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Κατάσταση συμμετοχής</CardTitle>
+                <CardDescription>
+                  Συνοπτική εικόνα των καταγεγραμμένων ενεργειών σας.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div>
+                    <span className="text-muted-foreground">Στάδιο: </span>
+                    {workflow?.stageLabel}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Παρακολούθηση: </span>
+                    {monitoringActive ? "Ενεργή" : "Ανενεργή"}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">
+                      Εκδήλωση ενδιαφέροντος:{" "}
+                    </span>
+                    {hasOutreach ? formatDate(outreach?.sentAt) : "Δεν έχει καταγραφεί"}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Υποβολή: </span>
+                    {workflow?.latestSubmission
+                      ? `${formatDateTime(workflow.latestSubmission.submittedAt)} · ${submissionMethodLabel(workflow.latestSubmission.submissionMethod)}${workflow.latestSubmission.externalReference ? ` · ${workflow.latestSubmission.externalReference}` : ""}`
+                      : "Δεν έχει καταγραφεί"}
+                  </div>
+                </div>
+                {workflow?.latestSubmission ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 px-3 py-2">
+                    <span className="text-sm text-muted-foreground">Αποτέλεσμα:</span>
+                    {workflow.latestSubmission.result === "WON" ? (
+                      <Badge variant="success">Επιτυχία</Badge>
+                    ) : workflow.latestSubmission.result === "LOST" ? (
+                      <Badge variant="destructive">Ανεπιτυχές</Badge>
+                    ) : (
+                      <>
+                        <Badge variant="outline">Εκκρεμεί</Badge>
+                        <Button
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => void handleConfirmResult("WON")}
+                        >
+                          Επιτυχία
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => void handleConfirmResult("LOST")}
+                        >
+                          Ανεπιτυχές
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                ) : null}
+                {following && isSubmitted ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSubmissionOpen(true)}
                   >
-                    <div className="mt-0.5 shrink-0 text-muted-foreground">
-                      {official ? (
-                        <Landmark className="h-4 w-4" />
-                      ) : (
-                        <Building2 className="h-4 w-4" />
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium">{entry.title}</span>
-                        <Badge variant={official ? "secondary" : "outline"}>
-                          {official ? "ΚΗΜΔΗΣ" : "Εταιρεία"}
-                        </Badge>
-                        {entry.isNew ? <Badge variant="warning">Νέο</Badge> : null}
-                      </div>
-                      {entry.adam ? (
-                        <div className="font-mono text-xs text-muted-foreground">
-                          {entry.adam}
-                        </div>
-                      ) : null}
-                      {entry.subtitle ? (
-                        <div className="text-sm text-muted-foreground">{entry.subtitle}</div>
-                      ) : null}
-                      <div className="text-xs text-muted-foreground">
-                        {formatDateTime(entry.at)}
-                      </div>
-                    </div>
-                  </div>
-                );
-              });
-              })()}
-            </CardContent>
-          </Card>
+                    Καταγραφή νέας υποβολής
+                  </Button>
+                ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
 
-          {/* Company state — always visible */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Η συμμετοχή σας</CardTitle>
-              <CardDescription>
-                Τι έχουμε κάνει εμείς και τι περιμένουμε από το ΚΗΜΔΗΣ.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              {!following ? (
-                <p className="text-muted-foreground">
-                  Δεν παρακολουθείται ακόμη. Ξεκινήστε με εκδήλωση ενδιαφέροντος ή
-                  πατήστε Έναρξη παρακολούθησης.
-                </p>
-              ) : (
-                <>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div>
-                      <span className="text-muted-foreground">Στάδιο: </span>
-                      {workflow?.stageLabel}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Παρακολούθηση: </span>
-                      {workflow?.organizationTender?.monitoringActive
-                        ? "Ενεργή"
-                        : "Ανενεργή"}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Εκδήλωση ενδιαφέροντος: </span>
-                      {hasOutreach ? formatDate(outreach?.sentAt) : "Δεν έχει καταγραφεί"}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Υποβολή: </span>
-                      {workflow?.latestSubmission
-                        ? `${formatDateTime(workflow.latestSubmission.submittedAt)} · ${submissionMethodLabel(workflow.latestSubmission.submissionMethod)}${workflow.latestSubmission.externalReference ? ` · ${workflow.latestSubmission.externalReference}` : ""}`
-                        : "Δεν έχει καταγραφεί"}
-                    </div>
-                  </div>
-                  {workflow?.latestSubmission ? (
-                    <div className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2">
-                      <span className="text-sm text-muted-foreground">Αποτέλεσμα:</span>
-                      {workflow.latestSubmission.result === "WON" ? (
-                        <Badge variant="success">Επιτυχία</Badge>
-                      ) : workflow.latestSubmission.result === "LOST" ? (
-                        <Badge variant="destructive">Ανεπιτυχές</Badge>
-                      ) : (
-                        <>
-                          <Badge variant="outline">Εκκρεμεί</Badge>
-                          <Button
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => void handleConfirmResult("WON")}
-                          >
-                            Επιτυχία
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={busy}
-                            onClick={() => void handleConfirmResult("LOST")}
-                          >
-                            Ανεπιτυχές
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  ) : null}
-                  {workflow?.expectedDevelopment ? (
-                    <div className="rounded-md border border-border px-3 py-2">
-                      <div className="font-medium">
-                        Αναμενόμενη επίσημη εξέλιξη: {workflow.expectedDevelopment.label}
-                      </div>
-                      <p className="text-muted-foreground">
-                        {workflow.expectedDevelopment.description}
-                      </p>
-                    </div>
-                  ) : null}
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Recorded outreach detail incl. vault documents */}
           {hasOutreach ? (
-            <Card>
+            <Card className="border-border/70">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Εκδήλωση Ενδιαφέροντος</CardTitle>
                 <CardDescription>
@@ -1353,9 +1093,8 @@ export const TenderDetailPage = () => {
             </Card>
           ) : null}
 
-          {/* Tender workspace reusing Company Vault */}
           {workspace?.workspace ? (
-            <Card>
+            <Card className="border-border/70">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Φάκελος υποβολής</CardTitle>
                 <CardDescription>
@@ -1365,7 +1104,10 @@ export const TenderDetailPage = () => {
               </CardHeader>
               <CardContent className="space-y-3">
                 {workspace.sections.map((section) => (
-                  <div key={section.id} className="rounded-md border border-border px-3 py-3">
+                  <div
+                    key={section.id}
+                    className="rounded-md border border-border/60 bg-muted/10 px-3 py-3"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="text-sm font-medium">
                         {section.id} — {section.label}
@@ -1410,40 +1152,17 @@ export const TenderDetailPage = () => {
           ) : null}
         </div>
 
-        {/* Right rail — context only */}
         <div className="space-y-4">
-          {matchMeta?.matchedProfiles?.length ? (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Γιατί εμφανίζεται στις ευκαιρίες σας</CardTitle>
-                <CardDescription>Εντοπίστηκε από τις παρακάτω αποθηκευμένες αναζητήσεις.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                {matchMeta.matchedProfiles.map((profile) => (
-                  <div key={profile.id}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{profile.name}</span>
-                      <ScoreBadge score={profile.score} />
-                    </div>
-                    <ul className="mt-1 space-y-1 text-muted-foreground">
-                      {profile.reasons.map((reason) => (
-                        <li key={reason}>✓ {formatMatchReason(reason)}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
+          <TenderRelevanceCard matchMeta={matchMeta ?? null} />
 
-          <Card>
+          <Card className="border-border/70">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Επίσημη πηγή</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <div>Τύπος: {item.recordType}</div>
               <div className="font-mono text-xs">{item.adam}</div>
-              <div className="text-lg font-semibold tabular-nums">
+              <div className="font-medium tabular-nums">
                 {item.adam.startsWith("TED:")
                   ? "Εκτιμώμενη αξία"
                   : "Αξία χωρίς ΦΠΑ"}
@@ -1451,7 +1170,7 @@ export const TenderDetailPage = () => {
               </div>
               {item.awardAmount != null ? (
                 <div className="text-sm font-medium tabular-nums">
-                  Ποσό κατακύρωσης: {formatMoney(item.awardAmount)}
+                  Ποσό ανάθεσης: {formatMoney(item.awardAmount)}
                 </div>
               ) : null}
               <div>Καταχώριση: {formatDate(item.submissionDate || item.signedDate)}</div>
@@ -1478,38 +1197,6 @@ export const TenderDetailPage = () => {
                   ))}
                 </div>
               ) : null}
-              <div className="flex flex-wrap gap-2 pt-1">
-                {item.adam.startsWith("TED:") || item.adam.startsWith("DIAVGEIA:") ? (
-                  item.officialPdfUrl || item.publicKimdisUrl ? (
-                    <Button variant="outline" size="sm" asChild>
-                      <a
-                        href={item.officialPdfUrl || item.publicKimdisUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {item.adam.startsWith("TED:")
-                          ? "Έγγραφο TED"
-                          : "Έγγραφο Διαύγειας"}
-                      </a>
-                    </Button>
-                  ) : null
-                ) : (
-                  <Button variant="outline" size="sm" onClick={() => setPdfOpen(true)}>
-                    Προβολή PDF
-                  </Button>
-                )}
-                {item.publicKimdisUrl ? (
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={item.publicKimdisUrl} target="_blank" rel="noreferrer">
-                      {item.adam.startsWith("TED:")
-                        ? "TED"
-                        : item.adam.startsWith("DIAVGEIA:")
-                          ? "Διαύγεια"
-                          : "ΚΗΜΔΗΣ"}
-                    </a>
-                  </Button>
-                ) : null}
-              </div>
             </CardContent>
           </Card>
         </div>

@@ -50,6 +50,25 @@ const refs = (value: unknown): string[] => {
   return value.map((item) => asString(item) ?? "").filter(Boolean);
 };
 
+/** PROC/AWRD Open Data links parent REQs via `approvedRequests[].code`. */
+const approvedRequestRefs = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item === "string" && item.trim()) {
+      out.push(item.trim());
+      continue;
+    }
+    const row = asRecord(item);
+    const code =
+      asString(row?.code) ??
+      asString(row?.referenceNumber) ??
+      asString(row?.value);
+    if (code) out.push(code);
+  }
+  return out;
+};
+
 const adaFrom = (record: Loose): string | null => {
   const direct = asString(record.diavgeiaADA);
   if (direct) return direct;
@@ -116,6 +135,7 @@ export const mapLooseKimdisAct = (
       ...refs(record.auctionRefNo),
       ...refs(record.requestRefNo),
       ...refs(record.approvalRefNo),
+      ...approvedRequestRefs(record.approvedRequests),
     ],
   };
 };

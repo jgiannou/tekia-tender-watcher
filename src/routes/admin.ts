@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { createMiddleware } from "hono/factory";
 import { z } from "zod";
 import type { Config } from "../config.js";
@@ -24,6 +25,14 @@ const resendBodySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional().default(50),
 });
 
+/** Browser Ops Desk (Vite) origins — Electron bypasses CORS via native fetch. */
+const OPS_DESK_BROWSER_ORIGINS = [
+  "http://127.0.0.1:5179",
+  "http://localhost:5179",
+  "http://127.0.0.1:5178",
+  "http://localhost:5178",
+];
+
 export const createAdminRoutes = (deps: {
   adminToken: string;
   pollJob: PollJob;
@@ -32,6 +41,24 @@ export const createAdminRoutes = (deps: {
   repo: Repository;
 }) => {
   const app = new Hono<AdminEnv>();
+
+  const adminCorsOrigins = [
+    ...deps.config.LOCAL_DASHBOARD_ORIGINS,
+    ...OPS_DESK_BROWSER_ORIGINS,
+  ];
+
+  app.use(
+    "/admin/*",
+    cors({
+      origin: (origin) => {
+        if (!origin) return adminCorsOrigins[0] ?? "http://127.0.0.1:5179";
+        return adminCorsOrigins.includes(origin) ? origin : "";
+      },
+      allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+      allowHeaders: ["Content-Type", "Authorization", "X-Admin-Token"],
+      maxAge: 600,
+    }),
+  );
 
   const requireAdmin = createMiddleware(async (c, next) => {
     const headerToken = c.req.header("X-Admin-Token")?.trim();

@@ -57,6 +57,7 @@ model User {
   pushDevices PushDevice[]
   slackInstallations OrganizationSlackConnection[] @relation("SlackInstalledBy")
   googleConnections  UserOrganizationGoogleConnection[]
+  promotionActivations OrganizationPromotionRedemption[] @relation("PromotionActivatedBy")
 
   @@map("users")
 }
@@ -172,6 +173,7 @@ model Organization {
   members          OrganizationMember[]
   invitations      Invitation[]
   subscription     Subscription?
+  promotionRedemptions OrganizationPromotionRedemption[]
   watchProfiles    WatchProfile[]
   organizationTenders OrganizationTender[]
   settings         OrganizationSettings?
@@ -569,6 +571,87 @@ model StripeWebhookEvent {
   payload     Json?
 
   @@map("stripe_webhook_events")
+}
+
+/// Cardless promotional Pro access (e.g. ARC_PRO_LAUNCH_30).
+/// Separate from Stripe subscriptions and from the 7-day Pro preview.
+enum OrganizationPromotionStatus {
+  ACTIVE
+  EXPIRED
+  SUPERSEDED
+  REVOKED
+}
+
+enum PromotionActivationSource {
+  SELF_SERVICE
+  ADMIN
+}
+
+model OrganizationPromotionRedemption {
+  id                    String                       @id @default(cuid())
+  organizationId        String
+  promotionKey          String
+  activatedByUserId     String
+  activatedAt           DateTime
+  expiresAt             DateTime
+  status                OrganizationPromotionStatus  @default(ACTIVE)
+  source                PromotionActivationSource    @default(SELF_SERVICE)
+  /// Whether this redemption currently consumes a global capacity slot.
+  slotConsumed          Boolean                      @default(true)
+  slotRestoredAt        DateTime?
+  revokedAt             DateTime?
+  revokedBy             String?
+  revokeReason          String?
+  /// Optional UTM / campaign attribution (non-PII).
+  attribution           Json?
+  activationEmailSentAt DateTime?
+  reminder7dSentAt      DateTime?
+  reminder2dSentAt      DateTime?
+  expiredNotifiedAt     DateTime?
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  activatedBy  User         @relation("PromotionActivatedBy", fields: [activatedByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, promotionKey])
+  @@index([promotionKey, status])
+  @@index([promotionKey, slotConsumed])
+  @@index([status, expiresAt])
+  @@map("organization_promotion_redemptions")
+}
+
+/// DB-backed capacity for a promotion. Survives restarts; env only seeds/ceiling.
+model PromotionCampaignConfig {
+  promotionKey String   @id
+  capacity     Int
+  updatedAt    DateTime @updatedAt
+  updatedBy    String?
+  note         String?
+
+  @@map("promotion_campaign_configs")
+}
+
+/// Append-only admin/ops audit ledger for promotion mutations.
+model PromotionAuditEvent {
+  id               String   @id @default(cuid())
+  promotionKey     String
+  actionType       String
+  organizationId   String?
+  redemptionId     String?
+  previousCapacity Int?
+  newCapacity      Int?
+  previousStatus   String?
+  newStatus        String?
+  reason           String
+  performedBy      String
+  idempotencyKey   String?  @unique
+  metadata         Json?
+  createdAt        DateTime @default(now())
+
+  @@index([promotionKey, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("promotion_audit_events")
 }
 
 // ---------------------------------------------------------------------------

@@ -139,6 +139,30 @@ export const humanSaasError = (message: string): string => {
   if (message.includes("paid_plan_active")) {
     return "Υπάρχει ήδη ενεργή συνδρομή πληρωμής για αυτόν τον οργανισμό.";
   }
+  if (message.includes("promo_disabled")) {
+    return "Η προσφορά δεν είναι διαθέσιμη αυτή τη στιγμή.";
+  }
+  if (message.includes("promo_deadline_passed")) {
+    return "Η περίοδος της προσφοράς έχει λήξει.";
+  }
+  if (message.includes("promo_cap_reached")) {
+    return "Η προσφορά ολοκληρώθηκε. Οι διαθέσιμες θέσεις έχουν καλυφθεί.";
+  }
+  if (message.includes("promo_activation_busy")) {
+    return "Η ενεργοποίηση είναι προσωρινά απασχολημένη. Δοκιμάστε ξανά σε λίγα δευτερόλεπτα.";
+  }
+  if (message.includes("already_redeemed")) {
+    return "Η προσφορά έχει ήδη χρησιμοποιηθεί για αυτόν τον οργανισμό.";
+  }
+  if (message.includes("active_pro_trial")) {
+    return "Έχετε ήδη ενεργή δοκιμή Pro. Η προσφορά δεν μπορεί να συνδυαστεί.";
+  }
+  if (message.includes("not_on_free")) {
+    return "Η προσφορά είναι διαθέσιμη μόνο για οργανισμούς στο Free Plan.";
+  }
+  if (message.includes("insufficient_role")) {
+    return "Μόνο διαχειριστές του οργανισμού μπορούν να ενεργοποιήσουν την προσφορά.";
+  }
   if (message.includes("periodic_scan_quota_exceeded")) {
     return "Έχετε εξαντλήσει τους περιοδικούς ελέγχους για σήμερα.";
   }

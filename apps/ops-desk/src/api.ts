@@ -699,3 +699,199 @@ export const grantPlan = async (
   if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
   return body;
 };
+
+// ---------------------------------------------------------------------------
+// ARC_PRO_LAUNCH_30 promotions admin
+// ---------------------------------------------------------------------------
+
+export type PromoAdminSummary = {
+  promotionKey: string;
+  promotionEnabled: boolean;
+  capacity: number;
+  consumedSlots: number;
+  remainingSlots: number;
+  capacityCeiling: number;
+  activeCount: number;
+  expiredCount: number;
+  revokedCount: number;
+  supersededCount: number;
+  historicalActivations: number;
+  lowSlotsWarning: boolean;
+  exhausted: boolean;
+};
+
+export type PromoRedemptionRow = {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  ownerEmail: string | null;
+  ownerName: string | null;
+  status: string;
+  source: string;
+  activatedAt: string;
+  expiresAt: string;
+  daysRemaining: number;
+  slotConsumed: boolean;
+  slotRestoredAt: string | null;
+  revokedAt: string | null;
+  planKey: string;
+  hasPaidStripe: boolean;
+};
+
+export type PromoAuditRow = {
+  id: string;
+  actionType: string;
+  organizationId: string | null;
+  redemptionId: string | null;
+  previousCapacity: number | null;
+  newCapacity: number | null;
+  previousStatus: string | null;
+  newStatus: string | null;
+  reason: string;
+  performedBy: string;
+  idempotencyKey: string | null;
+  createdAt: string;
+};
+
+export const fetchPromoSummary = async (cfg: ConnectionConfig) => {
+  const res = await opsRequest(
+    cfg,
+    "/admin/ops/promotions/arc-pro-launch-30/summary",
+  );
+  const body = (await res.json()) as {
+    error?: string;
+    data?: PromoAdminSummary;
+    syncedAt?: string;
+  };
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return { summary: body.data as PromoAdminSummary, syncedAt: body.syncedAt ?? null };
+};
+
+export const fetchPromoRedemptions = async (
+  cfg: ConnectionConfig,
+  opts?: { status?: string; q?: string; limit?: number; offset?: number },
+) => {
+  const params = new URLSearchParams();
+  if (opts?.status) params.set("status", opts.status);
+  if (opts?.q) params.set("q", opts.q);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.offset) params.set("offset", String(opts.offset));
+  const qs = params.toString();
+  return parseJson<{
+    total: number;
+    limit: number;
+    offset: number;
+    items: PromoRedemptionRow[];
+  }>(
+    await opsRequest(
+      cfg,
+      `/admin/ops/promotions/arc-pro-launch-30/redemptions${qs ? `?${qs}` : ""}`,
+    ),
+  );
+};
+
+export const fetchPromoAudit = async (
+  cfg: ConnectionConfig,
+  opts?: { limit?: number; offset?: number },
+) => {
+  const params = new URLSearchParams();
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  if (opts?.offset) params.set("offset", String(opts.offset));
+  const qs = params.toString();
+  return parseJson<{
+    total: number;
+    limit: number;
+    offset: number;
+    items: PromoAuditRow[];
+  }>(
+    await opsRequest(
+      cfg,
+      `/admin/ops/promotions/arc-pro-launch-30/audit${qs ? `?${qs}` : ""}`,
+    ),
+  );
+};
+
+export const grantPromo = async (
+  cfg: ConnectionConfig,
+  input: {
+    organizationId: string;
+    reason: string;
+    forceWhenDisabled?: boolean;
+    idempotencyKey?: string;
+  },
+) =>
+  parseJson<{
+    ok: boolean;
+    replayed: boolean;
+    summary: PromoAdminSummary;
+  }>(
+    await opsRequest(cfg, "/admin/ops/promotions/arc-pro-launch-30/grant", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+
+export const revokePromo = async (
+  cfg: ConnectionConfig,
+  input: {
+    organizationId: string;
+    reason: string;
+    restoreSlot?: boolean;
+    idempotencyKey?: string;
+  },
+) =>
+  parseJson<{
+    ok: boolean;
+    replayed: boolean;
+    summary: PromoAdminSummary;
+  }>(
+    await opsRequest(cfg, "/admin/ops/promotions/arc-pro-launch-30/revoke", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  );
+
+export const restorePromoSlot = async (
+  cfg: ConnectionConfig,
+  input: {
+    organizationId: string;
+    reason: string;
+    idempotencyKey?: string;
+  },
+) =>
+  parseJson<{
+    ok: boolean;
+    replayed: boolean;
+    summary: PromoAdminSummary;
+  }>(
+    await opsRequest(
+      cfg,
+      "/admin/ops/promotions/arc-pro-launch-30/restore-slot",
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+    ),
+  );
+
+export const patchPromoCapacity = async (
+  cfg: ConnectionConfig,
+  input: {
+    capacity: number;
+    reason: string;
+    idempotencyKey?: string;
+  },
+) =>
+  parseJson<{
+    capacity: number;
+    consumedSlots: number;
+    remainingSlots: number;
+    previousCapacity?: number;
+    replayed: boolean;
+    summary: PromoAdminSummary;
+  }>(
+    await opsRequest(cfg, "/admin/ops/promotions/arc-pro-launch-30/capacity", {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  );

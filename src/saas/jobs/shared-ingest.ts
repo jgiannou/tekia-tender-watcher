@@ -269,7 +269,13 @@ export const runSharedKimdisIngest = async (
     const items = dedupeKimdisItems(recent.items);
     await persistActs(prisma, items);
     await matchSharedIngestActs(prisma, items);
-    await monitorFollowedThreads(prisma);
+    // Public UI catches REQ→PROC links Open Data still omits (common for
+    // targeted invitations visible under «Άμεσα συνδεδεμένες πράξεις»).
+    await monitorFollowedThreads(prisma, { enablePublicUiDiscovery: true });
+    const { discoverOpportunityRelatedProcs } = await import(
+      "./discover-opportunity-related-procs.js"
+    );
+    await discoverOpportunityRelatedProcs(prisma);
     const { monitorTedFollowedNotices } = await import("./monitor-ted-notices.js");
     await monitorTedFollowedNotices(prisma);
     await notifyUrgentDeadlines(prisma);

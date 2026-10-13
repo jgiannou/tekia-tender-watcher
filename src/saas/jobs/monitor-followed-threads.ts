@@ -13,6 +13,7 @@ import {
 import { queueAttentionEmail } from "../services/notify.js";
 import {
   discoverRelatedProcsFromLocalDb,
+  discoverRelatedProcsFromPublicUi,
   type DiscoveredRelatedAct,
 } from "../services/related-acts.js";
 import { upsertCanonicalTender } from "../services/tenders.js";
@@ -77,9 +78,19 @@ export const monitorFollowedThreads = async (
     discoveries?: DiscoveredRelatedAct[];
     /** When false, skip local heuristic discovery (tests that inject discoveries only). */
     enableLocalDiscovery?: boolean;
+    /**
+     * When true, look up official related PROC links on the public ΚΗΜΔΗΣ UI.
+     * Opt-in (shared ingest enables it) so unit tests stay offline by default.
+     */
+    enablePublicUiDiscovery?: boolean;
+    /** Injected public-UI discovery for tests. */
+    discoverFromPublicUi?: typeof discoverRelatedProcsFromPublicUi;
   },
 ): Promise<MonitorFollowedThreadsResult> => {
   const enableLocalDiscovery = options?.enableLocalDiscovery !== false;
+  const enablePublicUiDiscovery = options?.enablePublicUiDiscovery === true;
+  const discoverFromPublicUi =
+    options?.discoverFromPublicUi ?? discoverRelatedProcsFromPublicUi;
   const active = await prisma.organizationTender.findMany({
     where: {
       monitoringActive: true,
@@ -186,6 +197,36 @@ export const monitorFollowedThreads = async (
           confidence: discovery.confidence,
           detectionMethod: discovery.detectionMethod,
         });
+      }
+    }
+
+    // 3b) Public UI «συνδεδεμένες πράξεις» when no confirmed/likely PROC yet.
+    // Open Data frequently lags the public registry for targeted invitations.
+    if (enablePublicUiDiscovery && sourceTender?.recordType === "REQ") {
+      const hasStrongProc = candidates.some(
+        (candidate) =>
+          candidate.targetTender.recordType === "PROC" &&
+          (candidate.confidence === "CONFIRMED" ||
+            candidate.confidence === "LIKELY"),
+      );
+      if (!hasStrongProc) {
+        const fromUi = await discoverFromPublicUi(sourceTender);
+        for (const discovery of fromUi) {
+          const target = await upsertCanonicalTender(prisma, {
+            referenceNumber: discovery.target.referenceNumber,
+            recordType: discovery.target.recordType,
+            title: discovery.target.title,
+            contractingAuthority: discovery.target.contractingAuthority,
+            parentTenderId: sourceTenderId,
+            now,
+          });
+          candidates.push({
+            targetTender: target,
+            relationType: discovery.relationType,
+            confidence: discovery.confidence,
+            detectionMethod: discovery.detectionMethod,
+          });
+        }
       }
     }
 

@@ -24,6 +24,7 @@ export type SaasUser = {
 export type ScanAccessStatus =
   | "unverified"
   | "trial"
+  | "promo"
   | "trial_expired"
   | "active"
   | "inactive";
@@ -34,6 +35,12 @@ export type ScanAccess = {
   planKey: string;
   plan?: string;
   trialEndsAt: string | null;
+  promo?: {
+    promotionKey: string;
+    activatedAt: string;
+    expiresAt: string;
+    daysRemaining: number;
+  } | null;
   limits: {
     maxActiveWatchProfiles: number;
     maxActiveFollowedTenders?: number;
@@ -165,6 +172,8 @@ export type WatchProfile = {
   initialScanCompletedAt?: string | null;
   lastMatchAt?: string | null;
   matchCount?: number;
+  /** Matches that already have a published related PROC invitation. */
+  invitationIssuedMatchCount?: number;
   source?: "MANUAL" | "SAVED_FROM_SEARCH" | "SETUP_RECOMMENDATION" | string;
   scanError?: string | null;
   scanPartial?: boolean;
@@ -289,6 +298,10 @@ export type Opportunity = {
   /** Unread NEW_OPPORTUNITY attention from a saved-search scan. */
   isNew?: boolean;
   attentionEventId?: string | null;
+  /** Official PROC invitation already linked to this REQ. */
+  invitationIssued?: boolean;
+  relatedProcAdam?: string | null;
+  relatedProcConfidence?: string | null;
   watchProfileId: string | null;
   watchProfile?: { id: string; name: string } | null;
   tender: {
@@ -396,6 +409,24 @@ export type BillingCatalogResponse = {
   trial?: { days: number; periodicScansPerDay: number; noteEl: string };
 };
 
+export type LaunchPromoRedemption = {
+  status: "ACTIVE" | "EXPIRED" | "SUPERSEDED";
+  activatedAt: string;
+  expiresAt: string;
+  daysRemaining: number | null;
+};
+
+export type LaunchPromoState = {
+  enabled: boolean;
+  canActivate: boolean;
+  reason: string;
+  totalSlots?: number;
+  redeemedSlots?: number;
+  remainingSlots?: number;
+  acceptingRedemptions?: boolean;
+  redemption: LaunchPromoRedemption | null;
+};
+
 export type BillingStatusResponse = {
   configured: boolean;
   canManageBilling: boolean;
@@ -409,6 +440,35 @@ export type BillingStatusResponse = {
   stripeSubscriptionId: string | null;
   hasStripeSubscription?: boolean;
   canStartProTrial?: boolean;
+  launchPromo?: LaunchPromoState;
+};
+
+export type ArcProLaunchPublicMeta = {
+  promotionKey: string;
+  promotionActive: boolean;
+  acceptingRedemptions: boolean;
+  totalSlots: number;
+  redeemedSlots: number;
+  remainingSlots: number;
+  durationDays: number;
+  requiresCard: boolean;
+  autoBilling: boolean;
+  returnsTo: string;
+  proMonthlyEur: number | null;
+  redeemBy: string | null;
+};
+
+export type ArcProLaunchStatus = {
+  promotionKey: string;
+  enabled: boolean;
+  durationDays: number;
+  canActivate: boolean;
+  reason: string;
+  totalSlots: number;
+  redeemedSlots: number;
+  remainingSlots: number;
+  acceptingRedemptions: boolean;
+  redemption: LaunchPromoRedemption | null;
 };
 
 export type SlackNotificationPreferences = {
@@ -1198,6 +1258,10 @@ export type KimdisSearchItem = {
   /** Awarded amount when known — distinct from estimated budgetWithoutVat. */
   awardAmount?: number | null;
   winnerName?: string | null;
+  /** True when our DB already knows a related PROC invitation for this REQ. */
+  invitationIssued?: boolean;
+  relatedProcAdam?: string | null;
+  relatedProcConfidence?: string | null;
 };
 
 export type KimdisRequestKind = "any" | "initial" | "approved" | "approval";
@@ -1584,6 +1648,28 @@ export const saasApi = {
     }>("/api/saas/billing/start-pro-trial", {
       method: "POST",
       organizationId,
+    }),
+  getArcProLaunchMeta: () =>
+    request<ArcProLaunchPublicMeta>("/api/saas/promotions/arc-pro-launch"),
+  getArcProLaunchStatus: (organizationId: string) =>
+    request<ArcProLaunchStatus>("/api/saas/promotions/arc-pro-launch/status", {
+      organizationId,
+    }),
+  activateArcProLaunch: (
+    organizationId: string,
+    attribution?: Record<string, string> | null,
+  ) =>
+    request<{
+      ok: true;
+      already: boolean;
+      promotionKey: string;
+      activatedAt: string;
+      expiresAt: string;
+      daysRemaining: number;
+    }>("/api/saas/promotions/arc-pro-launch/activate", {
+      method: "POST",
+      organizationId,
+      body: JSON.stringify(attribution ?? {}),
     }),
   billingPortal: (organizationId: string, flow?: "cancel") =>
     request<{ url: string | null; alreadyCanceling?: boolean }>(

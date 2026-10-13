@@ -468,3 +468,179 @@ export const mergeKimdisSearchItems = (
   }
   return { items: [...byAdam.values()], addedFromPublicUi };
 };
+
+const ADAM_TOKEN_RE = /\b(\d{2})(REQ|PROC|AWRD|CONTRACT)(\d{6,12})\b/gi;
+
+const recordTypeFromAdam = (
+  adam: string,
+): KimdisSearchItem["recordType"] | null => {
+  const m = /^(\d{2})(REQ|PROC|AWRD|CONTRACT)(\d{6,12})$/i.exec(adam.trim());
+  if (!m) return null;
+  return m[2]!.toUpperCase() as KimdisSearchItem["recordType"];
+};
+
+export type PublicUiRelatedAct = {
+  adam: string;
+  recordType: KimdisSearchItem["recordType"];
+  /** True when the UI labels this as the linked πρόσκληση/προκήρυξη. */
+  invitationLink: boolean;
+};
+
+/**
+ * Parse «Άμεσα συνδεδεμένες πράξεις» / approved_view links from a public
+ * KIMDIS detail page. Open Data often omits these until later (or forever).
+ */
+export const parsePublicUiRelatedActs = (
+  html: string,
+  sourceAdam: string,
+): PublicUiRelatedAct[] => {
+  const source = sourceAdam.trim().toUpperCase();
+  const byAdam = new Map<string, PublicUiRelatedAct>();
+
+  const invitationSection =
+    /Αφορά την Πρόσκληση-Προκήρυξη-Διακήρυξη με Μοναδικό Αριθμό[\s\S]{0,2500}/i.exec(
+      html,
+    )?.[0] ?? "";
+  for (const match of invitationSection.matchAll(ADAM_TOKEN_RE)) {
+    const adam = match[0]!.toUpperCase();
+    if (adam === source) continue;
+    const recordType = recordTypeFromAdam(adam);
+    if (!recordType) continue;
+    byAdam.set(adam, { adam, recordType, invitationLink: recordType === "PROC" });
+  }
+
+  for (const match of html.matchAll(
+    /class="approved_view"[^>]*>([\s\S]*?)<\/a>/gi,
+  )) {
+    const inner = match[1] ?? "";
+    for (const adamMatch of inner.matchAll(ADAM_TOKEN_RE)) {
+      const adam = adamMatch[0]!.toUpperCase();
+      if (adam === source) continue;
+      const recordType = recordTypeFromAdam(adam);
+      if (!recordType) continue;
+      const prev = byAdam.get(adam);
+      byAdam.set(adam, {
+        adam,
+        recordType,
+        invitationLink:
+          prev?.invitationLink === true ||
+          (recordType === "PROC" && invitationSection.includes(adam)),
+      });
+    }
+  }
+
+  return [...byAdam.values()];
+};
+
+const parsePublicUiDetailTitle = (html: string): string | null => {
+  const header = pick(
+    html,
+    /class="[^"]*groupHeader[^"]*"[^>]*>([^<]{8,400})</i,
+  );
+  if (header?.trim()) return decodeHtml(header);
+  return null;
+};
+
+const parsePublicUiDetailAuthority = (html: string): string | null => {
+  const afterLabel =
+    /Αναθέτουσα Αρχή\/Αναθέτων Φορέας[\s\S]{0,800}?>([Α-ΩA-ZΆ-Ώ][^<]{3,120})</i.exec(
+      html,
+    );
+  if (afterLabel?.[1]?.trim()) return decodeHtml(afterLabel[1]);
+  return null;
+};
+
+export type PublicUiRelatedActsResult = {
+  ok: boolean;
+  sourceAdam: string;
+  related: PublicUiRelatedAct[];
+  /** Optional enrichment for discovered PROC/AWRD targets (best-effort). */
+  detailsByAdam: Record<
+    string,
+    { title: string | null; contractingAuthority: string | null }
+  >;
+  errorSafe?: string;
+};
+
+/**
+ * Fetch a public KIMDIS detail page and return officially linked related acts.
+ * Used by followed-thread monitoring when Open Data has not ingested the PROC yet.
+ */
+export const fetchKimdisPublicRelatedActs = async (input: {
+  referenceNumber: string;
+  timeoutMs?: number;
+  baseUrl?: string;
+  /** When true, also GET each linked PROC page for title/authority. */
+  enrichTargets?: boolean;
+}): Promise<PublicUiRelatedActsResult> => {
+  const sourceAdam = input.referenceNumber.trim().toUpperCase();
+  const baseUrl = (input.baseUrl || process.env.KIMDIS_BASE_URL || DEFAULT_BASE)
+    .trim()
+    .replace(/\/$/, "");
+  const timeoutMs = input.timeoutMs ?? 20_000;
+  const empty: PublicUiRelatedActsResult = {
+    ok: false,
+    sourceAdam,
+    related: [],
+    detailsByAdam: {},
+  };
+
+  if (!sourceAdam) {
+    return { ...empty, errorSafe: "public_ui_related_missing_adam" };
+  }
+
+  try {
+    const url = `${baseUrl}${HOME_PATH}?referenceNumber=${encodeURIComponent(sourceAdam)}`;
+    const res = await withTimeout(
+      fetch(url, {
+        headers: { Accept: "text/html", "User-Agent": USER_AGENT },
+      }),
+      timeoutMs,
+      "related_home",
+    );
+    const html = await res.text();
+    if (!res.ok) {
+      return {
+        ...empty,
+        errorSafe: `public_ui_http_${res.status}`,
+      };
+    }
+
+    const related = parsePublicUiRelatedActs(html, sourceAdam);
+    const detailsByAdam: PublicUiRelatedActsResult["detailsByAdam"] = {};
+
+    if (input.enrichTargets !== false) {
+      const targets = related.filter(
+        (row) => row.recordType === "PROC" || row.invitationLink,
+      );
+      for (const target of targets.slice(0, 5)) {
+        try {
+          const targetUrl = `${baseUrl}${HOME_PATH}?referenceNumber=${encodeURIComponent(target.adam)}`;
+          const targetRes = await withTimeout(
+            fetch(targetUrl, {
+              headers: { Accept: "text/html", "User-Agent": USER_AGENT },
+            }),
+            timeoutMs,
+            "related_target",
+          );
+          const targetHtml = await targetRes.text();
+          if (!targetRes.ok) continue;
+          detailsByAdam[target.adam] = {
+            title: parsePublicUiDetailTitle(targetHtml),
+            contractingAuthority: parsePublicUiDetailAuthority(targetHtml),
+          };
+        } catch {
+          // Best-effort enrichment — keep the ADAM link even if detail fetch fails.
+        }
+      }
+    }
+
+    return { ok: true, sourceAdam, related, detailsByAdam };
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message.slice(0, 160)
+        : "public_ui_related_failed";
+    return { ...empty, errorSafe: message };
+  }
+};
