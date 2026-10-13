@@ -97,6 +97,16 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
   const signOut = useCallback(async () => {
     await authClient.signOut();
     setMe(null);
+    // TrialBanner dismissals are session-scoped — reset on logout.
+    try {
+      const prefix = "arc.trialBanner.dismissed.";
+      for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
+        const key = sessionStorage.key(i);
+        if (key?.startsWith(prefix)) sessionStorage.removeItem(key);
+      }
+    } catch {
+      // ignore
+    }
   }, []);
 
   const value = useMemo<SessionContextValue>(

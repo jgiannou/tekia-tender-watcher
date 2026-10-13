@@ -96,13 +96,24 @@ export const SubscriptionPage = () => {
 
   const currentLabel = useMemo(() => {
     if (!status) return "—";
-    if (activeLaunchPromo) return "Pro (προσφορά)";
+    if (activeLaunchPromo) return "Pro";
     if (status.planKey === "trial") return "Δοκιμή Pro";
     if (status.planKey === "free") return "Δωρεάν";
     if (status.planKey === "basic") return "Basic";
     if (status.planKey === "pro") return "Pro";
     return status.planKey;
   }, [status, activeLaunchPromo]);
+
+  const promoExpiryLabel = activeLaunchPromo && status?.launchPromo?.redemption?.expiresAt
+    ? new Date(status.launchPromo.redemption.expiresAt).toLocaleDateString(
+        "el-GR",
+        { day: "numeric", month: "long", year: "numeric" },
+      )
+    : null;
+  const promoDaysRemaining =
+    activeLaunchPromo && status?.launchPromo?.redemption?.daysRemaining != null
+      ? status.launchPromo.redemption.daysRemaining
+      : null;
 
   const priceFor = (plan: BillingCatalogPlan | undefined) => {
     if (!plan) return null;
@@ -287,21 +298,28 @@ export const SubscriptionPage = () => {
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Συνδρομή</h1>
           <p className="text-sm text-white/90 md:text-base">
             {activeLaunchPromo
-              ? "Το Pro είναι ενεργό μέσω προσφοράς γνωριμίας (30 ημέρες), χωρίς κάρτα και χωρίς αυτόματη χρέωση."
+              ? "Αποτελεσματικό πακέτο: Pro · Προωθητική δοκιμή (δωρεάν) · χωρίς αυτόματη χρέωση."
               : launchPromo?.canActivate
                 ? "Επιλέξτε το πακέτο που ταιριάζει στις ανάγκες σας. Διατίθεται προσφορά γνωριμίας: 30 ημέρες Pro δωρεάν, χωρίς κάρτα."
                 : "Επιλέξτε το πακέτο που ταιριάζει στις ανάγκες σας. Ξεκινήστε δωρεάν ή δοκιμάστε το Pro για 7 ημέρες, χωρίς κάρτα."}
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-semibold">
-              Το πακέτο σας: {currentLabel}
+              {activeLaunchPromo
+                ? `Αποτελεσματικό: ${currentLabel}`
+                : `Το πακέτο σας: ${currentLabel}`}
             </span>
-            {activeLaunchPromo && status?.launchPromo?.redemption?.expiresAt ? (
+            {activeLaunchPromo ? (
+              <span className="rounded-full border border-emerald-300/40 bg-emerald-400/15 px-3 py-1 text-xs font-semibold">
+                Δωρεάν προωθητική δοκιμή
+              </span>
+            ) : null}
+            {activeLaunchPromo && promoExpiryLabel ? (
               <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs">
-                Προσφορά έως{" "}
-                {new Date(
-                  status.launchPromo.redemption.expiresAt,
-                ).toLocaleDateString("el-GR")}
+                Έως {promoExpiryLabel}
+                {promoDaysRemaining != null
+                  ? ` · ${promoDaysRemaining} ημ.`
+                  : ""}
               </span>
             ) : status?.trialEndsAt && status.planKey === "trial" ? (
               <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs">
@@ -343,48 +361,65 @@ export const SubscriptionPage = () => {
       </section>
 
       {activeLaunchPromo && status?.launchPromo?.redemption ? (
-        <Card className="border-primary/35 bg-primary/5">
+        <Card className="border-emerald-500/30 bg-emerald-500/[0.05]">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Προσφορά Pro — 30 ημέρες</CardTitle>
+            <CardTitle className="text-base">
+              Το Pro σου είναι ενεργό — προωθητική δοκιμή
+            </CardTitle>
             <CardDescription>
-              Κατάσταση: Προωθητική δοκιμή · χωρίς μέθοδο πληρωμής · χωρίς αυτόματη χρέωση
+              Διαφέρει από πληρωμένη συνδρομή Pro · χωρίς μέθοδο πληρωμής · χωρίς
+              αυτόματη χρέωση
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div>
-                <div className="text-xs text-muted-foreground">Έναρξη</div>
-                <div className="font-medium">
-                  {new Date(
-                    status.launchPromo.redemption.activatedAt,
-                  ).toLocaleDateString("el-GR")}
+                <div className="text-xs text-muted-foreground">
+                  Αποτελεσματικό πακέτο
                 </div>
+                <div className="font-medium">Pro</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Κατάσταση</div>
+                <div className="font-medium">Δωρεάν προωθητική δοκιμή</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">Λήξη</div>
                 <div className="font-medium">
                   {new Date(
                     status.launchPromo.redemption.expiresAt,
-                  ).toLocaleDateString("el-GR")}
+                  ).toLocaleDateString("el-GR", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Απομένουν</div>
+                <div className="font-medium">
                   {status.launchPromo.redemption.daysRemaining != null
-                    ? ` · ${status.launchPromo.redemption.daysRemaining} ημ.`
-                    : ""}
+                    ? status.launchPromo.redemption.daysRemaining === 1
+                      ? "1 ημέρα"
+                      : `${status.launchPromo.redemption.daysRemaining} ημέρες`
+                    : "—"}
                 </div>
               </div>
             </div>
-            <p className="text-muted-foreground">
-              Το Pro είναι δωρεάν μέχρι{" "}
-              {new Date(
-                status.launchPromo.redemption.expiresAt,
-              ).toLocaleDateString("el-GR")}
-              . Δεν θα πραγματοποιηθεί χρέωση. Μετά θα συνεχίσεις στο Free Plan, εκτός αν
-              επιλέξεις συνδρομή.
-            </p>
+            <ul className="space-y-1 text-muted-foreground">
+              <li>• Χωρίς αυτόματη χρέωση και χωρίς κάρτα σε αρχείο.</li>
+              <li>• Μετά τη λήξη: Free Plan (τα δεδομένα σας διατηρούνται).</li>
+              <li>
+                • Μπορείτε οποιαδήποτε στιγμή να συνεχίσετε με πληρωμένο Pro —
+                ρητή αγορά μέσω Stripe.
+              </li>
+            </ul>
             <Button
+              variant="outline"
               disabled={busyKey === "pro"}
               onClick={() => void handleCheckout("pro")}
             >
-              Αναβάθμιση σε πληρωμένο Pro
+              Συνέχιση με πληρωμένο Pro
             </Button>
           </CardContent>
         </Card>
@@ -482,8 +517,12 @@ export const SubscriptionPage = () => {
                 <li key={feature}>• {feature}</li>
               ))}
             </ul>
-            {status?.planKey === "free" ? (
+            {status?.planKey === "free" && !activeLaunchPromo ? (
               <Badge variant="success">Το πακέτο σας</Badge>
+            ) : activeLaunchPromo ? (
+              <p className="text-xs text-muted-foreground">
+                Μετά τη λήξη της προσφοράς επιστρέφετε στο Free.
+              </p>
             ) : (
               <p className="text-xs text-muted-foreground">
                 Δωρεάν χρήση, χωρίς κάρτα.
@@ -511,6 +550,7 @@ export const SubscriptionPage = () => {
           const canTryPro =
             plan.key === "pro" && Boolean(status?.canStartProTrial);
           const onProTrial = status?.planKey === "trial";
+          const onPromoPro = activeLaunchPromo && plan.key === "pro";
           const proButtonDisabled =
             Boolean(busyKey) ||
             user?.emailVerified === false ||
@@ -640,13 +680,15 @@ export const SubscriptionPage = () => {
                           ? extraSeats > 0
                             ? `Αγορά Pro + ${extraSeats} θέσεις`
                             : "Ολοκλήρωση αγοράς Pro"
-                          : plan.key === "pro" && onProTrial
-                            ? "Αγορά Pro"
-                            : isCurrent
-                              ? "Το πακέτο σας"
-                              : canTryPro
-                                ? "Αγορά Pro χωρίς δοκιμή"
-                                : `Επιλογή ${plan.labelEl}`}
+                          : onPromoPro
+                            ? "Συνέχιση με πληρωμένο Pro"
+                            : plan.key === "pro" && onProTrial
+                              ? "Συνέχιση με πληρωμένο Pro"
+                              : isCurrent
+                                ? "Το πακέτο σας"
+                                : canTryPro
+                                  ? "Αγορά Pro χωρίς δοκιμή"
+                                  : `Επιλογή ${plan.labelEl}`}
                   </Button>
                 </div>
               </CardContent>
@@ -662,7 +704,7 @@ export const SubscriptionPage = () => {
             Με την εγγραφή σας αποκτάτε το δωρεάν πακέτο, χωρίς κάρτα και χωρίς χρονικό
             περιορισμό.{" "}
             {activeLaunchPromo
-              ? "Έχετε ενεργή προσφορά γνωριμίας Pro (30 ημέρες). Δεν απαιτείται κάρτα και δεν γίνεται αυτόματη χρέωση. Μετά τη λήξη συνεχίζετε με το Free, εκτός αν επιλέξετε συνδρομή."
+              ? "Έχετε ενεργή δωρεάν προωθητική δοκιμή Pro (όχι πληρωμένη συνδρομή). Δεν απαιτείται κάρτα και δεν γίνεται αυτόματη χρέωση. Μετά τη λήξη συνεχίζετε με το Free, εκτός αν επιλέξετε ρητά πληρωμένο Pro."
               : launchPromo?.canActivate
                 ? "Διατίθεται προσφορά γνωριμίας: 30 ημέρες Pro δωρεάν, χωρίς κάρτα και χωρίς αυτόματη χρέωση. Μετά τη λήξη συνεχίζετε με το Free."
                 : "Μπορείτε να δοκιμάσετε το Pro για 7 ημέρες. Αν δεν επιλέξετε συνδρομή, μετά τη δοκιμή συνεχίζετε με το δωρεάν πακέτο."}

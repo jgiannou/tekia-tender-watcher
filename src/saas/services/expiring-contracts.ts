@@ -14,6 +14,16 @@ export type ExpiringContractRow = {
   publicKimdisUrl: string | null;
 };
 
+export type ExpiringMatchBasis = "activities" | "watch_profiles" | "both" | "none";
+
+export type ExpiringContractsResult = {
+  count: number;
+  items: ExpiringContractRow[];
+  /** True only when org has CPV criteria derived from KAD and/or saved searches. */
+  matchingReady: boolean;
+  matchBasis: ExpiringMatchBasis;
+};
+
 export const expiringWindow = (now = new Date()): { from: Date; to: Date } => ({
   from: new Date(now.getTime() + 3 * MONTH_MS),
   to: new Date(now.getTime() + 9 * MONTH_MS),
@@ -25,8 +35,23 @@ const cpvOf = (cpvs: unknown): string | null => {
   return value || null;
 };
 
-const cpvMatches = (cpv: string | null, wanted: string[]): boolean => {
-  if (wanted.length === 0) return true;
+const normalizeCpvList = (values: unknown): string[] => {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const code = String(value ?? "")
+      .trim()
+      .replace(/\s/g, "");
+    if (code) seen.add(code);
+  }
+  return [...seen];
+};
+
+/**
+ * Empty wanted list must NOT match everything — that falsely personalizes a global count.
+ */
+export const cpvMatches = (cpv: string | null, wanted: string[]): boolean => {
+  if (wanted.length === 0) return false;
   if (!cpv) return false;
   const compact = cpv.replace(/\s/g, "");
   return wanted.some((code) => {
@@ -35,38 +60,87 @@ const cpvMatches = (cpv: string | null, wanted: string[]): boolean => {
   });
 };
 
+export const resolveExpiringMatchCriteria = (input: {
+  activities: Array<{ code?: string; description?: string }>;
+  watchProfileCpvs: string[];
+}): { wantedCpvs: string[]; matchingReady: boolean; matchBasis: ExpiringMatchBasis } => {
+  const activities = input.activities
+    .map((row) => ({
+      code: String(row.code ?? "").trim(),
+      description:
+        typeof row.description === "string" ? row.description : undefined,
+    }))
+    .filter((row) => row.code);
+  const fromActivities = suggestWatchInterestsFromKads(activities).cpvs.map(
+    (row) => row.code,
+  );
+  const fromProfiles = input.watchProfileCpvs
+    .map((code) => code.trim().replace(/\s/g, ""))
+    .filter(Boolean);
+
+  const wanted = new Set<string>([...fromActivities, ...fromProfiles]);
+  const wantedCpvs = [...wanted];
+  const hasActivities = fromActivities.length > 0;
+  const hasProfiles = fromProfiles.length > 0;
+  const matchBasis: ExpiringMatchBasis =
+    hasActivities && hasProfiles
+      ? "both"
+      : hasActivities
+        ? "activities"
+        : hasProfiles
+          ? "watch_profiles"
+          : "none";
+
+  return {
+    wantedCpvs,
+    matchingReady: wantedCpvs.length > 0,
+    matchBasis,
+  };
+};
+
 export const loadExpiringContracts = async (
   prisma: PrismaClient,
   input: {
     organizationId: string;
     list: boolean;
   },
-): Promise<{ count: number; items: ExpiringContractRow[] }> => {
+): Promise<ExpiringContractsResult> => {
   const settings = await prisma.organizationSettings.findUnique({
     where: { organizationId: input.organizationId },
     select: { activities: true },
   });
   const activities = Array.isArray(settings?.activities)
     ? (settings.activities as Array<{ code?: string; description?: string }>)
-        .map((row) => ({
-          code: String(row.code ?? "").trim(),
-          description:
-            typeof row.description === "string" ? row.description : undefined,
-        }))
-        .filter((row) => row.code)
     : [];
-  const suggestion = suggestWatchInterestsFromKads(activities);
-  const wantedCpvs = suggestion.cpvs.map((row) => row.code);
 
-  const profile = await prisma.watchProfile.findFirst({
+  const profiles = await prisma.watchProfile.findMany({
     where: { organizationId: input.organizationId, enabled: true },
-    select: { regions: true, includeUnclassifiedRegion: true },
+    select: {
+      cpvs: true,
+      regions: true,
+      includeUnclassifiedRegion: true,
+      createdAt: true,
+    },
     orderBy: { createdAt: "asc" },
   });
-  const regions = Array.isArray(profile?.regions)
-    ? profile.regions.map((value) => String(value))
+
+  const watchProfileCpvs = profiles.flatMap((profile) =>
+    normalizeCpvList(profile.cpvs),
+  );
+  const { wantedCpvs, matchingReady, matchBasis } = resolveExpiringMatchCriteria({
+    activities,
+    watchProfileCpvs,
+  });
+
+  if (!matchingReady) {
+    return { count: 0, items: [], matchingReady: false, matchBasis: "none" };
+  }
+
+  const regionSource = profiles[0];
+  const regions = Array.isArray(regionSource?.regions)
+    ? regionSource.regions.map((value) => String(value))
     : [];
-  const includeUnclassified = Boolean(profile?.includeUnclassifiedRegion);
+  const includeUnclassified = Boolean(regionSource?.includeUnclassifiedRegion);
 
   const window = expiringWindow();
   const rows = await prisma.tender.findMany({
@@ -100,7 +174,7 @@ export const loadExpiringContracts = async (
       }))
     : [];
 
-  return { count: matched.length, items };
+  return { count: matched.length, items, matchingReady: true, matchBasis };
 };
 
 export const regionOfNuts = toNuts2;

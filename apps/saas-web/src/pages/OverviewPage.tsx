@@ -7,6 +7,7 @@ import { CreateOrganizationDialog } from "@/components/CreateOrganizationDialog"
 import { PdfAction } from "@/components/PdfAction";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { PdfPreviewModal } from "@/components/PdfPreviewModal";
+import { ProfileSetupBanner } from "@/components/ProfileSetupBanner";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { InvitationIssuedBadge } from "@/components/InvitationIssuedBadge";
 import { ScoreBadge } from "@/components/ScoreBadge";
@@ -21,6 +22,14 @@ import {
 import { trackAnalyticsEvent } from "@/lib/analytics";
 import { attentionEventHref } from "@/lib/attention-routing";
 import { formatMatchReason } from "@/lib/matchReasons";
+import {
+  canEditOrganizationProfile,
+  getOrgProfileProgress,
+  profileBannerDismissKey,
+  readProfileBannerDismissed,
+  writeProfileBannerDismissed,
+  type OrgProfileProgress,
+} from "@/lib/org-profile";
 
 const OVERVIEW_OPPORTUNITY_PAGE_SIZE = 3;
 
@@ -96,7 +105,14 @@ export const OverviewPage = () => {
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const [ingestLabel, setIngestLabel] = useState<string | null>(null);
   const [ingestFresh, setIngestFresh] = useState(true);
+  const [expiringLoading, setExpiringLoading] = useState(true);
+  const [expiringError, setExpiringError] = useState(false);
   const [expiringCount, setExpiringCount] = useState<number | null>(null);
+  const [expiringMatchingReady, setExpiringMatchingReady] = useState(false);
+  const [profileProgress, setProfileProgress] = useState<OrgProfileProgress | null>(
+    null,
+  );
+  const [profileBannerDismissed, setProfileBannerDismissed] = useState(false);
 
   const load = async (opts?: { silent?: boolean }) => {
     if (!activeOrganization) {
@@ -106,27 +122,59 @@ export const OverviewPage = () => {
     // Keep previous overview painted during soft reloads / scan polling.
     if (!opts?.silent) setLoading(true);
     setError(null);
+    if (!opts?.silent) {
+      setExpiringLoading(true);
+      setExpiringError(false);
+    }
     try {
       const firstName = (user?.name || "").split(" ")[0] || null;
-      const [data, ingest, expiring] = await Promise.all([
+      const [data, ingest, expiring, settingsRes] = await Promise.all([
         saasApi.loadOverview(activeOrganization.id, firstName),
         saasApi.getIngestStatus(activeOrganization.id).catch(() => null),
-        saasApi.listExpiringContracts(activeOrganization.id).catch(() => null),
+        saasApi.listExpiringContracts(activeOrganization.id).then(
+          (row) => ({ ok: true as const, row }),
+          () => ({ ok: false as const, row: null }),
+        ),
+        saasApi.getSettings(activeOrganization.id).catch(() => null),
       ]);
       setOverview(data);
       setIngestLabel(ingest?.labelEl ?? null);
       setIngestFresh(ingest?.fresh ?? true);
-      setExpiringCount(expiring?.count ?? null);
+      if (expiring.ok && expiring.row) {
+        setExpiringCount(expiring.row.count);
+        setExpiringMatchingReady(Boolean(expiring.row.matchingReady));
+        setExpiringError(false);
+      } else {
+        setExpiringCount(null);
+        setExpiringMatchingReady(false);
+        setExpiringError(true);
+      }
+      setProfileProgress(
+        settingsRes ? getOrgProfileProgress(settingsRes.settings) : null,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης");
     } finally {
       setLoading(false);
+      setExpiringLoading(false);
     }
   };
 
   useEffect(() => {
     void load();
   }, [activeOrganization?.id, user?.name]);
+
+  useEffect(() => {
+    if (!activeOrganization || !user?.id) {
+      setProfileBannerDismissed(false);
+      return;
+    }
+    setProfileBannerDismissed(
+      readProfileBannerDismissed(
+        profileBannerDismissKey(user.id, activeOrganization.id),
+      ),
+    );
+  }, [activeOrganization?.id, user?.id]);
 
   // Keep the «Εκτελούμε…» banner honest while a scan is in flight.
   useEffect(() => {
@@ -196,10 +244,21 @@ export const OverviewPage = () => {
     overview.watchUsage.total === 0 &&
     overview.opportunities.length === 0 &&
     overview.metrics.monitoringActive === 0;
+  const canEditProfile = canEditOrganizationProfile(activeOrganization.role);
+  const showProfileBanner =
+    Boolean(profileProgress && !profileProgress.profileComplete) &&
+    !profileBannerDismissed;
   const digestAttention = overview.attention.filter(
     (event) => !event.readAt && event.type === "OPPORTUNITY_DIGEST",
   );
   const failedScanCount = overview.failedScanCount ?? 0;
+
+  const handleDismissProfileBanner = () => {
+    if (!activeOrganization || !user?.id) return;
+    const key = profileBannerDismissKey(user.id, activeOrganization.id);
+    writeProfileBannerDismissed(key);
+    setProfileBannerDismissed(true);
+  };
 
   const metrics: Array<{ label: string; value: number; href: string; hint: string }> = [
     {
@@ -277,22 +336,66 @@ export const OverviewPage = () => {
         </p>
       ) : null}
 
-      {expiringCount != null && expiringCount > 0 ? (
+      {showProfileBanner && profileProgress ? (
+        <ProfileSetupBanner
+          progress={profileProgress}
+          canEdit={canEditProfile}
+          onDismiss={canEditProfile ? handleDismissProfileBanner : undefined}
+        />
+      ) : null}
+
+      {expiringLoading ? (
+        <div
+          className="h-14 animate-pulse rounded-lg border border-border/60 bg-muted/30"
+          aria-hidden
+        />
+      ) : expiringError ? (
+        <Card>
+          <CardContent className="py-3 text-sm text-muted-foreground">
+            Δεν ήταν δυνατή η φόρτωση συμβάσεων που λήγουν. Δοκιμάστε ξανά αργότερα.
+          </CardContent>
+        </Card>
+      ) : !expiringMatchingReady ? (
+        showProfileBanner ? null : (
+          <Card>
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+              <div className="min-w-0 space-y-0.5">
+                <div className="font-medium">Ανακάλυψε συμβάσεις που σε αφορούν</div>
+                <p className="text-muted-foreground">
+                  Συμπλήρωσε τη δραστηριότητα της επιχείρησής σου για να εντοπίζουμε σχετικές
+                  συμβάσεις που πλησιάζουν στη λήξη τους.
+                </p>
+              </div>
+              {canEditProfile && profileProgress ? (
+                <Button size="sm" variant="outline" asChild>
+                  <Link to={profileProgress.setupPath}>Συμπλήρωση δραστηριότητας</Link>
+                </Button>
+              ) : null}
+            </CardContent>
+          </Card>
+        )
+      ) : expiringCount != null && expiringCount > 0 ? (
         <Card>
           <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
             <span>
               {expiringCount === 1
-                ? "1 σύμβαση σχετική με τη δραστηριότητά σας λήγει σε 3–9 μήνες."
-                : `${expiringCount} συμβάσεις σχετικές με τη δραστηριότητά σας λήγουν σε 3–9 μήνες.`}
+                ? "1 σχετική σύμβαση λήγει τους επόμενους 3–9 μήνες."
+                : `${expiringCount} σχετικές συμβάσεις λήγουν τους επόμενους 3–9 μήνες.`}
             </span>
             <Button size="sm" variant="outline" asChild>
               <Link to="/app/expiring-contracts">Προβολή</Link>
             </Button>
           </CardContent>
         </Card>
-      ) : null}
+      ) : (
+        <Card>
+          <CardContent className="py-3 text-sm text-muted-foreground">
+            Δεν εντοπίστηκαν σχετικές συμβάσεις που λήγουν τους επόμενους 3–9 μήνες.
+          </CardContent>
+        </Card>
+      )}
 
-      {isBrandNew ? (
+      {isBrandNew && !showProfileBanner ? (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Ξεκινήστε με ARC Tenders</CardTitle>
@@ -312,6 +415,18 @@ export const OverviewPage = () => {
             </Button>
           </CardContent>
         </Card>
+      ) : isBrandNew && showProfileBanner ? (
+        <p className="text-sm text-muted-foreground">
+          Μπορείτε επίσης να{" "}
+          <Link to="/app/search" className="underline underline-offset-2">
+            εξερευνήσετε το ΚΗΜΔΗΣ
+          </Link>{" "}
+          ή να{" "}
+          <Link to="/app/saved-searches" className="underline underline-offset-2">
+            δημιουργήσετε αποθηκευμένη αναζήτηση
+          </Link>{" "}
+          χωρίς να ολοκληρώσετε το προφίλ.
+        </p>
       ) : (
         <>
           <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">

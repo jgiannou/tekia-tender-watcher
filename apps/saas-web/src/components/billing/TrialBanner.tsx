@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { X } from "lucide-react";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { Button } from "@/components/ui/button";
 import { saasApi } from "@/lib/api";
@@ -14,6 +15,39 @@ type BannerState =
   | { kind: "trial"; trialEndsAt: string | null; promotional?: boolean }
   | { kind: "trial_expired"; trialEndsAt: string | null }
   | { kind: "free"; canStartProTrial: boolean; canStartLaunchPromo?: boolean };
+
+type BannerVariant = "promo_active" | "trial_active" | "trial_expired" | "free";
+
+const DISMISS_PREFIX = "arc.trialBanner.dismissed.";
+
+const dismissStorageKey = (
+  userId: string,
+  organizationId: string,
+  variant: BannerVariant,
+) => `${DISMISS_PREFIX}${userId}:${organizationId}:${variant}`;
+
+const readDismissed = (key: string): boolean => {
+  try {
+    return sessionStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const writeDismissed = (key: string) => {
+  try {
+    sessionStorage.setItem(key, "1");
+  } catch {
+    // ignore quota / private mode
+  }
+};
+
+const bannerVariant = (banner: BannerState): BannerVariant => {
+  if (banner.kind === "free") return "free";
+  if (banner.kind === "trial_expired") return "trial_expired";
+  if (banner.kind === "trial" && banner.promotional) return "promo_active";
+  return "trial_active";
+};
 
 const formatPrice = (amount: number) =>
   amount.toLocaleString("el-GR", {
@@ -31,19 +65,33 @@ const daysLeftLabel = (trialEndsAt: string | null): string | null => {
   return days === 1 ? "απομένει 1 ημέρα" : `απομένουν ${days} ημέρες`;
 };
 
+const DismissButton = ({ onClick }: { onClick: () => void }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+    aria-label="Κλείσιμο ειδοποίησης"
+  >
+    <X className="h-3.5 w-3.5" aria-hidden />
+  </button>
+);
+
 export const TrialBanner = () => {
   const { activeOrganization, user } = useSessionContext();
   const location = useLocation();
   const [banner, setBanner] = useState<BannerState | null>(null);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if (!activeOrganization) {
+    if (!activeOrganization || !user?.id) {
       setBanner(null);
+      setDismissed(false);
       return;
     }
     // Email verify is the primary CTA — don't stack a promo banner on top.
-    if (user?.emailVerified === false) {
+    if (user.emailVerified === false) {
       setBanner(null);
+      setDismissed(false);
       return;
     }
     let cancelled = false;
@@ -61,50 +109,83 @@ export const TrialBanner = () => {
         const status = entitlements.scanAccess?.status;
         const planKey =
           billing?.planKey ?? entitlements.scanAccess?.planKey ?? null;
+        // Paid Pro / Basic — no trial/promo banner.
+        if (
+          billing?.hasStripeSubscription ||
+          planKey === "pro" ||
+          planKey === "basic"
+        ) {
+          setBanner(null);
+          return;
+        }
+
+        let next: BannerState | null = null;
         if (status === "promo" || status === "trial") {
-          setBanner({
+          next = {
             kind: "trial",
             trialEndsAt:
               entitlements.scanAccess?.promo?.expiresAt ??
               entitlements.scanAccess.trialEndsAt ??
               null,
             promotional: status === "promo",
-          });
-          return;
-        }
-        if (status === "trial_expired") {
-          setBanner({
+          };
+        } else if (status === "trial_expired") {
+          next = {
             kind: "trial_expired",
             trialEndsAt: entitlements.scanAccess.trialEndsAt ?? null,
-          });
-          return;
-        }
-        if (planKey === "free" || status === "active") {
+          };
+        } else if (planKey === "free" || status === "active") {
           const isFree =
             planKey === "free" ||
-            (!billing?.hasStripeSubscription && planKey !== "basic" && planKey !== "pro");
-          if (!isFree) {
-            setBanner(null);
-            return;
+            (!billing?.hasStripeSubscription &&
+              planKey !== "basic" &&
+              planKey !== "pro");
+          if (isFree) {
+            next = {
+              kind: "free",
+              canStartProTrial: Boolean(billing?.canStartProTrial),
+              canStartLaunchPromo: Boolean(billing?.launchPromo?.canActivate),
+            };
           }
-          setBanner({
-            kind: "free",
-            canStartProTrial: Boolean(billing?.canStartProTrial),
-            canStartLaunchPromo: Boolean(billing?.launchPromo?.canActivate),
-          });
+        }
+
+        if (!next) {
+          setBanner(null);
+          setDismissed(false);
           return;
         }
-        setBanner(null);
+
+        const key = dismissStorageKey(
+          user.id,
+          activeOrganization.id,
+          bannerVariant(next),
+        );
+        setDismissed(readDismissed(key));
+        setBanner(next);
       } catch {
-        if (!cancelled) setBanner(null);
+        if (!cancelled) {
+          setBanner(null);
+          setDismissed(false);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [activeOrganization?.id, user?.emailVerified]);
+  }, [activeOrganization?.id, user?.id, user?.emailVerified]);
 
-  if (!banner) return null;
+  const handleDismiss = () => {
+    if (!banner || !user?.id || !activeOrganization?.id) return;
+    const key = dismissStorageKey(
+      user.id,
+      activeOrganization.id,
+      bannerVariant(banner),
+    );
+    writeDismissed(key);
+    setDismissed(true);
+  };
+
+  if (!banner || dismissed) return null;
   if (location.pathname.startsWith("/app/subscription")) return null;
 
   const basicPrice = formatPrice(MARKETING_PLANS.basic.priceMonthlyEur);
@@ -113,10 +194,11 @@ export const TrialBanner = () => {
     const launchPromo = Boolean(banner.canStartLaunchPromo);
     return (
       <div
-        className="mb-4 flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+        className="relative mb-4 flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 pr-10 sm:flex-row sm:items-center sm:justify-between"
         role="status"
         aria-live="polite"
       >
+        <DismissButton onClick={handleDismiss} />
         <div className="min-w-0 space-y-1">
           <p className="text-sm font-medium">
             {launchPromo
@@ -153,14 +235,59 @@ export const TrialBanner = () => {
   const expired = banner.kind === "trial_expired";
   const endsLabel =
     banner.trialEndsAt && !expired
-      ? new Date(banner.trialEndsAt).toLocaleDateString("el-GR")
+      ? new Date(banner.trialEndsAt).toLocaleDateString("el-GR", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
       : null;
   const promotional = banner.kind === "trial" && banner.promotional;
+
+  // Compact status banner for active promotional Pro — not a sales ad.
+  if (promotional && !expired) {
+    return (
+      <div
+        className="relative mb-4 flex flex-col gap-2.5 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.06] px-3.5 py-2.5 pr-10 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+        role="status"
+        aria-live="polite"
+      >
+        <DismissButton onClick={handleDismiss} />
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold tracking-tight text-foreground">
+              Το Pro σου είναι ενεργό!
+            </p>
+            <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+              30 ημέρες δωρεάν
+            </span>
+            {remaining ? (
+              <span className="text-[11px] text-muted-foreground">
+                {remaining}
+              </span>
+            ) : null}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {endsLabel
+              ? `Απολαμβάνεις όλες τις δυνατότητες Pro έως τις ${endsLabel}.`
+              : "Απολαμβάνεις όλες τις δυνατότητες Pro."}
+          </p>
+          <p className="text-xs text-muted-foreground/90">
+            Χωρίς αυτόματη χρέωση · Μετά συνεχίζεις στο Free
+          </p>
+        </div>
+        <Button asChild size="sm" variant="outline" className="shrink-0">
+          <Link to="/app/subscription" aria-label="Διαχείριση συνδρομής">
+            Διαχείριση συνδρομής
+          </Link>
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div
       className={cn(
-        "mb-4 flex flex-col gap-3 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+        "relative mb-4 flex flex-col gap-3 rounded-lg border px-4 py-3 pr-10 sm:flex-row sm:items-center sm:justify-between",
         expired
           ? "border-destructive/40 bg-destructive/5"
           : "border-primary/40 bg-primary/5",
@@ -168,54 +295,36 @@ export const TrialBanner = () => {
       role="status"
       aria-live="polite"
     >
+      <DismissButton onClick={handleDismiss} />
       <div className="min-w-0 space-y-1">
         <p className="text-sm font-medium">
-          {expired
-            ? "Η δοκιμή Pro έληξε"
-            : promotional
-              ? "Το Pro είναι ενεργό"
-              : "Είστε σε δοκιμή Pro"}
+          {expired ? "Η δοκιμή Pro έληξε" : "Είστε σε δοκιμή Pro"}
         </p>
         <p className="text-sm text-muted-foreground">
-          {expired
-            ? "Επιστρέφετε στο Free. Ενεργοποιήστε Basic ή Pro για vault, checklist και περισσότερες αναζητήσεις."
-            : promotional
-              ? [
-                  endsLabel
-                    ? `Το Pro είναι ενεργό δωρεάν μέχρι ${endsLabel}.`
-                    : "Το Pro είναι ενεργό δωρεάν.",
-                  "Δεν θα πραγματοποιηθεί αυτόματη χρέωση.",
-                  remaining,
-                ]
-                  .filter(Boolean)
-                  .join(" ")
-              : (
-                <>
-                  {[remaining, endsLabel ? `έως ${endsLabel}` : null]
-                    .filter(Boolean)
-                    .join(" · ") || "Pro preview."}{" "}
-                  Basic από{" "}
-                  <span className="font-semibold text-foreground">
-                    €{basicPrice}/μήνα
-                  </span>
-                  . {PRICING_TAX_LABEL}
-                </>
-              )}
+          {expired ? (
+            "Επιστρέφετε στο Free. Ενεργοποιήστε Basic ή Pro για vault, checklist και περισσότερες αναζητήσεις."
+          ) : (
+            <>
+              {[remaining, endsLabel ? `έως ${endsLabel}` : null]
+                .filter(Boolean)
+                .join(" · ") || "Pro preview."}{" "}
+              Basic από{" "}
+              <span className="font-semibold text-foreground">
+                €{basicPrice}/μήνα
+              </span>
+              . {PRICING_TAX_LABEL}
+            </>
+          )}
         </p>
       </div>
       <Button
         asChild
         size="sm"
         className="shrink-0"
-        variant={expired ? "destructive" : "default"}
+        variant={expired ? "destructive" : "outline"}
       >
-        <Link
-          to="/app/subscription"
-          aria-label={
-            promotional ? "Αναβάθμιση σε πληρωμένο Pro" : "Μετάβαση στις συνδρομές"
-          }
-        >
-          {promotional ? "Αναβάθμιση Pro" : "Δείτε τα πακέτα"}
+        <Link to="/app/subscription" aria-label="Μετάβαση στις συνδρομές">
+          {expired ? "Δείτε τα πακέτα" : "Διαχείριση συνδρομής"}
         </Link>
       </Button>
     </div>

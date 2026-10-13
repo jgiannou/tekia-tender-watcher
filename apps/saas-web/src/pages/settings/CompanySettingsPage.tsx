@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
+import { ProfileSetupBanner } from "@/components/ProfileSetupBanner";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { saasApi, type CompanyProfile, type OrgSettings } from "@/lib/api";
+import {
+  canEditOrganizationProfile,
+  getOrgProfileProgress,
+} from "@/lib/org-profile";
 
 export const CompanySettingsPage = () => {
   const { activeOrganization, gemiConfigured, refresh } = useSessionContext();
@@ -68,7 +73,14 @@ export const CompanySettingsPage = () => {
   }
   if (error) return <ErrorState description={error} onRetry={() => void load()} />;
 
+  const progress = settings ? getOrgProfileProgress(settings) : null;
+  const canEdit = canEditOrganizationProfile(activeOrganization.role);
+
   return (
+    <div className="space-y-4">
+      {progress && !progress.profileComplete ? (
+        <ProfileSetupBanner progress={progress} canEdit={canEdit} compact />
+      ) : null}
     <Card>
       <CardHeader>
         <CardTitle>Στοιχεία επιχείρησης</CardTitle>
@@ -160,5 +172,6 @@ export const CompanySettingsPage = () => {
         </div>
       </CardContent>
     </Card>
+    </div>
   );
 };

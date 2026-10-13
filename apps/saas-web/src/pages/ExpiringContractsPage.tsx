@@ -7,6 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 import { saasApi, type ExpiringContractRow } from "@/lib/api";
+import {
+  canEditOrganizationProfile,
+  getOrgProfileProgress,
+  type OrgProfileProgress,
+} from "@/lib/org-profile";
 
 const formatDate = (value: string) => {
   const date = new Date(value);
@@ -20,6 +25,10 @@ export const ExpiringContractsPage = () => {
   const [count, setCount] = useState(0);
   const [items, setItems] = useState<ExpiringContractRow[]>([]);
   const [listAvailable, setListAvailable] = useState(false);
+  const [matchingReady, setMatchingReady] = useState(false);
+  const [profileProgress, setProfileProgress] = useState<OrgProfileProgress | null>(
+    null,
+  );
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = async () => {
@@ -29,10 +38,17 @@ export const ExpiringContractsPage = () => {
     }
     setLoading(true);
     try {
-      const data = await saasApi.listExpiringContracts(activeOrganization.id);
+      const [data, settingsRes] = await Promise.all([
+        saasApi.listExpiringContracts(activeOrganization.id),
+        saasApi.getSettings(activeOrganization.id).catch(() => null),
+      ]);
       setCount(data.count);
       setItems(data.items);
       setListAvailable(data.listAvailable);
+      setMatchingReady(Boolean(data.matchingReady));
+      setProfileProgress(
+        settingsRes ? getOrgProfileProgress(settingsRes.settings) : null,
+      );
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης");
@@ -68,24 +84,51 @@ export const ExpiringContractsPage = () => {
     return <ErrorState description={error} onRetry={() => void load()} />;
   }
 
+  const canEdit = canEditOrganizationProfile(activeOrganization?.role);
+  const setupPath = profileProgress?.setupPath ?? "/app/setup?step=activities";
+
+  const title = !matchingReady
+    ? "Ανακάλυψε συμβάσεις που σε αφορούν"
+    : count === 0
+      ? "Δεν εντοπίστηκαν σχετικές συμβάσεις που λήγουν τους επόμενους 3–9 μήνες."
+      : count === 1
+        ? "1 σχετική σύμβαση λήγει τους επόμενους 3–9 μήνες."
+        : `${count} σχετικές συμβάσεις λήγουν τους επόμενους 3–9 μήνες.`;
+
+  const description = !matchingReady
+    ? "Συμπλήρωσε τη δραστηριότητα της επιχείρησής σου για να εντοπίζουμε σχετικές συμβάσεις που πλησιάζουν στη λήξη τους."
+    : "Παρακολουθήστε αυτές τις συμβάσεις για ενδεχόμενη νέα προκήρυξη μετά τη λήξη τους.";
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Συμβάσεις που λήγουν</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Συμβάσεις που λήγουν σε 3–9 μήνες και σχετίζονται με τη δραστηριότητα και την περιοχή σας.
+          Συμβάσεις που λήγουν σε 3–9 μήνες, όταν υπάρχουν κριτήρια αντιστοίχισης από δραστηριότητα
+          (ΚΑΔ) ή αποθηκευμένη αναζήτηση.
         </p>
       </div>
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">{count === 1 ? "1 σύμβαση σχετική με τη δραστηριότητά σας λήγει σε 3–9 μήνες." : `${count} συμβάσεις σχετικές με τη δραστηριότητά σας λήγουν σε 3–9 μήνες.`}</CardTitle>
-          <CardDescription>
-            Παρακολουθήστε αυτές τις συμβάσεις για ενδεχόμενη νέα προκήρυξη μετά τη λήξη τους.
-          </CardDescription>
+          <CardTitle className="text-base">{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
         </CardHeader>
         <CardContent>
-          {!listAvailable ? (
+          {!matchingReady ? (
+            <EmptyState
+              title="Λείπουν κριτήρια αντιστοίχισης"
+              description="Χωρίς ΚΑΔ/δραστηριότητα ή CPV από αποθηκευμένη αναζήτηση δεν εμφανίζουμε προσωποποιημένες συμβάσεις."
+              actionLabel={canEdit ? "Συμπλήρωση δραστηριότητας" : undefined}
+              onAction={
+                canEdit
+                  ? () => {
+                      window.location.href = setupPath;
+                    }
+                  : undefined
+              }
+            />
+          ) : !listAvailable ? (
             <EmptyState
               title="Η λίστα είναι σε Basic και Pro"
               description="Στο Δωρεάν βλέπετε μόνο το πλήθος. Αναβαθμίστε για λίστα και ένα κλικ Παρακολούθηση."
@@ -96,8 +139,8 @@ export const ExpiringContractsPage = () => {
             />
           ) : items.length === 0 ? (
             <EmptyState
-              title="Καμία σύμβαση στο παράθυρο"
-              description="Όταν η εισαγωγή ΚΗΜΔΗΣ έχει συμβάσεις με λήξη σε 3–9 μήνες στον ΚΑΔ/περιοχή σας, θα εμφανιστούν εδώ."
+              title="Καμία σχετική σύμβαση στο παράθυρο"
+              description="Όταν η εισαγωγή ΚΗΜΔΗΣ έχει συμβάσεις με λήξη σε 3–9 μήνες που ταιριάζουν στα κριτήριά σας, θα εμφανιστούν εδώ."
             />
           ) : (
             <ul className="space-y-3">

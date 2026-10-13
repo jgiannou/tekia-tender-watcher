@@ -923,6 +923,8 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       count: result.count,
       items: result.items,
       listAvailable: list,
+      matchingReady: result.matchingReady,
+      matchBasis: result.matchBasis,
     });
   });
 

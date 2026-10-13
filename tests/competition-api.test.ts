@@ -183,10 +183,12 @@ describe("competition SaaS API + Free gates", () => {
       count: number;
       items: unknown[];
       listAvailable: boolean;
+      matchingReady: boolean;
     }>(app, "/api/saas/expiring-contracts", { cookie, organizationId });
     expect(expiring.status).toBe(200);
     expect(expiring.json.listAvailable).toBe(false);
     expect(expiring.json.items).toEqual([]);
+    expect(expiring.json.matchingReady).toBe(true);
     expect(expiring.json.count).toBeGreaterThanOrEqual(0);
   });
 
@@ -243,19 +245,44 @@ describe("competition SaaS API + Free gates", () => {
       contractEndsAt: ends,
       contractingAuthority: "Δήμος",
     });
-    // Empty KAD list → no CPV filter (all contracts in the 3–9 month window match).
+    // Without KAD/CPV criteria, personalized matching must not claim global counts.
     await prisma.organizationSettings.update({
       where: { organizationId },
       data: { activities: [] },
+    });
+
+    const notReady = await authedJson<{
+      count: number;
+      items: Array<{ referenceNumber: string }>;
+      listAvailable: boolean;
+      matchingReady: boolean;
+      matchBasis: string;
+    }>(app, "/api/saas/expiring-contracts", { cookie, organizationId });
+    expect(notReady.status).toBe(200);
+    expect(notReady.json.listAvailable).toBe(true);
+    expect(notReady.json.matchingReady).toBe(false);
+    expect(notReady.json.matchBasis).toBe("none");
+    expect(notReady.json.count).toBe(0);
+    expect(notReady.json.items).toEqual([]);
+
+    await prisma.organizationSettings.update({
+      where: { organizationId },
+      data: {
+        activities: [{ code: "62.01", description: "Computer programming" }],
+      },
     });
 
     const expiring = await authedJson<{
       count: number;
       items: Array<{ referenceNumber: string }>;
       listAvailable: boolean;
+      matchingReady: boolean;
+      matchBasis: string;
     }>(app, "/api/saas/expiring-contracts", { cookie, organizationId });
     expect(expiring.status).toBe(200);
     expect(expiring.json.listAvailable).toBe(true);
+    expect(expiring.json.matchingReady).toBe(true);
+    expect(expiring.json.matchBasis).toBe("activities");
     expect(expiring.json.count).toBeGreaterThanOrEqual(1);
     expect(expiring.json.items.length).toBeGreaterThanOrEqual(1);
   });

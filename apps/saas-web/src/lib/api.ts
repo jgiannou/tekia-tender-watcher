@@ -2327,6 +2327,9 @@ export const saasApi = {
       count: number;
       items: ExpiringContractRow[];
       listAvailable: boolean;
+      /** False when org lacks KAD→CPV or saved-search CPV criteria — never treat count as personalized. */
+      matchingReady: boolean;
+      matchBasis: "activities" | "watch_profiles" | "both" | "none";
     }>("/api/saas/expiring-contracts", { organizationId }),
   getIngestStatus: (organizationId: string) =>
     request<IngestStatus>("/api/saas/ingest/status", { organizationId }),
