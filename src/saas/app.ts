@@ -2061,6 +2061,8 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     );
     const result = await monitorFollowedThreads(deps.prisma, {
       enablePublicUiDiscovery: true,
+      maxPublicUiDiscoveries: 5,
+      publicUiTimeoutMs: 8_000,
     });
     return c.json({ result });
   });

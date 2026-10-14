@@ -313,13 +313,21 @@ export const runSharedKimdisIngest = async (
     const items = dedupeKimdisItems(recent.items);
     await persistActs(prisma, items);
     await matchSharedIngestActs(prisma, items);
-    // Public UI catches REQ→PROC links Open Data still omits (common for
-    // targeted invitations visible under «Άμεσα συνδεδεμένες πράξεις»).
-    await monitorFollowedThreads(prisma, { enablePublicUiDiscovery: true });
+    // Public UI catches REQ→PROC links Open Data still omits — but each scrape
+    // is multi-second JSF work on the same process as HTTP. Keep a tiny budget
+    // so the site/app stay responsive; round-robin continues next cycle.
+    await monitorFollowedThreads(prisma, {
+      enablePublicUiDiscovery: true,
+      maxPublicUiDiscoveries: 2,
+      publicUiTimeoutMs: 8_000,
+    });
     const { discoverOpportunityRelatedProcs } = await import(
       "./discover-opportunity-related-procs.js"
     );
-    await discoverOpportunityRelatedProcs(prisma);
+    await discoverOpportunityRelatedProcs(prisma, {
+      limit: 2,
+      timeoutMs: 8_000,
+    });
     const { monitorTedFollowedNotices } = await import("./monitor-ted-notices.js");
     await monitorTedFollowedNotices(prisma);
     await notifyUrgentDeadlines(prisma);

@@ -83,6 +83,13 @@ export const monitorFollowedThreads = async (
      * Opt-in (shared ingest enables it) so unit tests stay offline by default.
      */
     enablePublicUiDiscovery?: boolean;
+    /**
+     * Cap public-UI scrapes per call. Unbounded scrapes freeze the API process
+     * (same Node event loop as HTTP). Shared ingest should keep this tiny.
+     */
+    maxPublicUiDiscoveries?: number;
+    /** Per-REQ public UI timeout (default 8s when capped / ingest path). */
+    publicUiTimeoutMs?: number;
     /** Injected public-UI discovery for tests. */
     discoverFromPublicUi?: typeof discoverRelatedProcsFromPublicUi;
     /** Restrict to these canonical source tender IDs (Hot Watch batching). */
@@ -91,6 +98,16 @@ export const monitorFollowedThreads = async (
 ): Promise<MonitorFollowedThreadsResult> => {
   const enableLocalDiscovery = options?.enableLocalDiscovery !== false;
   const enablePublicUiDiscovery = options?.enablePublicUiDiscovery === true;
+  const maxPublicUiDiscoveries = enablePublicUiDiscovery
+    ? Math.max(
+        0,
+        options?.maxPublicUiDiscoveries ?? Number.POSITIVE_INFINITY,
+      )
+    : 0;
+  const publicUiTimeoutMs = Math.max(
+    1_000,
+    Math.min(options?.publicUiTimeoutMs ?? 8_000, 20_000),
+  );
   const discoverFromPublicUi =
     options?.discoverFromPublicUi ?? discoverRelatedProcsFromPublicUi;
   const active = await prisma.organizationTender.findMany({
@@ -112,11 +129,23 @@ export const monitorFollowedThreads = async (
     },
   });
 
-  const sourceIds = [...new Set(active.map((row) => row.tenderId))];
+  const prioritySourceIds = new Set(
+    active
+      .filter((row) => Boolean(row.monitoringPriority))
+      .map((row) => row.tenderId),
+  );
+  const sourceIds = [...new Set(active.map((row) => row.tenderId))].sort(
+    (a, b) => {
+      const ap = prioritySourceIds.has(a) ? 0 : 1;
+      const bp = prioritySourceIds.has(b) ? 0 : 1;
+      return ap - bp;
+    },
+  );
   const now = new Date();
   let relatedLinksUpserted = 0;
   let attentionEventsCreated = 0;
   let upstreamOperations = 0;
+  let publicUiDiscoveriesUsed = 0;
 
   for (const sourceTenderId of sourceIds) {
     upstreamOperations += 1;
@@ -208,7 +237,12 @@ export const monitorFollowedThreads = async (
 
     // 3b) Public UI «συνδεδεμένες πράξεις» when no confirmed/likely PROC yet.
     // Open Data frequently lags the public registry for targeted invitations.
-    if (enablePublicUiDiscovery && sourceTender?.recordType === "REQ") {
+    // Hard-capped: each scrape is multi-second JSF work on the API process.
+    if (
+      enablePublicUiDiscovery &&
+      publicUiDiscoveriesUsed < maxPublicUiDiscoveries &&
+      sourceTender?.recordType === "REQ"
+    ) {
       const hasStrongProc = candidates.some(
         (candidate) =>
           candidate.targetTender.recordType === "PROC" &&
@@ -216,7 +250,10 @@ export const monitorFollowedThreads = async (
             candidate.confidence === "LIKELY"),
       );
       if (!hasStrongProc) {
-        const fromUi = await discoverFromPublicUi(sourceTender);
+        publicUiDiscoveriesUsed += 1;
+        const fromUi = await discoverFromPublicUi(sourceTender, {
+          timeoutMs: publicUiTimeoutMs,
+        });
         for (const discovery of fromUi) {
           const target = await upsertCanonicalTender(prisma, {
             referenceNumber: discovery.target.referenceNumber,

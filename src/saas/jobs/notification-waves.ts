@@ -39,8 +39,13 @@ export const runHourlyNotificationWave = async (
     organizationIds: dueOrgIds,
   });
 
-  // Discover related acts globally (incl. public-UI linked PROCs), then email due orgs.
-  await monitorFollowedThreads(prisma, { enablePublicUiDiscovery: true });
+  // Discover related acts globally (incl. a small public-UI budget).
+  // Unbounded JSF scrapes here freeze the API for minutes every hour.
+  await monitorFollowedThreads(prisma, {
+    enablePublicUiDiscovery: true,
+    maxPublicUiDiscoveries: 5,
+    publicUiTimeoutMs: 8_000,
+  });
 
   const opportunityFlush = await flushOpportunityEmailDigests(prisma, {
     organizationIds: dueOrgIds,
