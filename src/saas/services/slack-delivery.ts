@@ -382,8 +382,16 @@ export const queueAttentionSlack = (
     const priority = outboxPriorityForUrgency(urgency, event.type);
 
     if (event.type === "NEW_OPPORTUNITY") {
-      // Pro high-match (and other IMPORTANT/URGENT) bypass the 15-minute batch.
+      // Pro: score ≥ Slack immediate threshold (and IMPORTANT/URGENT) skip the 15m batch.
       if (shouldBypassSlackOpportunityBatch(urgencyInput)) {
+        const { SLACK_IMMEDIATE_OPPORTUNITY_SCORE_THRESHOLD } = await import(
+          "./notification-urgency.js"
+        );
+        const slackPriority =
+          urgency === "NORMAL" &&
+          (score ?? 0) >= SLACK_IMMEDIATE_OPPORTUNITY_SCORE_THRESHOLD
+            ? 90
+            : priority;
         const { job, created } = await enqueueSaasJob(prisma, {
           type: SAAS_JOB_TYPES.slackAttention,
           deliveryKey: `SLACK:${connection.id}:${event.id}`,
@@ -393,7 +401,7 @@ export const queueAttentionSlack = (
             attentionEventId: event.id,
             urgency,
           },
-          priority,
+          priority: slackPriority,
           maxAttempts: 8,
         });
         if (created) {

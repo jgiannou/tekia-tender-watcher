@@ -7,6 +7,12 @@ import { HIGH_MATCH_SCORE_THRESHOLD } from "../plans/catalog.js";
 
 export type NotificationUrgency = "NORMAL" | "IMPORTANT" | "URGENT";
 
+/**
+ * Pro Slack: send NEW_OPPORTUNITY immediately at/above this score.
+ * Email high-match immediacy stays at HIGH_MATCH_SCORE_THRESHOLD (70).
+ */
+export const SLACK_IMMEDIATE_OPPORTUNITY_SCORE_THRESHOLD = 40;
+
 export const OUTBOX_PRIORITY = {
   PRIORITY_RELATED_PROC: 100,
   IMMEDIATE_HIGH_MATCH: 90,
@@ -67,10 +73,19 @@ export const outboxPriorityForUrgency = (
   return OUTBOX_PRIORITY.DIGEST;
 };
 
-/** Pro high-match / priority events skip the 15-minute Slack opportunity batch. */
+/** Pro / urgent events skip the 15-minute Slack opportunity batch. */
 export const shouldBypassSlackOpportunityBatch = (
   input: UrgencyInput,
 ): boolean => {
   const urgency = resolveNotificationUrgency(input);
-  return urgency === "URGENT" || urgency === "IMPORTANT";
+  if (urgency === "URGENT" || urgency === "IMPORTANT") return true;
+  // Pro saved-search matches: Slack immediate from score 40+ (email still 70+).
+  if (
+    input.type === "NEW_OPPORTUNITY" &&
+    input.planImmediateNewOpportunity &&
+    (input.score ?? 0) >= SLACK_IMMEDIATE_OPPORTUNITY_SCORE_THRESHOLD
+  ) {
+    return true;
+  }
+  return false;
 };

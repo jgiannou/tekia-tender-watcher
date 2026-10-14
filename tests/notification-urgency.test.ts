@@ -26,13 +26,29 @@ describe("notification urgency", () => {
     expect(shouldBypassSlackOpportunityBatch(input)).toBe(true);
   });
 
-  it("keeps normal NEW_OPPORTUNITY batched", () => {
-    const input = {
+  it("Pro Slack sends NEW_OPPORTUNITY immediately from score 40+", () => {
+    const at40 = {
       type: "NEW_OPPORTUNITY",
       score: 40,
       planImmediateNewOpportunity: true,
     };
-    expect(resolveNotificationUrgency(input)).toBe("NORMAL");
+    expect(resolveNotificationUrgency(at40)).toBe("NORMAL");
+    expect(shouldBypassSlackOpportunityBatch(at40)).toBe(true);
+
+    const below = {
+      type: "NEW_OPPORTUNITY",
+      score: 39,
+      planImmediateNewOpportunity: true,
+    };
+    expect(shouldBypassSlackOpportunityBatch(below)).toBe(false);
+  });
+
+  it("keeps Basic NEW_OPPORTUNITY batched even at score 40+", () => {
+    const input = {
+      type: "NEW_OPPORTUNITY",
+      score: 55,
+      planImmediateNewOpportunity: false,
+    };
     expect(shouldBypassSlackOpportunityBatch(input)).toBe(false);
   });
 
