@@ -177,9 +177,9 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
       );
     }
 
-    // Product email outbox + Free weekly digest scheduler (Europe/Athens).
+    // Product email outbox — odd minutes so it does not pile onto shared ingest.
     // Urgent jobs also wake the worker immediately via signalOutboxWake.
-    const outboxExpression = "*/2 * * * *";
+    const outboxExpression = "1-59/2 * * * *";
     if (cron.validate(outboxExpression)) {
       cron.schedule(
         outboxExpression,
@@ -204,30 +204,35 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
       );
     }
 
-    // Pro Priority Monitoring — every 2 minutes (aligned with shared ingest).
-    // Local/canonical checks only; public UI discovery stays on shared ingest.
+    // Pro Priority Monitoring — same cadence as ingest, but delayed 30s so the
+    // API is not hit by ingest + hot-watch + outbox in the same second.
     const hotWatchExpression = "*/2 * * * *";
     if (cron.validate(hotWatchExpression)) {
       cron.schedule(
         hotWatchExpression,
         () => {
-          void runPriorityHotWatch(getPrisma())
-            .then((summary) => {
-              if (summary.dueMonitors > 0 || summary.attentionEventsCreated > 0) {
-                console.log("[hot-watch]", JSON.stringify(summary));
-              }
-            })
-            .catch((error) => {
-              console.error(
-                "priority hot watch error:",
-                error instanceof Error ? error.message : error,
-              );
-            });
+          setTimeout(() => {
+            void runPriorityHotWatch(getPrisma())
+              .then((summary) => {
+                if (
+                  summary.dueMonitors > 0 ||
+                  summary.attentionEventsCreated > 0
+                ) {
+                  console.log("[hot-watch]", JSON.stringify(summary));
+                }
+              })
+              .catch((error) => {
+                console.error(
+                  "priority hot watch error:",
+                  error instanceof Error ? error.message : error,
+                );
+              });
+          }, 30_000).unref();
         },
         { timezone: "Europe/Athens" },
       );
       console.log(
-        `saas priority hot watch: cron ${hotWatchExpression} Europe/Athens`,
+        `saas priority hot watch: cron ${hotWatchExpression} (+30s) Europe/Athens`,
       );
     }
 

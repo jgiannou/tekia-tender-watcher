@@ -15,10 +15,17 @@ export const discoverOpportunityRelatedProcs = async (
   prisma: PrismaClient,
   options?: {
     limit?: number;
+    /** Public-UI scrape timeout per REQ (keep low — runs on the API process). */
+    timeoutMs?: number;
     discoverFromPublicUi?: typeof discoverRelatedProcsFromPublicUi;
   },
 ): Promise<{ checked: number; linksUpserted: number }> => {
-  const limit = Math.max(1, Math.min(options?.limit ?? 25, 50));
+  // Default was 25 × ~20s JSF scrapes every shared-ingest cycle and froze HTTP.
+  const limit = Math.max(1, Math.min(options?.limit ?? 2, 10));
+  const timeoutMs = Math.max(
+    1_000,
+    Math.min(options?.timeoutMs ?? 8_000, 20_000),
+  );
   const discoverFromPublicUi =
     options?.discoverFromPublicUi ?? discoverRelatedProcsFromPublicUi;
 
@@ -62,7 +69,7 @@ export const discoverOpportunityRelatedProcs = async (
 
     let discoveries: DiscoveredRelatedAct[] = [];
     try {
-      discoveries = await discoverFromPublicUi(sourceTender);
+      discoveries = await discoverFromPublicUi(sourceTender, { timeoutMs });
     } catch {
       discoveries = [];
     }
