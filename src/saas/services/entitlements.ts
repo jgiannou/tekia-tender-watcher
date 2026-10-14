@@ -173,6 +173,7 @@ export const getEntitlementsView = async (
         emailCadence: plan.emailCadence,
         immediateFollowedDevelopments: plan.immediateFollowedDevelopments,
         immediateNewOpportunity: plan.immediateNewOpportunity,
+        priorityMonitoring: plan.priorityMonitoring,
         deadlineRadar: plan.deadlineRadar,
         participationChecklist: plan.participationChecklist,
         expiringContractList: plan.expiringContractList,

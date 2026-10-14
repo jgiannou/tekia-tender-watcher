@@ -276,6 +276,9 @@ export type IngestStatus = {
   lastError: string | null;
   lastStartedAt: string | null;
   fresh: boolean;
+  stale?: boolean;
+  health?: "HEALTHY" | "DEGRADED" | "STALE";
+  ageSeconds?: number | null;
   labelEl: string;
 };
 
@@ -714,6 +717,7 @@ export type SaasEntitlementsResponse = {
     companyVault?: boolean;
     outreachWorkflow?: boolean;
     submissionWorkflow?: boolean;
+    priorityMonitoring?: boolean;
     tenderWorkspace?: boolean;
   };
   usage: {
@@ -750,6 +754,9 @@ export type SaasEntitlementsResponse = {
       tenderWorkspace?: boolean;
       documentVersioning?: boolean;
       inAppNotifications?: boolean;
+      immediateNewOpportunity?: boolean;
+      immediateFollowedDevelopments?: boolean;
+      priorityMonitoring?: boolean;
     };
   };
   catalog?: Array<{
@@ -931,6 +938,13 @@ export type TenderWorkflow = {
   nextAction: WorkflowNextAction;
   expectedDevelopment: WorkflowExpectedDevelopment;
   outreach: WorkflowOutreach | null;
+  priorityMonitoring?: {
+    active: boolean;
+    since: string | null;
+    reason: string | null;
+    lastCheckAt: string | null;
+    nextCheckAt: string | null;
+  } | null;
   latestSubmission: {
     id: string;
     submittedAt: string;

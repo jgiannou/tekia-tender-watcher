@@ -897,14 +897,29 @@ export const createSaasApp = (deps: SaasAppDeps) => {
       resolveOrgId(c),
     );
     const status = await getSharedIngestStatus(deps.prisma);
+    const age = status.ageSeconds;
+    const ageLabel =
+      age == null
+        ? null
+        : age < 60
+          ? `πριν ${age}″`
+          : `πριν ${Math.round(age / 60)}′`;
+    const labelEl = !status.lastSuccessAt
+      ? "Δεν έχει ολοκληρωθεί ακόμη έλεγχος ΚΗΜΔΗΣ"
+      : status.stale
+        ? `⚠ Καθυστέρηση ενημέρωσης · Τελευταίος επιτυχής έλεγχος: ${ageLabel ?? "—"}`
+        : status.health === "DEGRADED"
+          ? `● Ενημέρωση σε εξέλιξη · Τελευταίος επιτυχής έλεγχος: ${ageLabel ?? "—"}`
+          : `● Ενημερωμένο · Τελευταίος επιτυχής έλεγχος: ${ageLabel ?? "—"}`;
     return c.json({
       lastSuccessAt: status.lastSuccessAt,
       lastError: status.lastError || null,
       lastStartedAt: status.lastStartedAt,
       fresh: status.fresh,
-      labelEl: status.lastSuccessAt
-        ? `Τελευταίος έλεγχος: ${new Date(status.lastSuccessAt).toLocaleString("el-GR", { timeZone: "Europe/Athens", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`
-        : "Δεν έχει ολοκληρωθεί ακόμη έλεγχος ΚΗΜΔΗΣ",
+      stale: status.stale,
+      health: status.health,
+      ageSeconds: status.ageSeconds,
+      labelEl,
     });
   });
 
@@ -1693,6 +1708,37 @@ export const createSaasApp = (deps: SaasAppDeps) => {
     });
     return c.json({ organizationTender: row });
   });
+
+  app.post(
+    "/api/saas/tenders/:tenderId/priority-monitoring",
+    requireSession,
+    async (c) => {
+      const organizationId = resolveOrgId(c)!;
+      const body = z
+        .object({ enabled: z.boolean() })
+        .parse(await c.req.json().catch(() => ({})));
+      const orgTender = await deps.prisma.organizationTender.findFirst({
+        where: {
+          organizationId,
+          tenderId: c.req.param("tenderId"),
+        },
+        select: { id: true },
+      });
+      if (!orgTender) {
+        return c.json({ error: "organization_tender_not_found" }, 404);
+      }
+      const { setPriorityMonitoringManual } = await import(
+        "./services/priority-monitoring.js"
+      );
+      const result = await setPriorityMonitoringManual(deps.prisma, {
+        userId: c.get("userId"),
+        organizationId,
+        organizationTenderId: orgTender.id,
+        enabled: body.enabled,
+      });
+      return c.json({ priorityMonitoring: result });
+    },
+  );
 
   app.post(
     "/api/saas/tenders/:tenderId/outreach",

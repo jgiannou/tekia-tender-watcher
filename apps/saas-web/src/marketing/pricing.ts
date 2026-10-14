@@ -32,8 +32,8 @@ export const MARKETING_PLANS = {
     priceMonthlyEur: 0,
     priceYearlyEur: 0,
     positioningEl:
-      "Βρείτε ευκαιρίες για την επιχείρησή σας και παρακολουθήστε έως 5 διαγωνισμούς δωρεάν.",
-    shortPositioningEl: "Ξεκινήστε δωρεάν και οργανώστε τη συμμετοχή σας όταν είστε έτοιμοι.",
+      "Βρείτε δημόσιες ευκαιρίες που ταιριάζουν στην επιχείρησή σας.",
+    shortPositioningEl: "Βρείτε τις ευκαιρίες.",
     includedSeats: 1,
     maxSeatsSelfService: 1,
     extraSeatMonthlyEur: null as number | null,
@@ -74,8 +74,8 @@ export const MARKETING_PLANS = {
     priceMonthlyEur: 4.99,
     priceYearlyEur: 49,
     positioningEl:
-      "Για επαγγελματίες και μικρές επιχειρήσεις που θέλουν να οργανώνουν τη συμμετοχή τους σε δημόσιους διαγωνισμούς.",
-    shortPositioningEl: "Για επαγγελματίες και μικρές επιχειρήσεις.",
+      "Παρακολουθήστε διαγωνισμούς και οργανώστε τη συμμετοχή σας.",
+    shortPositioningEl: "Παρακολουθήστε και οργανώστε τη συμμετοχή σας.",
     includedSeats: 1,
     maxSeatsSelfService: 1,
     extraSeatMonthlyEur: null as number | null,
@@ -117,9 +117,8 @@ export const MARKETING_PLANS = {
     badge: "Προτεινόμενο",
     priceMonthlyEur: 9.99,
     priceYearlyEur: 99,
-    positioningEl:
-      "Για επιχειρήσεις που παρακολουθούν περισσότερους διαγωνισμούς και συνεργάζονται ως ομάδα.",
-    shortPositioningEl: "Για περισσότερους διαγωνισμούς και συνεργασία με την ομάδα σας.",
+    positioningEl: "Μη χάσετε κρίσιμη εξέλιξη.",
+    shortPositioningEl: "Μη χάσετε κρίσιμη εξέλιξη.",
     includedSeats: 3,
     maxSeatsSelfService: 20,
     extraSeatMonthlyEur: 2.49,
@@ -148,7 +147,9 @@ export const MARKETING_PLANS = {
       "Έως 100 διαγωνισμοί σε παρακολούθηση",
       "2 GB χώρου για εταιρικά έγγραφα",
       "Συγκεντρωτικά email έως 6 φορές την ημέρα",
-      "Επιλογή άμεσων email και για νέες ευκαιρίες υψηλής συνάφειας",
+      "Παρακολούθηση προτεραιότητας σε διαγωνισμούς που σας ενδιαφέρουν",
+      "Άμεση ειδοποίηση για σχετικές προσκλήσεις και κρίσιμες εξελίξεις",
+      "Άμεσες ειδοποιήσεις για νέες ευκαιρίες υψηλής συνάφειας",
       "Συγκεντρωτική προβολή επερχόμενων προθεσμιών",
       "Προηγμένα φίλτρα αναζήτησης",
       "Εξυπηρέτηση κατά προτεραιότητα",
@@ -160,12 +161,12 @@ export type MarketingPlanKey = keyof typeof MARKETING_PLANS;
 
 /** Insert Slack bullet into Basic/Pro lists only when the feature is live. */
 export const marketingFullBullets = (key: MarketingPlanKey): string[] => {
-  const base = [...MARKETING_PLANS[key].fullBullets];
+  const base: string[] = [...MARKETING_PLANS[key].fullBullets];
   if (!slackMarketingEnabled() || key === "free") return base;
   const after =
     key === "basic"
       ? "Επιλογή άμεσων email για σημαντικές εξελίξεις στους διαγωνισμούς που παρακολουθείτε"
-      : "Επιλογή άμεσων email και για νέες ευκαιρίες υψηλής συνάφειας";
+      : "Άμεσες ειδοποιήσεις για νέες ευκαιρίες υψηλής συνάφειας";
   const idx = base.indexOf(after);
   if (idx < 0) return [...base, SLACK_NOTIFICATIONS_FEATURE_EL];
   return [

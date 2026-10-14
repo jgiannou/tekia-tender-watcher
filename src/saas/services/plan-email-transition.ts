@@ -17,6 +17,10 @@ export const onTransitionToFreeEmailPolicy = async (
     prisma,
     organizationId,
   );
+  const { downgradePriorityMonitoringForOrg } = await import(
+    "./priority-monitoring.js"
+  );
+  await downgradePriorityMonitoringForOrg(prisma, organizationId);
   const { onSlackPlanDowngradeToFree } = await import("./slack-connection.js");
   await onSlackPlanDowngradeToFree(prisma, organizationId);
   const { onGooglePlanDowngradeToFree } = await import("./google-connection.js");

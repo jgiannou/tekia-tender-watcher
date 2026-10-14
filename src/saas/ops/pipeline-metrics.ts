@@ -1,5 +1,6 @@
 import type { PrismaClient, SaasJobStatus } from "@prisma/client";
 import { getOutboxMetrics } from "../jobs/outbox.js";
+import { getHotWatchStatus } from "../jobs/priority-hot-watch.js";
 import { getSharedIngestStatus } from "../jobs/shared-ingest.js";
 import { resolveSaasStorageRoot } from "../storage/document-storage.js";
 
@@ -87,6 +88,7 @@ export type PipelineMetrics = {
   ingest: Awaited<ReturnType<typeof getSharedIngestStatus>> & {
     successAgeMs: number | null;
   };
+  hotWatch: Awaited<ReturnType<typeof getHotWatchStatus>>;
   email: {
     last24h: Record<string, number>;
     last7d: Record<string, number>;
@@ -124,6 +126,7 @@ export const collectPipelineMetrics = async (
     dueNow,
     recentFailed,
     ingest,
+    hotWatch,
     email24h,
     email7d,
     storageAgg,
@@ -171,6 +174,7 @@ export const collectPipelineMetrics = async (
       },
     }),
     getSharedIngestStatus(prisma),
+    getHotWatchStatus(prisma),
     prisma.notificationDelivery.groupBy({
       by: ["status"],
       where: { createdAt: { gte: dayAgo }, channel: "EMAIL" },
@@ -226,12 +230,19 @@ export const collectPipelineMetrics = async (
     : null;
 
   const alerts: PipelineMetrics["alerts"] = [];
-  if (!ingest.fresh) {
+  if (ingest.stale || ingest.health === "STALE") {
     alerts.push({
       level: "warn",
       code: "ingest_stale",
       messageEl:
-        "Ο έλεγχος ΚΗΜΔΗΣ δεν ολοκληρώθηκε επιτυχώς τα τελευταία 10 λεπτά.",
+        "Ο έλεγχος ΚΗΜΔΗΣ δεν ολοκληρώθηκε επιτυχώς τα τελευταία 5 λεπτά.",
+    });
+  } else if (ingest.health === "DEGRADED") {
+    alerts.push({
+      level: "info",
+      code: "ingest_degraded",
+      messageEl:
+        "Ο έλεγχος ΚΗΜΔΗΣ είναι σε υποβαθμισμένη κατάσταση (όριο σελίδων ή μερική κάλυψη).",
     });
   }
   if (ingest.completeness?.pageBudgetExhausted) {
@@ -299,6 +310,7 @@ export const collectPipelineMetrics = async (
       ...ingest,
       successAgeMs,
     },
+    hotWatch,
     email: {
       last24h: emailLast24h,
       last7d: emailLast7d,
@@ -327,7 +339,9 @@ export const pipelineHealthSummary = (pipeline: PipelineMetrics) => ({
   outboxFailed: pipeline.outbox.failed,
   outboxLagMs: pipeline.outbox.oldestPendingAgeMs,
   ingestFresh: pipeline.ingest.fresh,
+  ingestHealth: pipeline.ingest.health,
   ingestSuccessAgeMs: pipeline.ingest.successAgeMs,
+  hotWatchActive: pipeline.hotWatch?.activePriorityMonitors ?? 0,
   emailFailed24h: pipeline.email.failed24h,
   alertCount: pipeline.alerts.length,
   alertLevels: {

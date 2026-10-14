@@ -85,6 +85,8 @@ export const monitorFollowedThreads = async (
     enablePublicUiDiscovery?: boolean;
     /** Injected public-UI discovery for tests. */
     discoverFromPublicUi?: typeof discoverRelatedProcsFromPublicUi;
+    /** Restrict to these canonical source tender IDs (Hot Watch batching). */
+    sourceTenderIds?: string[];
   },
 ): Promise<MonitorFollowedThreadsResult> => {
   const enableLocalDiscovery = options?.enableLocalDiscovery !== false;
@@ -95,6 +97,9 @@ export const monitorFollowedThreads = async (
     where: {
       monitoringActive: true,
       monitoringStoppedAt: null,
+      ...(options?.sourceTenderIds?.length
+        ? { tenderId: { in: options.sourceTenderIds } }
+        : {}),
     },
     select: {
       id: true,
@@ -102,6 +107,7 @@ export const monitorFollowedThreads = async (
       tenderId: true,
       following: true,
       pipelineStage: true,
+      monitoringPriority: true,
       outreachLedger: { select: { status: true } },
     },
   });
@@ -336,6 +342,7 @@ export const monitorFollowedThreads = async (
       const touchedOrgs = new Set<string>();
       for (const orgTender of affected) {
         try {
+          const priorityMonitoring = orgTender.monitoringPriority === "PRIORITY";
           const event = await prisma.organizationAttentionEvent.create({
             data: {
               organizationId: orgTender.organizationId,
@@ -358,6 +365,14 @@ export const monitorFollowedThreads = async (
                 sourceTenderTitle: sourceTender?.title ?? null,
                 sourceReferenceNumber: sourceTender?.referenceNumber ?? null,
                 sourceRecordType: sourceTender?.recordType ?? null,
+                priorityMonitoring,
+                priority: priorityMonitoring ? "URGENT" : "IMPORTANT",
+                sourceFirstSeenAt:
+                  candidate.targetTender.firstSeenAt?.toISOString?.() ??
+                  (candidate.targetTender.firstSeenAt
+                    ? new Date(candidate.targetTender.firstSeenAt).toISOString()
+                    : null),
+                matchedAt: now.toISOString(),
               },
             },
           });

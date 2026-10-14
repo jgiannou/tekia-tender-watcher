@@ -987,9 +987,24 @@ export const TenderDetailPage = () => {
                     {workflow?.stageLabel}
                   </div>
                   <div>
-                    <span className="text-muted-foreground">Παρακολούθηση: </span>
-                    {monitoringActive ? "Ενεργή" : "Ανενεργή"}
+                    <span className="text-muted-foreground">
+                      {workflow?.priorityMonitoring?.active
+                        ? "Παρακολούθηση Προτεραιότητας: "
+                        : "Παρακολούθηση: "}
+                    </span>
+                    {workflow?.priorityMonitoring?.active
+                      ? "Ενεργή · Έλεγχος υψηλής συχνότητας"
+                      : monitoringActive
+                        ? "Ενεργή"
+                        : "Ανενεργή"}
                   </div>
+                  {workflow?.priorityMonitoring?.active &&
+                  workflow.priorityMonitoring.lastCheckAt ? (
+                    <div>
+                      <span className="text-muted-foreground">Τελευταίος έλεγχος: </span>
+                      {formatDateTime(workflow.priorityMonitoring.lastCheckAt)}
+                    </div>
+                  ) : null}
                   <div>
                     <span className="text-muted-foreground">
                       Εκδήλωση ενδιαφέροντος:{" "}

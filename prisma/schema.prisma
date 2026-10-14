@@ -794,6 +794,18 @@ enum MonitoringReason {
   SUBMISSION_RECORDED
 }
 
+/// Pro Priority Monitoring intensity (Παρακολούθηση Προτεραιότητας).
+enum MonitoringPriority {
+  NORMAL
+  PRIORITY
+}
+
+enum PriorityMonitoringReason {
+  FOLLOW
+  OUTREACH
+  MANUAL
+}
+
 /// Organization workflow only. FOLLOWING and monitoring are separate booleans.
 enum PipelineStage {
   NEW
@@ -841,6 +853,15 @@ model OrganizationTender {
   latestRelatedActAt      DateTime?
   lastMonitoringNotificationAt DateTime?
 
+  /// Pro-only high-frequency related-act watch (Hot Watch). Shared ingest stays global.
+  monitoringPriority           MonitoringPriority @default(NORMAL)
+  priorityMonitoringSince      DateTime?
+  priorityMonitoringReason     PriorityMonitoringReason?
+  lastPriorityCheckAt          DateTime?
+  nextPriorityCheckAt          DateTime?
+  priorityMonitoringLastError  String?
+  priorityMonitoringErrorCount Int                @default(0)
+
   notifiedAt              DateTime?
   assignedMemberId        String?
   notes                   String?
@@ -883,6 +904,8 @@ model OrganizationTender {
   @@index([organizationId, relevanceStatus])
   @@index([organizationId, following])
   @@index([organizationId, monitoringActive])
+  @@index([organizationId, monitoringPriority])
+  @@index([monitoringPriority, nextPriorityCheckAt])
   @@index([organizationId, pipelineStage])
   @@index([organizationId, notifiedAt])
   @@index([watchProfileId])

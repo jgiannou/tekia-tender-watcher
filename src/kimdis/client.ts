@@ -150,6 +150,7 @@ export type KimdisClient = {
     path: string,
     body: unknown,
     page: number,
+    sort?: string,
   ) => Promise<KimdisPage<T>>;
   downloadAttachment: (recordType: "REQ" | "PROC", adam: string) => Promise<Buffer | null>;
   publicUrl: (adam: string) => string;
@@ -199,8 +200,8 @@ export const createKimdisClient = (
         timeoutMs,
       ),
 
-    searchOpenDataPage: (path, body, page) =>
-      fetchSearchPage(normalizedBase, path, body, page, timeoutMs),
+    searchOpenDataPage: (path, body, page, sort) =>
+      fetchSearchPage(normalizedBase, path, body, page, timeoutMs, sort),
 
     downloadAttachment: async (recordType, adam) => {
       const path =

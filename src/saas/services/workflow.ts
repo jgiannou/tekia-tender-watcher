@@ -443,6 +443,13 @@ export const getOrganizationTenderWorkflow = async (
             outreachPayload(organizationTender.outreachLedger)?.documents ?? [],
         }
       : null,
+    priorityMonitoring: {
+      active: organizationTender.monitoringPriority === "PRIORITY",
+      since: organizationTender.priorityMonitoringSince?.toISOString() ?? null,
+      reason: organizationTender.priorityMonitoringReason ?? null,
+      lastCheckAt: organizationTender.lastPriorityCheckAt?.toISOString() ?? null,
+      nextCheckAt: organizationTender.nextPriorityCheckAt?.toISOString() ?? null,
+    },
     workspaceDocumentCount,
     stageLabel: pipelineLabel(organizationTender.pipelineStage),
   };

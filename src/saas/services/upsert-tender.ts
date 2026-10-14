@@ -1,4 +1,5 @@
 import type { PrismaClient, RecordType } from "@prisma/client";
+import { kimdisDateOrNull } from "../kimdis/parse-kimdis-datetime.js";
 import type { KimdisSearchItem } from "./kimdis-search.js";
 import { followTender } from "./follow.js";
 
@@ -8,6 +9,10 @@ export const upsertTenderFromKimdisItem = async (
 ) => {
   const now = new Date();
   const recordType = item.recordType as RecordType;
+  const submissionDate = kimdisDateOrNull(item.submissionDate);
+  const signedDate = kimdisDateOrNull(item.signedDate);
+  const finalSubmissionDate = kimdisDateOrNull(item.finalSubmissionDate);
+  const contractEndsAt = kimdisDateOrNull(item.contractEndsAt);
   return prisma.tender.upsert({
     where: { referenceNumber: item.adam },
     create: {
@@ -15,18 +20,16 @@ export const upsertTenderFromKimdisItem = async (
       recordType,
       title: item.title || null,
       contractingAuthority: item.contractingAuthority || null,
-      submissionDate: item.submissionDate ? new Date(item.submissionDate) : null,
-      signedDate: item.signedDate ? new Date(item.signedDate) : null,
-      finalSubmissionDate: item.finalSubmissionDate
-        ? new Date(item.finalSubmissionDate)
-        : null,
+      submissionDate,
+      signedDate,
+      finalSubmissionDate,
       budgetWithoutVat: item.budgetWithoutVat,
       budgetWithVat: item.budgetWithVat,
       cpvs: item.cpvs,
       officialPdfUrl: item.officialPdfUrl,
       publicKimdisUrl: item.publicKimdisUrl,
       nutsCode: item.nutsCode ?? null,
-      contractEndsAt: item.contractEndsAt ? new Date(item.contractEndsAt) : null,
+      contractEndsAt,
       awardAmount: item.awardAmount ?? null,
       winnerName: item.winnerName ?? null,
       diavgeiaAda: item.diavgeiaAda ?? null,
@@ -39,20 +42,16 @@ export const upsertTenderFromKimdisItem = async (
     update: {
       title: item.title || null,
       contractingAuthority: item.contractingAuthority || null,
-      submissionDate: item.submissionDate ? new Date(item.submissionDate) : null,
-      signedDate: item.signedDate ? new Date(item.signedDate) : null,
-      finalSubmissionDate: item.finalSubmissionDate
-        ? new Date(item.finalSubmissionDate)
-        : null,
+      submissionDate,
+      signedDate,
+      finalSubmissionDate,
       budgetWithoutVat: item.budgetWithoutVat,
       budgetWithVat: item.budgetWithVat,
       cpvs: item.cpvs,
       officialPdfUrl: item.officialPdfUrl,
       publicKimdisUrl: item.publicKimdisUrl,
       ...(item.nutsCode ? { nutsCode: item.nutsCode } : {}),
-      ...(item.contractEndsAt
-        ? { contractEndsAt: new Date(item.contractEndsAt) }
-        : {}),
+      ...(contractEndsAt ? { contractEndsAt } : {}),
       ...(item.awardAmount != null ? { awardAmount: item.awardAmount } : {}),
       ...(item.winnerName ? { winnerName: item.winnerName } : {}),
       ...(item.diavgeiaAda

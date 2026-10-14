@@ -350,7 +350,59 @@ export const queueAttentionSlack = (
     });
     if (!decision.allow) return;
 
+    const fullEvent = await prisma.organizationAttentionEvent.findUnique({
+      where: { id: event.id },
+      select: { metadata: true, type: true },
+    });
+    const meta =
+      fullEvent?.metadata && typeof fullEvent.metadata === "object"
+        ? (fullEvent.metadata as Record<string, unknown>)
+        : {};
+    const score = typeof meta.score === "number" ? meta.score : null;
+    const priorityMonitoring = meta.priorityMonitoring === true;
+    const plan = (await import("../plans/catalog.js")).entitlementsForPlanKey(
+      planKey,
+    );
+    const {
+      shouldBypassSlackOpportunityBatch,
+      outboxPriorityForUrgency,
+      resolveNotificationUrgency,
+    } = await import("./notification-urgency.js");
+    const urgencyInput = {
+      type: event.type,
+      score,
+      priorityMonitoring,
+      invitationStatus:
+        typeof meta.ourInvitationStatus === "string"
+          ? meta.ourInvitationStatus
+          : null,
+      planImmediateNewOpportunity: plan.immediateNewOpportunity,
+    };
+    const urgency = resolveNotificationUrgency(urgencyInput);
+    const priority = outboxPriorityForUrgency(urgency, event.type);
+
     if (event.type === "NEW_OPPORTUNITY") {
+      // Pro high-match (and other IMPORTANT/URGENT) bypass the 15-minute batch.
+      if (shouldBypassSlackOpportunityBatch(urgencyInput)) {
+        const { job, created } = await enqueueSaasJob(prisma, {
+          type: SAAS_JOB_TYPES.slackAttention,
+          deliveryKey: `SLACK:${connection.id}:${event.id}`,
+          organizationId: event.organizationId,
+          payload: {
+            connectionId: connection.id,
+            attentionEventId: event.id,
+            urgency,
+          },
+          priority,
+          maxAttempts: 8,
+        });
+        if (created) {
+          const { signalOutboxWake } = await import("../jobs/outbox-wake.js");
+          signalOutboxWake({ reason: "slack_immediate_opportunity" });
+        }
+        void job;
+        return;
+      }
       const windowKey = opportunityBatchWindowKey();
       const availableAt = new Date(Number(windowKey) + SLACK_OPPORTUNITY_BATCH_MS);
       await enqueueSaasJob(prisma, {
@@ -372,17 +424,23 @@ export const queueAttentionSlack = (
       event.type === "DEADLINE_APPROACHING" ||
       decision.prefKind === "relatedActOnFollowed"
     ) {
-      await enqueueSaasJob(prisma, {
+      const { job, created } = await enqueueSaasJob(prisma, {
         type: SAAS_JOB_TYPES.slackAttention,
         deliveryKey: `SLACK:${connection.id}:${event.id}`,
         organizationId: event.organizationId,
         payload: {
           connectionId: connection.id,
           attentionEventId: event.id,
+          urgency,
         },
-        priority: 55,
+        priority,
         maxAttempts: 8,
       });
+      if (created && (urgency === "URGENT" || urgency === "IMPORTANT")) {
+        const { signalOutboxWake } = await import("../jobs/outbox-wake.js");
+        signalOutboxWake({ reason: "slack_urgent_related" });
+      }
+      void job;
     }
   })().catch((error) => {
     console.error(

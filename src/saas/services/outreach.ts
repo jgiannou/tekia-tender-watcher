@@ -194,5 +194,15 @@ export const recordOutreachSent = async (
   });
 
   await pruneAttentionEventsForOrg(prisma, input.organizationId);
+
+  // Pro: Outreach SENT auto-enables Παρακολούθηση Προτεραιότητας.
+  const { enablePriorityMonitoring } = await import("./priority-monitoring.js");
+  await enablePriorityMonitoring(prisma, {
+    organizationId: input.organizationId,
+    organizationTenderId: updated.id,
+    reason: "OUTREACH",
+    userId: input.userId,
+  });
+
   return updated;
 };

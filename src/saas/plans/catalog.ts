@@ -66,6 +66,11 @@ export type PlanEntitlements = {
   immediateFollowedDevelopments: boolean;
   /** Optional immediate email for high-match new opportunities (Pro). */
   immediateNewOpportunity: boolean;
+  /**
+   * Pro-only: Παρακολούθηση Προτεραιότητας (Hot Watch) for outreach / manual priority follows.
+   * Does NOT change shared KIMDIS ingest cadence — intensifies related-act checks only.
+   */
+  priorityMonitoring: boolean;
   opportunityMatching: boolean;
   matchScore: boolean;
   matchReasons: boolean;
@@ -181,8 +186,7 @@ export const BASIC_PLAN: PlanEntitlements = {
   planKey: PLAN_KEYS.basic,
   label: "Basic",
   labelEl: "Basic",
-  positioning:
-    "For professionals and small businesses that want to organize participation in public tenders.",
+  positioning: "Monitor tenders and organize your participation.",
   priceMonthlyEur: 4.99,
   priceYearlyEur: 49,
   includedSeats: 1,
@@ -198,6 +202,7 @@ export const BASIC_PLAN: PlanEntitlements = {
   emailCadence: "DIGEST_HOURS",
   immediateFollowedDevelopments: true,
   immediateNewOpportunity: false,
+  priorityMonitoring: false,
   opportunityMatching: true,
   matchScore: true,
   matchReasons: true,
@@ -223,7 +228,7 @@ export const BASIC_PLAN: PlanEntitlements = {
   googleDrive: true,
   googleSheets: true,
   positioningEl:
-    "Για επαγγελματίες και μικρές επιχειρήσεις που θέλουν να οργανώνουν τη συμμετοχή τους σε δημόσιους διαγωνισμούς.",
+    "Παρακολουθήστε διαγωνισμούς και οργανώστε τη συμμετοχή σας.",
   featuresEl: [
     "1 χρήστης",
     "Έως 5 ενεργές αποθηκευμένες αναζητήσεις",
@@ -253,9 +258,9 @@ export const FREE_PLAN: PlanEntitlements = {
   label: "Free",
   labelEl: "Δωρεάν",
   positioning:
-    "Find opportunities for your business and follow up to 5 tenders for free.",
+    "Find public opportunities that match your business.",
   positioningEl:
-    "Βρείτε ευκαιρίες για την επιχείρησή σας και παρακολουθήστε έως 5 διαγωνισμούς δωρεάν.",
+    "Βρείτε δημόσιες ευκαιρίες που ταιριάζουν στην επιχείρησή σας.",
   priceMonthlyEur: 0,
   priceYearlyEur: 0,
   maxActiveWatchProfiles: 1,
@@ -267,6 +272,7 @@ export const FREE_PLAN: PlanEntitlements = {
   emailCadence: "WEEKLY",
   immediateFollowedDevelopments: false,
   immediateNewOpportunity: false,
+  priorityMonitoring: false,
   outreachWorkflow: false,
   submissionWorkflow: false,
   companyVault: false,
@@ -303,7 +309,7 @@ export const PRO_PLAN: PlanEntitlements = {
   label: "Pro",
   labelEl: "Pro",
   positioning:
-    "For businesses that monitor more tenders and collaborate as a team.",
+    "Do not miss a critical procurement development.",
   priceMonthlyEur: 9.99,
   priceYearlyEur: 99,
   includedSeats: 3,
@@ -319,6 +325,7 @@ export const PRO_PLAN: PlanEntitlements = {
   emailCadence: "DIGEST_HOURS",
   immediateFollowedDevelopments: true,
   immediateNewOpportunity: true,
+  priorityMonitoring: true,
   opportunityMatching: true,
   matchScore: true,
   matchReasons: true,
@@ -343,15 +350,16 @@ export const PRO_PLAN: PlanEntitlements = {
   googleCalendar: true,
   googleDrive: true,
   googleSheets: true,
-  positioningEl:
-    "Για επιχειρήσεις που παρακολουθούν περισσότερους διαγωνισμούς και συνεργάζονται ως ομάδα.",
+  positioningEl: "Μη χάσετε κρίσιμη εξέλιξη.",
   featuresEl: [
     "3 χρήστες",
     "Έως 15 ενεργές αποθηκευμένες αναζητήσεις",
     "Έως 100 διαγωνισμοί σε παρακολούθηση",
     "2 GB χώρου για εταιρικά έγγραφα",
     "Συγκεντρωτικά email έως 6 φορές την ημέρα",
-    "Επιλογή άμεσων email και για νέες ευκαιρίες υψηλής συνάφειας",
+    "Παρακολούθηση προτεραιότητας σε διαγωνισμούς που σας ενδιαφέρουν",
+    "Άμεση ειδοποίηση για σχετικές προσκλήσεις και κρίσιμες εξελίξεις",
+    "Άμεσες ειδοποιήσεις για νέες ευκαιρίες υψηλής συνάφειας",
     "Ειδοποιήσεις Slack σε 1 κανάλι της ομάδας σας",
     GOOGLE_CALENDAR_FEATURE_EL,
     GOOGLE_DRIVE_IMPORT_FEATURE_EL,
