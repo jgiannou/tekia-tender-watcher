@@ -8,7 +8,6 @@ import {
   Building2,
   Check,
   ChevronsUpDown,
-  FileSearch,
   FileText,
   FolderOpen,
   LayoutDashboard,
@@ -19,7 +18,6 @@ import {
   Search,
   Settings,
   Send,
-  CreditCard,
 } from "lucide-react";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { CreateOrganizationDialog } from "@/components/CreateOrganizationDialog";
@@ -68,27 +66,24 @@ const navSections: NavSection[] = [
     items: [{ to: "/app", label: "Επισκόπηση", icon: LayoutDashboard, end: true }],
   },
   {
-    title: "Εύρεση διαγωνισμών",
+    title: "Εύρεση",
     items: [
-      { to: "/app/search", label: "Αναζήτηση στο ΚΗΜΔΗΣ", icon: FileSearch },
+      { to: "/app/search", label: "Αναζήτηση", icon: Search },
       { to: "/app/opportunities", label: "Ευκαιρίες", icon: Radar },
-      { to: "/app/monitoring", label: "Παρακολουθούμενα", icon: Binoculars },
-      { to: "/app/expiring-contracts", label: "Συμβάσεις που λήγουν", icon: FileText },
       { to: "/app/saved-searches", label: "Αποθηκευμένες αναζητήσεις", icon: Bookmark },
+      { to: "/app/expiring-contracts", label: "Συμβάσεις που λήγουν", icon: FileText },
     ],
   },
   {
-    title: "Διαχείριση",
+    title: "Διαγωνισμοί",
     items: [
+      { to: "/app/monitoring", label: "Παρακολουθούμενα", icon: Binoculars },
       { to: "/app/submissions", label: "Υποβολές", icon: Send },
-      { to: "/app/documents", label: "Έγγραφα", icon: FolderOpen },
     ],
   },
   {
-    title: "Λογαριασμός",
-    items: [
-      { to: "/app/subscription", label: "Συνδρομή", icon: CreditCard },
-    ],
+    title: "Εταιρεία",
+    items: [{ to: "/app/documents", label: "Έγγραφα", icon: FolderOpen }],
   },
 ];
 
@@ -121,7 +116,7 @@ const prefetchRoute = (to: string) => {
 const titleForPath = (pathname: string): string => {
   if (pathname.startsWith("/app/settings")) return "Ρυθμίσεις";
   if (pathname.startsWith("/app/setup")) return "Ρύθμιση επιχείρησης";
-  if (pathname.startsWith("/app/search")) return "Αναζήτηση στο ΚΗΜΔΗΣ";
+  if (pathname.startsWith("/app/search")) return "Αναζήτηση";
   if (pathname.startsWith("/app/tenders/")) return "Δημοσίευση στο ΚΗΜΔΗΣ";
   if (pathname.startsWith("/app/opportunities")) return "Ευκαιρίες";
   if (pathname.startsWith("/app/monitoring")) return "Παρακολουθούμενα";
@@ -171,21 +166,23 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
           className="inline-flex items-center gap-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="ARC Tenders"
         >
-          <ArcMark className="h-8 w-8" />
+          <ArcMark className="h-7 w-7" />
           <div>
-            <div className="font-mono text-xs font-semibold tracking-tight">ARC</div>
+            <div className="font-mono text-[10px] font-semibold tracking-[0.12em] text-sidebar-muted">
+              ARC
+            </div>
             <div className="text-sm font-semibold leading-tight">Tenders</div>
           </div>
         </Link>
       </div>
 
-      <div className="px-3 pb-3">
+      <div className="px-3 pb-4">
         {/* modal=false avoids nested scroll-lock fighting the mobile Sheet */}
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex w-full items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent px-3 py-2 text-left text-sm hover:opacity-95"
+              className="flex w-full items-center gap-2 rounded-md bg-sidebar-accent/80 px-3 py-2 text-left text-sm transition-colors hover:bg-sidebar-accent"
               aria-label="Εναλλαγή οργανισμού"
             >
               <Building2 className="h-4 w-4 shrink-0 text-sidebar-muted" />
@@ -231,12 +228,12 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
       </div>
 
       <nav
-        className="flex flex-1 flex-col gap-4 overflow-y-auto px-2 pb-2"
+        className="flex flex-1 flex-col gap-5 overflow-y-auto px-2 pb-2"
         aria-label="Κύρια πλοήγηση"
       >
         {navSections.map((section) => (
           <div key={section.title}>
-            <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">
+            <div className="px-3 pb-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-sidebar-muted/80">
               {section.title}
             </div>
             <div className="flex flex-col gap-0.5">
@@ -253,14 +250,15 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
                         item.to === "/app/monitoring" &&
                         viewingFollowedTender &&
                         location.pathname.startsWith("/app/tenders/");
+                      const active = isActive || highlightFollowedTender;
                       return cn(
-                        "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-                        (isActive || highlightFollowedTender) &&
-                          "bg-sidebar-accent font-medium text-sidebar-foreground",
+                        "flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-sidebar-muted transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+                        active &&
+                          "arc-nav-active bg-sidebar-accent font-medium text-sidebar-foreground",
                       );
                     }}
                   >
-                  <item.icon className="h-4 w-4 shrink-0" />
+                  <item.icon className="h-3.5 w-3.5 shrink-0 opacity-70" />
                   <span className="truncate">{item.label}</span>
                 </NavLink>
               ))}
@@ -269,7 +267,7 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
         ))}
       </nav>
 
-      <div className="mt-auto space-y-1 border-t border-sidebar-border p-3">
+      <div className="mt-auto space-y-1 border-t border-sidebar-border/80 p-3">
         <NavLink
           to="/app/settings/profile"
           onClick={handleNav}
@@ -277,12 +275,13 @@ const SidebarPanel = ({ onNavigate, onCreateOrganization }: SidebarPanelProps) =
           onFocus={() => prefetchRoute("/app/settings/profile")}
           className={({ isActive }) =>
             cn(
-              "flex items-center gap-2 rounded-md px-3 py-2 text-sm text-sidebar-muted transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-              isActive && "bg-sidebar-accent font-medium text-sidebar-foreground",
+              "flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-sidebar-muted transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-foreground",
+              isActive &&
+                "arc-nav-active bg-sidebar-accent font-medium text-sidebar-foreground",
             )
           }
         >
-          <Settings className="h-4 w-4 shrink-0" />
+          <Settings className="h-3.5 w-3.5 shrink-0 opacity-70" />
           Ρυθμίσεις
         </NavLink>
 
@@ -408,7 +407,7 @@ export const AppShell = () => {
         noindex
       />
       {/* Desktop sidebar — unchanged above lg */}
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-sidebar-border lg:flex">
+      <aside className="sticky top-0 hidden h-screen w-[15.5rem] shrink-0 flex-col border-r border-sidebar-border lg:flex">
         <SidebarPanel onCreateOrganization={handleCreateOrganization} />
       </aside>
 
@@ -434,11 +433,11 @@ export const AppShell = () => {
       </Sheet>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 border-b border-border/80 bg-background/80 backdrop-blur">
-          <div className="flex h-14 items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:px-6">
+        <header className="sticky top-0 z-20 border-b border-border/50 bg-background/75 backdrop-blur-md">
+          <div className="flex h-13 items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:px-6" style={{ height: "3.25rem" }}>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
               className="shrink-0 lg:hidden"
               onClick={() => setMobileNavOpen(true)}
@@ -447,7 +446,7 @@ export const AppShell = () => {
               <Menu className="h-4 w-4" />
             </Button>
             <div className="min-w-0 flex-1">
-              <div className="hidden text-xs text-muted-foreground sm:block">
+              <div className="hidden text-[11px] text-muted-foreground sm:block">
                 Χώρος εργασίας
               </div>
               <h1 className="truncate text-sm font-semibold tracking-tight">
@@ -455,9 +454,9 @@ export const AppShell = () => {
               </h1>
             </div>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="hidden gap-2 md:inline-flex"
+              className="hidden gap-2 text-muted-foreground md:inline-flex"
               onClick={() =>
                 window.dispatchEvent(
                   new KeyboardEvent("keydown", { key: "k", metaKey: true }),
@@ -466,7 +465,7 @@ export const AppShell = () => {
             >
               <Search className="h-3.5 w-3.5" />
               Αναζήτηση
-              <kbd className="rounded border border-border bg-muted px-1.5 font-mono text-[10px]">
+              <kbd className="rounded border border-border/60 bg-muted/50 px-1.5 font-mono text-[10px]">
                 ⌘K
               </kbd>
             </Button>
@@ -487,7 +486,7 @@ export const AppShell = () => {
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-x-auto px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6">
+        <main className="min-w-0 flex-1 overflow-x-auto px-3 py-5 sm:px-5 sm:py-6 lg:px-8 lg:py-8">
           <EmailVerificationBanner />
           <TrialBanner />
           {/* Nested Suspense keeps the shell visible while lazy route chunks load. */}

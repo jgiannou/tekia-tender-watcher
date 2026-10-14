@@ -3,7 +3,7 @@
 **Product:** ARC Tenders  
 **Document type:** Current-state Product Requirements Document  
 **Status:** As-built commercial SaaS (code + catalog)  
-**Date:** 2026-10-11  
+**Date:** 2026-10-14  
 **Public URL:** https://arc-tenders.tekia.gr  
 **Surfaces:** `apps/saas-web`, `apps/mobile`, `apps/ops-desk`, `src/saas`  
 
@@ -52,6 +52,8 @@ ARC Tenders solves this with self-serve orgs, plan entitlements, shared discover
 | G10 | Stripe checkout + portal + seats (Pro) | Done |
 | G11 | Web + Expo mobile + Electron ops desk | Done |
 | G12 | Durable jobs outbox + ops pipeline metrics | Done |
+| G13 | Plan-gated Slack + Google Calendar / Drive / Sheets (Basic+) | Done (ops flags) |
+| G14 | Pro-only priority monitoring, deadline radar, advanced filters | Done |
 
 ### Explicit non-goals
 
@@ -98,28 +100,94 @@ Clients: Web SPA · Expo mobile (arctenders://) · Ops Desk Electron (X-Admin-To
 
 ---
 
-## 6. Plans & entitlements
+## 6. Plans & feature differentiation
 
-Source of truth: `src/saas/plans/catalog.ts` · summary: [subscription-plans.md](./subscription-plans.md).
+Source of truth: `src/saas/plans/catalog.ts` · short table: [subscription-plans.md](./subscription-plans.md).
+
+Public plans are **Free**, **Basic**, and **Pro**. There is no Business or Enterprise plan. Pro extra seats are a recurring add-on, not a fourth plan. **No AI on any plan.**
+
+**Trial** is a 7-day **Pro-level** preview via explicit «Δοκιμάστε το Pro». It does **not** replace Free. New orgs start on **Free**. On expiry, email falls back to the Free weekly policy and pending daily/immediate product emails are cancelled.
+
+Prices exclude VAT. Above 20 Pro seats: `Χρειάζεστε περισσότερους από 20 χρήστες; Επικοινωνήστε μαζί μας.` (`contact@tekia.gr`).
+
+### 6.1 Price, seats, quotas
 
 | | **Free** | **Basic** | **Pro** |
 |--|--|--|--|
-| Price | €0, no card, no expiry | €4.99 / mo · €49 / yr | €9.99 / mo · €99 / yr |
-| Seats | 1 | 1 | 3 included · +€2.49/seat · cap 20 self-service |
-| Saved searches | 1 | 5 | 15 |
-| Followed tenders | 5 | 30 | 100 |
-| Storage | — | 250 MB | 2 GB |
-| Discovery | Shared KIMDIS every ~2 min | same | same |
-| Email | ≤1 **weekly** summary when new | Digest ≤2 Athens hours/day · optional immediate on followed developments | Digest ≤6/day · optional immediate high-match · deadline radar |
-| In-app + push | Immediate on match / development | same | same |
-| Region filter + thread screen | yes | yes | yes |
-| Vault / outreach / submission / checklist / price memory / award history | no | yes | yes |
-| Expiring contracts | count only | list + follow | list + follow |
-| AI | none | none | none |
+| Positioning | Find opportunities that match the business | Monitor tenders and organize participation | Do not miss a critical development |
+| Price | €0 · no card · no expiry | €4.99 / mo · €49 / yr | €9.99 / mo · €99 / yr |
+| Seats | 1 | 1 | 3 included · +€2.49 / seat / mo (€24.90 / yr) · self-service cap 20 |
+| Active saved searches | 1 | 5 | 15 |
+| Active followed tenders | 5 | 30 | 100 |
+| Company storage | — | 250 MB | 2 GB |
+| Manual saved-search refreshes / day | 5 | 10 | 20 |
 
-**Trial:** 7-day Pro-level access via explicit «Δοκιμάστε το Pro» — does **not** replace Free at signup. New orgs start on **Free**.
+Discovery speed is **not** a plan difference. Every plan uses the same shared KIMDIS ingest (~2 minutes). `maxDigestHoursPerDay` caps **email** hour slots; it is not scan latency. Free weekly cadence uses 0 digest hours.
 
-Prices exclude VAT. Above 20 Pro seats: contact `contact@tekia.gr`.
+### 6.2 Same on every plan
+
+These capabilities are on Free, Basic, Pro, and the Pro trial:
+
+| Capability | Notes |
+|------------|--------|
+| Shared KIMDIS ingest | ~2 min, all tenants |
+| Manual KIMDIS search | Keywords, CPV, region. Unverified users may search; saved-search scans stay gated |
+| Match score + reasons | |
+| NUTS 2 region filter | Empty = all Greece |
+| Tender thread | REQ → notice → deadline → award |
+| Related-act monitoring | On the shared ingest cycle |
+| In-app attention | Immediate; not delayed by email cadence |
+| Push (Expo) | Immediate, when the device is registered |
+| In-app deadline reminders | On the tender thread. **Email** deadline radar is Pro-only (see below) |
+
+### 6.3 Differentiated by plan
+
+Legend: **—** not included · **✓** included · **count** count-only.
+
+| Capability | **Free** | **Basic** | **Pro** |
+|------------|--|--|--|
+| **Email cadence** | ≤1 weekly summary when there is new content, one recipient per org | Digest at up to **2** Athens hours/day | Digest at up to **6** Athens hours/day |
+| Immediate email: developments on followed tenders | — | Optional | Optional |
+| Immediate email: new high-match opportunities (score ≥ 70) | — | — | Optional |
+| Deadline radar emails | — | — | ✓ (sent on the digest schedule) |
+| **Priority monitoring** (Hot Watch) | — | — | ✓ |
+| **Advanced saved-search filters** | — | — | ✓ |
+| Priority support | — | — | ✓ (catalog / marketing; not a separate product module) |
+| Company vault, versions, tender workspace | — | ✓ | ✓ |
+| Outreach ledger (record sent; no send) | — | ✓ | ✓ |
+| Submission ledger (human-gated) | — | ✓ | ✓ |
+| Participation checklist vs vault | — | ✓ | ✓ |
+| Expiring contracts (3–9 months) | count only | list + follow | list + follow |
+| Award history | — | ✓ | ✓ |
+| Price memory | — | ✓ | ✓ |
+| Slack (1 channel / org) | — | ✓ | ✓ |
+| Google Calendar deadline sync | — | ✓ | ✓ |
+| Google Drive import + tender folder | — | ✓ | ✓ |
+| Google Sheets watched-tenders list | — | ✓ | ✓ |
+
+**Pro includes every Basic capability**, then adds seats, higher quotas, denser email, priority monitoring, high-match immediate email, deadline radar, advanced filters, and priority support. Marketing copy: «Όλες οι δυνατότητες του Basic, με:».
+
+### 6.4 What the Pro-only rows mean
+
+| Row | Product behavior |
+|-----|------------------|
+| **Priority monitoring** | User (or outreach) marks a followed tender as priority. A shared Hot Watch worker re-checks **related acts** on a ~2 min cycle, deduped by tender. It does **not** speed up the shared KIMDIS ingest and does **not** scrape public UI on that hot path. |
+| **Advanced filters** | Saved search may set contracting authority, contract type, procedure type, min/max budget, and an `IMMEDIATE` notification override. Basic/Free requests for these fields are rejected (`advanced_watch_filters_requires_pro`). Keywords, CPV, and region stay on every plan. |
+| **High-match immediate email** | New-opportunity email leaves the digest only when the plan allows it, the org chose immediate delivery, and match score ≥ 70. |
+| **Deadline radar** | Approaching-deadline **email** is Pro-only and rides the digest-hour path. In-app deadline reminders exist on every plan. |
+
+### 6.5 Integrations are plan-gated and ops-flagged
+
+Slack, Calendar, Drive, and Sheets are **entitled on Basic, Pro, and the Pro trial**, and **off on Free** (Connections shows a description and a link to plans). They stay dark until the matching server flag and OAuth secrets are set. Marketing lists hide a line until that integration is live.
+
+| Integration | Flag | Scope |
+|-------------|------|--------|
+| Slack | `SAAS_SLACK_NOTIFICATIONS_ENABLED` | 1 incoming-webhook channel / org |
+| Google Calendar | `SAAS_GOOGLE_CALENDAR_ENABLED` | Secondary ARC calendar; followed deadlines only |
+| Google Drive | `SAAS_GOOGLE_DRIVE_ENABLED` | Copy into the vault + create a tender folder. Not a live sync |
+| Google Sheets | `SAAS_GOOGLE_SHEETS_ENABLED` | Managed «Διαγωνισμοί ARC» sheet |
+
+Drive import also requires the company vault, so Free cannot reach it even if a flag were on.
 
 ---
 
@@ -148,7 +216,7 @@ Prices exclude VAT. Above 20 Pro seats: contact `contact@tekia.gr`.
 - Multi-select Greek **NUTS 2** regions; empty = all Greece.
 - If regions selected, acts with no NUTS field are excluded (with “without region” UX affordance).
 - Match score + reasons; KAD → suggested CPVs/keywords.
-- Pro: advanced filter entitlement flag.
+- **Pro only:** advanced filters — authority, contract type, procedure type, min/max budget, immediate notification override. Keywords, CPV, and region are on every plan.
 
 ### 7.4 Opportunities & monitoring thread
 
@@ -210,18 +278,30 @@ Panel on followed tender: recent same-CPV + same-region awards, optional award/b
 | Push (Expo) | Immediate; device registration + prefs |
 | Free email | Weekly digest when there is new content (outbox job) |
 | Basic/Pro email | Digest at chosen Athens hours; optional immediate flags per plan |
-| Pro | Deadline radar emails |
+| Pro | Deadline radar emails (digest-hour path) + optional immediate high-match (score ≥ 70) |
+| Basic + Pro | Optional immediate email on followed-tender developments |
 | Transport | Durable **jobs outbox** + processor (retries); Brevo SMTP when `EMAIL_ENABLED` |
 
 Channel policy: `src/saas/services/email-channel-policy.ts`.
 
-### 7.12 Billing
+### 7.12 Priority monitoring (Pro / trial)
+
+- Entitlement: `priorityMonitoring`. Free and Basic cannot enable it.
+- Marks a non-terminal followed tender as priority (manual or from recorded outreach).
+- Hot Watch (~2 min) checks related acts for those tenders only. Shared ingest cadence is unchanged.
+- Active promo or unexpired trial is treated as Pro for this entitlement.
+
+### 7.13 Integrations (Basic / Pro / trial)
+
+See §6.5. Free sees the connection cards without connect or send. One Slack channel per organization. One Google account per user + organization. Calendar, Drive, and Sheets are separate connections and separate release flags.
+
+### 7.14 Billing
 
 - Stripe Checkout (Basic/Pro, monthly/annual), Customer Portal, webhooks, Pro extra seats.
 - Subscription UI: `/app/subscription`.
 - Catalog mirrored in API entitlements.
 
-### 7.13 Ops Desk
+### 7.15 Ops Desk
 
 Internal Electron app (`apps/ops-desk`):
 
@@ -294,6 +374,7 @@ Features above are **implemented in code**. Public confidence still depends on o
 
 | Version | Date | Notes |
 |---------|------|--------|
+| 1.1 | 2026-10-14 | Plan matrix from `catalog.ts`: quotas, email paths, Hot Watch, advanced filters, Slack, Google Calendar / Drive / Sheets. Trial = Pro entitlements |
 | 1.0 | 2026-10-11 | Consolidated as-built PRD after Free plan, shared ingest, outbox/pipeline ops, checklist/price/expiring, TED/Diavgeia adapters, web+mobile+ops |
 
 **Supersedes for product overview:** older “SaaS features only” narrative where it conflicts (e.g. TED now has a code adapter; signup defaults to Free not auto-trial). Feature-level competition notes remain in [PRD-saas-features.md](./PRD-saas-features.md).

@@ -18,7 +18,8 @@ const TERMINAL_STAGES = new Set([
   "DISMISSED",
 ]);
 
-export const PRIORITY_CHECK_INTERVAL_MS = 60_000;
+/** Align with shared ingest cadence so Hot Watch does not starve the API. */
+export const PRIORITY_CHECK_INTERVAL_MS = 120_000;
 
 export const orgHasPriorityMonitoring = async (
   prisma: PrismaClient,

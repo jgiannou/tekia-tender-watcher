@@ -306,7 +306,8 @@ export const runSharedKimdisIngest = async (
     );
     const recent = await fetchRecentActs(kimdis, {
       days: catchUp ? 5 : 2,
-      pages: catchUp || priorExhausted ? 6 : 4,
+      // Keep normal cycles light; only expand briefly after page-budget exhaustion.
+      pages: catchUp ? 4 : priorExhausted ? 3 : 2,
       cursorsByType: priorCursors,
     });
     const items = dedupeKimdisItems(recent.items);
@@ -358,18 +359,9 @@ export const runSharedKimdisIngest = async (
     await writeMeta(prisma, SUCCESS_KEY, new Date().toISOString());
     await writeMeta(prisma, ERROR_KEY, "");
 
-    // If page budget exhausted, schedule an immediate continuation pass
-    // (same process, deferred) so we do not silently treat ingest as complete.
-    if (recent.pageBudgetExhausted) {
-      setTimeout(() => {
-        void runSharedKimdisIngest(prisma, kimdis).catch((error) => {
-          console.error(
-            "[ingest] continuation catch-up failed:",
-            error instanceof Error ? error.message : error,
-          );
-        });
-      }, 5_000);
-    }
+    // Do not chain an immediate second ingest here — it races the */2 cron,
+    // doubles KIMDIS load, and freezes the API. Next cron cycle continues
+    // from the persisted watermark when pageBudgetExhausted stays true.
 
     return {
       ok: true,

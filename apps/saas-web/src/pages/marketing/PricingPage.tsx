@@ -101,9 +101,9 @@ export const PricingPage = () => {
         {formatEur(MARKETING_PLANS.pro.extraSeatMonthlyEur!)} € τον μήνα.
       </p>
 
-      <section className="mt-14">
+      <section id="comparison" className="mt-14 scroll-mt-20">
         <h2 className="text-xl font-semibold tracking-tight">Σύγκριση πακέτων</h2>
-        <div className="mt-5 overflow-x-auto rounded-xl border border-border/70">
+        <div className="mt-5 overflow-x-auto rounded-lg border border-border/60">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="bg-muted/40 text-muted-foreground">
               <tr>
@@ -133,7 +133,7 @@ export const PricingPage = () => {
           {faqs.map((item) => (
             <details
               key={item.q}
-              className="rounded-xl border border-border/70 bg-card/40 px-4 py-3"
+              className="rounded-lg border border-border/60 px-4 py-3"
             >
               <summary className="cursor-pointer text-sm font-medium">{item.q}</summary>
               <p className="mt-2 text-sm text-muted-foreground">{item.a}</p>
@@ -142,7 +142,7 @@ export const PricingPage = () => {
         </div>
       </section>
 
-      <section className="mt-14 rounded-2xl border border-border/70 bg-card/40 px-6 py-8 text-center">
+      <section className="mt-14 rounded-lg border border-border/60 px-6 py-8 text-center">
         <h2 className="text-xl font-semibold">Ξεκινήστε δωρεάν — χωρίς κάρτα</h2>
         <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">
           Ξεκινήστε με το δωρεάν πακέτο και επιλέξτε Basic ή Pro όταν χρειαστείτε περισσότερες

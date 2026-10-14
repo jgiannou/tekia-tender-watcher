@@ -204,9 +204,9 @@ if (process.env.SAAS_ENABLED === "1" || process.env.SAAS_ENABLED === "true") {
       );
     }
 
-    // Pro Priority Monitoring (Παρακολούθηση Προτεραιότητας) — ~60s Hot Watch.
-    // Deduped by tender ID; does not replace shared KIMDIS ingest.
-    const hotWatchExpression = "* * * * *";
+    // Pro Priority Monitoring — every 2 minutes (aligned with shared ingest).
+    // Local/canonical checks only; public UI discovery stays on shared ingest.
+    const hotWatchExpression = "*/2 * * * *";
     if (cron.validate(hotWatchExpression)) {
       cron.schedule(
         hotWatchExpression,

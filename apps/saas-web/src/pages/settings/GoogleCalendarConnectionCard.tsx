@@ -57,7 +57,7 @@ const StatusLine = ({
       className={cn(
         "flex items-start gap-2 text-sm",
         live
-          ? "text-emerald-700 dark:text-emerald-400"
+          ? "text-primary"
           : warn
             ? "text-amber-700 dark:text-amber-400"
             : "text-muted-foreground",
@@ -68,7 +68,7 @@ const StatusLine = ({
       <span
         className={cn(
           "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-          live ? "bg-emerald-500" : warn ? "bg-amber-500" : "bg-muted-foreground/50",
+          live ? "bg-primary" : warn ? "bg-amber-500" : "bg-muted-foreground/50",
         )}
         aria-hidden
       />

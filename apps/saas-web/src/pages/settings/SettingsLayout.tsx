@@ -39,16 +39,16 @@ const sections = [
 export const SettingsLayout = () => (
   <div className="mx-auto flex max-w-6xl flex-col gap-6 lg:flex-row">
     <aside className="w-full shrink-0 lg:w-56">
-      <div className="mb-4">
-        <h2 className="text-2xl font-semibold tracking-tight">Ρυθμίσεις</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+      <div className="mb-5">
+        <h2 className="text-xl font-semibold tracking-tight">Ρυθμίσεις</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
           Διαμόρφωση λογαριασμού και οργανισμού.
         </p>
       </div>
-      <nav className="space-y-3" aria-label="Ρυθμίσεις">
+      <nav className="space-y-4" aria-label="Ρυθμίσεις">
         {sections.map((section) => (
           <div key={section.title}>
-            <div className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="mb-1 px-2.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
               {section.title}
             </div>
             <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:block lg:space-y-0.5 lg:overflow-visible lg:px-0 lg:pb-0">
@@ -58,8 +58,8 @@ export const SettingsLayout = () => (
                   to={item.to}
                   className={({ isActive }) =>
                     cn(
-                      "block shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-                      isActive && "bg-muted font-medium text-foreground",
+                      "block shrink-0 whitespace-nowrap rounded-md border-l-2 border-transparent px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      isActive && "border-primary bg-muted/50 font-medium text-foreground",
                     )
                   }
                 >

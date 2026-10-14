@@ -721,6 +721,8 @@ model Tender {
   referenceNumber           String     @unique
   recordType                RecordType
   title                     String?
+  /// KIMDIS objectDetails shortDescription(s) — «Περιληπτική περιγραφή».
+  description               String?
   contractingAuthority      String?
   submissionDate            DateTime?
   signedDate                DateTime?

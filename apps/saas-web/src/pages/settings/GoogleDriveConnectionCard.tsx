@@ -45,7 +45,7 @@ const StatusLine = ({ status, label }: StatusLineProps) => {
     <p
       className={cn(
         "flex items-start gap-2 text-sm",
-        isLive && "text-emerald-700 dark:text-emerald-400",
+        isLive && "text-primary",
         isWarning && "text-amber-700 dark:text-amber-400",
         !isLive && !isWarning && "text-muted-foreground",
       )}
@@ -55,7 +55,7 @@ const StatusLine = ({ status, label }: StatusLineProps) => {
       <span
         className={cn(
           "mt-1.5 h-2 w-2 shrink-0 rounded-full",
-          isLive && "bg-emerald-500",
+          isLive && "bg-primary",
           isWarning && "bg-amber-500",
           !isLive && !isWarning && "bg-muted-foreground/50",
         )}

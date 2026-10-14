@@ -56,6 +56,25 @@ describe("public UI related acts", () => {
     expect(item?.parentAdams).toContain("26REQ019966687");
   });
 
+  it("maps objectDetails.shortDescription as Περιληπτική περιγραφή", () => {
+    const item = mapLooseKimdisAct(
+      {
+        referenceNumber: "26REQ019966687",
+        title: "Αίτημα ιστοσελίδας",
+        organization: { value: "ΔΗΜΟΣ ΚΑΤΩ ΝΕΥΡΟΚΟΠΙΟΥ" },
+        objectDetails: [
+          {
+            shortDescription:
+              "Παροχή υπηρεσιών τεχνικής υποστήριξης της επίσημης ιστοσελίδας του Δήμου.",
+          },
+        ],
+      },
+      "REQ",
+      (adam) => `https://example.test/${adam}`,
+    );
+    expect(item?.description).toContain("τεχνικής υποστήριξης");
+  });
+
   it("discovers CONFIRMED REQ→PROC from public UI fetch", async () => {
     const source = {
       id: "tender-req-1",

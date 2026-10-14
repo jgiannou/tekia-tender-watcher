@@ -194,7 +194,7 @@ export const TrialBanner = () => {
     const launchPromo = Boolean(banner.canStartLaunchPromo);
     return (
       <div
-        className="relative mb-4 flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 pr-10 sm:flex-row sm:items-center sm:justify-between"
+        className="relative mb-4 flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/25 px-4 py-3 pr-10 sm:flex-row sm:items-center sm:justify-between"
         role="status"
         aria-live="polite"
       >
@@ -247,7 +247,7 @@ export const TrialBanner = () => {
   if (promotional && !expired) {
     return (
       <div
-        className="relative mb-4 flex flex-col gap-2.5 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.06] px-3.5 py-2.5 pr-10 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+        className="relative mb-4 flex flex-col gap-2.5 rounded-lg border border-border/50 bg-muted/20 px-3.5 py-2.5 pr-10 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
         role="status"
         aria-live="polite"
       >
@@ -255,9 +255,9 @@ export const TrialBanner = () => {
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold tracking-tight text-foreground">
-              Το Pro σου είναι ενεργό!
+              Το Pro σου είναι ενεργό
             </p>
-            <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+            <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
               30 ημέρες δωρεάν
             </span>
             {remaining ? (

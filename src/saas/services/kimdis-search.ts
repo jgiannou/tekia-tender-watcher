@@ -20,6 +20,7 @@ import {
   tedContractNatureLabel,
   type TedNoticeRef,
 } from "../sources/ted-adapter.js";
+import { upsertTenderFromKimdisItem } from "./upsert-tender.js";
 
 export const KIMDIS_CONTRACT_TYPES: Record<string, string> = {
   "9": "Υπηρεσίες",
@@ -171,12 +172,17 @@ export type KimdisSearchItem = {
 };
 
 const collectDescription = (
-  details: Array<{ shortDescription?: string | null }> | null | undefined,
-): string =>
-  (details ?? [])
-    .map((detail) => detail.shortDescription?.trim() ?? "")
-    .filter(Boolean)
-    .join("\n");
+  ...bags: Array<Array<{ shortDescription?: string | null }> | null | undefined>
+): string => {
+  const parts: string[] = [];
+  for (const details of bags) {
+    for (const detail of details ?? []) {
+      const text = detail.shortDescription?.trim() ?? "";
+      if (text) parts.push(text);
+    }
+  }
+  return [...new Set(parts)].join("\n");
+};
 
 export type KimdisSearchResult = {
   items: KimdisSearchItem[];
@@ -339,7 +345,11 @@ const normalizeItem = (
     title: record.title?.trim() || "(no title)",
     contractingAuthority:
       record.organization?.value?.trim() || "Unknown organization",
-    description: collectDescription(record.objectDetails),
+    description: collectDescription(
+      record.objectDetails,
+      (record as { objectDetailsList?: typeof record.objectDetails })
+        .objectDetailsList,
+    ),
     cpvs: collectCpvs(record.objectDetails),
     budgetWithoutVat:
       typeof record.totalCostWithoutVAT === "number"
@@ -424,7 +434,7 @@ export const kimdisItemFromTender = (tender: Tender): KimdisSearchItem => {
         : "REQ",
     title: tender.title ?? "",
     contractingAuthority: tender.contractingAuthority ?? "",
-    description: ted?.noticeType ?? "",
+    description: (tender.description?.trim() || ted?.noticeType || "").trim(),
     cpvs: Array.isArray(tender.cpvs)
       ? tender.cpvs.map((cpv) => String(cpv))
       : [],
@@ -945,33 +955,58 @@ export const getKimdisRecordByAdam = async (
   }
   const adam = parsed.adam;
 
-  if (options?.prisma) {
+  const loadLocal = async (): Promise<KimdisSearchItem | null> => {
+    if (!options?.prisma) return null;
     const local = await options.prisma.tender.findUnique({
       where: { referenceNumber: adam },
     });
-    if (local) {
-      // TED / Διαύγεια and other local-only rows: serve from DB without upstream.
-      if (
-        local.referenceNumber.startsWith("TED:") ||
-        local.referenceNumber.startsWith("DIAVGEIA:")
-      ) {
-        return kimdisItemFromTender(local);
-      }
-      const localType =
-        local.recordType === "PROC" ? "PROC" : local.recordType === "REQ" ? "REQ" : null;
-      if (!localType || localType === input.recordType) {
-        return kimdisItemFromTender(local);
-      }
+    if (!local) return null;
+    if (
+      local.referenceNumber.startsWith("TED:") ||
+      local.referenceNumber.startsWith("DIAVGEIA:")
+    ) {
+      return kimdisItemFromTender(local);
     }
+    const localType =
+      local.recordType === "PROC"
+        ? "PROC"
+        : local.recordType === "REQ"
+          ? "REQ"
+          : null;
+    if (localType && localType !== input.recordType) return null;
+    return kimdisItemFromTender(local);
+  };
+
+  const fromDb = await loadLocal();
+  if (fromDb) {
+    // TED / Διαύγεια never hit Open Data.
+    if (
+      fromDb.adam.startsWith("TED:") ||
+      fromDb.adam.startsWith("DIAVGEIA:")
+    ) {
+      return fromDb;
+    }
+    // Prefer DB when we already have Περιληπτική περιγραφή.
+    if (fromDb.description?.trim()) return fromDb;
   }
 
-  const result = await searchExactAdam(kimdis, {
-    adam,
-    adamRecordType: parsed.recordType,
-    selectedFamily: input.recordType,
-    enrichFromPublicUi: true,
-  });
-  return result.items[0] ?? null;
+  try {
+    const result = await searchExactAdam(kimdis, {
+      adam,
+      adamRecordType: parsed.recordType,
+      selectedFamily: input.recordType,
+      enrichFromPublicUi: true,
+    });
+    const live = result.items[0] ?? null;
+    if (live && options?.prisma) {
+      await upsertTenderFromKimdisItem(options.prisma, live);
+    }
+    if (live) return live;
+  } catch {
+    // Upstream timeouts must not break detail for tenders we already know.
+  }
+
+  return fromDb;
 };
 
 export const searchKimdis = async (

@@ -15,15 +15,21 @@ Commercial SaaS only. Does **not** apply to the internal TEKIA Electron / SQLite
 | Active followed tenders | 5 | 30 | 100 |
 | Storage | — | 250 MB | 2 GB |
 | KIMDIS check | every 2 minutes (shared) | same | same |
-| Email cadence | ≤1 weekly summary when new | DIGEST hours (≤2/day) or immediate followed developments | DIGEST hours (≤6/day); optional immediate high-match opportunities |
-| Region filter | yes | yes | yes |
-| Thread screen | yes | yes | yes |
+| Manual saved-search refreshes / day | 5 | 10 | 20 |
+| Email cadence | ≤1 weekly summary when new | Digest hours (≤2/day); optional immediate followed developments | Digest hours (≤6/day); optional immediate followed developments; optional immediate high-match (score ≥ 70) |
+| Deadline radar email | no | no | yes (digest-hour path) |
+| Priority monitoring (Hot Watch) | no | no | yes |
+| Advanced saved-search filters | no | no | yes (authority, contract type, procedure, budget, immediate override) |
+| Priority support | no | no | yes (catalog / marketing) |
+| Region filter + thread screen | yes | yes | yes |
+| In-app + push | immediate | immediate | immediate |
 | Company docs / outreach / submission | no | yes | yes |
 | Participation checklist | no | yes | yes |
 | Expiring contracts | count only | list + follow | list + follow |
 | Award history | no | yes | yes |
-| Private bid price note | no | yes | yes |
-| Upcoming deadlines email | no | no | yes |
+| Price memory | no | yes | yes |
+| Slack (1 channel) | no | yes, when flag is on | yes, when flag is on |
+| Google Calendar / Drive / Sheets | no | yes, when each flag is on | yes, when each flag is on |
 | AI | none | none | none |
 
 Prices exclude VAT. Above 20 Pro seats: show  

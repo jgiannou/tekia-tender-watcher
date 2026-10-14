@@ -45,6 +45,20 @@ const cpvsFrom = (record: Loose): string[] => {
   return [...codes];
 };
 
+/** KIMDIS «Περιληπτική περιγραφή» from object detail rows. */
+export const descriptionsFromKimdisRecord = (record: Loose): string => {
+  const bags = [record.objectDetails, record.objectDetailsList];
+  const parts: string[] = [];
+  for (const bag of bags) {
+    if (!Array.isArray(bag)) continue;
+    for (const detail of bag) {
+      const text = asString(asRecord(detail)?.shortDescription);
+      if (text) parts.push(text);
+    }
+  }
+  return [...new Set(parts)].join("\n");
+};
+
 const refs = (value: unknown): string[] => {
   if (typeof value === "string" && value.trim()) return [value.trim()];
   if (!Array.isArray(value)) return [];
@@ -107,7 +121,7 @@ export const mapLooseKimdisAct = (
     recordType,
     title: asString(record.title) || "(χωρίς τίτλο)",
     contractingAuthority: labelOf(organization) || "Άγνωστος φορέας",
-    description: "",
+    description: descriptionsFromKimdisRecord(record),
     cpvs: cpvsFrom(record),
     budgetWithoutVat: asNumber(record.totalCostWithoutVAT),
     budgetWithVat: asNumber(record.totalCostWithVAT),

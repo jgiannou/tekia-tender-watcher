@@ -1,19 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { CreateOrganizationDialog } from "@/components/CreateOrganizationDialog";
-import { PdfAction } from "@/components/PdfAction";
-import { Pagination, usePaginatedList } from "@/components/Pagination";
-import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { ProfileSetupBanner } from "@/components/ProfileSetupBanner";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { InvitationIssuedBadge } from "@/components/InvitationIssuedBadge";
 import { ScoreBadge } from "@/components/ScoreBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Metric, MetricStrip } from "@/components/ui/metric";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   saasApi,
   type Opportunity,
@@ -21,7 +19,7 @@ import {
 } from "@/lib/api";
 import { trackAnalyticsEvent } from "@/lib/analytics";
 import { attentionEventHref } from "@/lib/attention-routing";
-import { formatMatchReason } from "@/lib/matchReasons";
+import { attentionEventViewModel } from "@/lib/attention-content";
 import {
   canEditOrganizationProfile,
   getOrgProfileProgress,
@@ -30,29 +28,10 @@ import {
   writeProfileBannerDismissed,
   type OrgProfileProgress,
 } from "@/lib/org-profile";
+import { cn } from "@/lib/utils";
 
-const OVERVIEW_OPPORTUNITY_PAGE_SIZE = 3;
-
-const formatRelative = (value?: string | null) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  const deltaMs = Date.now() - date.getTime();
-  const minutes = Math.round(deltaMs / 60000);
-  if (minutes < 1) return "μόλις τώρα";
-  if (minutes === 1) return "1 λεπτό πριν";
-  if (minutes < 60) return `${minutes} λεπτά πριν`;
-  const hours = Math.round(minutes / 60);
-  if (hours === 1) return "1 ώρα πριν";
-  if (hours < 48) return `${hours} ώρες πριν`;
-  return date.toLocaleString("el-GR");
-};
-
-const formatDay = (value?: string | null) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("el-GR");
-};
+const RECENT_OPPORTUNITIES = 3;
+const TODAY_CAP = 5;
 
 const formatMoney = (value: number | null) =>
   value == null
@@ -62,19 +41,6 @@ const formatMoney = (value: number | null) =>
         currency: "EUR",
         maximumFractionDigits: 0,
       }).format(value);
-
-const formatDate = (value?: string | null) => {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value.slice(0, 10) : date.toLocaleDateString("el-GR");
-};
-
-const isExpiredDeadline = (value?: string | null) => {
-  if (!value) return false;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return false;
-  return date.getTime() < Date.now();
-};
 
 const tenderHref = (recordType: string | undefined, referenceNumber: string) => {
   const type = recordType === "PROC" || recordType === "REQ" ? recordType : "REQ";
@@ -91,6 +57,18 @@ const parseMatchMeta = (value: unknown): Opportunity["matchMeta"] => {
   return meta;
 };
 
+const getGreeting = () => (new Date().getHours() < 12 ? "Καλημέρα" : "Καλησπέρα");
+
+type TodayItem = {
+  id: string;
+  kind: string;
+  title: string;
+  meta: string;
+  href: string;
+  accent?: "urgent" | "default";
+  onDismiss?: () => void;
+};
+
 export const OverviewPage = () => {
   const navigate = useNavigate();
   const {
@@ -101,12 +79,9 @@ export const OverviewPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [overview, setOverview] = useState<SaasOverview | null>(null);
-  const [pdfPreview, setPdfPreview] = useState<Opportunity | null>(null);
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const [ingestLabel, setIngestLabel] = useState<string | null>(null);
   const [ingestFresh, setIngestFresh] = useState(true);
-  const [expiringLoading, setExpiringLoading] = useState(true);
-  const [expiringError, setExpiringError] = useState(false);
   const [expiringCount, setExpiringCount] = useState<number | null>(null);
   const [expiringMatchingReady, setExpiringMatchingReady] = useState(false);
   const [profileProgress, setProfileProgress] = useState<OrgProfileProgress | null>(
@@ -119,13 +94,8 @@ export const OverviewPage = () => {
       setLoading(false);
       return;
     }
-    // Keep previous overview painted during soft reloads / scan polling.
     if (!opts?.silent) setLoading(true);
     setError(null);
-    if (!opts?.silent) {
-      setExpiringLoading(true);
-      setExpiringError(false);
-    }
     try {
       const firstName = (user?.name || "").split(" ")[0] || null;
       const [data, ingest, expiring, settingsRes] = await Promise.all([
@@ -143,11 +113,9 @@ export const OverviewPage = () => {
       if (expiring.ok && expiring.row) {
         setExpiringCount(expiring.row.count);
         setExpiringMatchingReady(Boolean(expiring.row.matchingReady));
-        setExpiringError(false);
       } else {
         setExpiringCount(null);
         setExpiringMatchingReady(false);
-        setExpiringError(true);
       }
       setProfileProgress(
         settingsRes ? getOrgProfileProgress(settingsRes.settings) : null,
@@ -156,7 +124,6 @@ export const OverviewPage = () => {
       setError(err instanceof Error ? err.message : "Αποτυχία φόρτωσης");
     } finally {
       setLoading(false);
-      setExpiringLoading(false);
     }
   };
 
@@ -176,7 +143,6 @@ export const OverviewPage = () => {
     );
   }, [activeOrganization?.id, user?.id]);
 
-  // Keep the «Εκτελούμε…» banner honest while a scan is in flight.
   useEffect(() => {
     if (!activeOrganization || !overview || overview.scanningProfiles <= 0) {
       return;
@@ -197,17 +163,11 @@ export const OverviewPage = () => {
         source: "overview",
       });
       toast.success("Ο διαγωνισμός προστέθηκε στην Παρακολούθηση.");
-      await load();
+      await load({ silent: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Αποτυχία παρακολούθησης");
     }
   };
-
-  const opportunityItems = overview?.opportunities ?? [];
-  const opportunityPages = usePaginatedList(opportunityItems, {
-    pageSize: OVERVIEW_OPPORTUNITY_PAGE_SIZE,
-    resetKey: `${activeOrganization?.id ?? ""}:${opportunityItems.map((row) => row.id).join("|")}`,
-  });
 
   if (sessionLoading || (loading && !overview)) return <PageSkeleton />;
 
@@ -248,92 +208,147 @@ export const OverviewPage = () => {
   const showProfileBanner =
     Boolean(profileProgress && !profileProgress.profileComplete) &&
     !profileBannerDismissed;
-  const digestAttention = overview.attention.filter(
-    (event) => !event.readAt && event.type === "OPPORTUNITY_DIGEST",
-  );
-  const failedScanCount = overview.failedScanCount ?? 0;
 
   const handleDismissProfileBanner = () => {
     if (!activeOrganization || !user?.id) return;
-    const key = profileBannerDismissKey(user.id, activeOrganization.id);
-    writeProfileBannerDismissed(key);
+    writeProfileBannerDismissed(
+      profileBannerDismissKey(user.id, activeOrganization.id),
+    );
     setProfileBannerDismissed(true);
   };
 
-  const metrics: Array<{ label: string; value: number; href: string; hint: string }> = [
-    {
-      label: "Νέες ευκαιρίες",
-      value: overview.metrics.newOpportunities,
-      href: "/app/opportunities",
-      hint: "Ευκαιρίες που δεν έχετε προσθέσει στην παρακολούθηση",
-    },
-    {
-      label: "Παρακολούθηση",
-      value: overview.metrics.monitoringActive,
-      href: "/app/monitoring",
-      hint: "Διαγωνισμοί που παρακολουθείτε",
-    },
-    {
-      label: "Προθεσμίες",
-      value: overview.metrics.deadlinesSoon,
-      href: "/app/monitoring",
-      hint: "Προθεσμίες υποβολής τις επόμενες 7 ημέρες",
-    },
-    {
-      label: "Υποβολές",
-      value: overview.metrics.submissionsActive,
-      href: "/app/submissions",
-      hint: "Υποβολές για τις οποίες παρακολουθείτε το αποτέλεσμα",
-    },
-  ];
+  const handleMarkAttentionRead = (eventId: string) =>
+    void saasApi
+      .markAttentionRead(activeOrganization.id, eventId)
+      .then(() => load({ silent: true }))
+      .catch((err) =>
+        toast.error(err instanceof Error ? err.message : "Αποτυχία ενημέρωσης"),
+      );
+
+  const unreadAttention = overview.attention.filter((event) => !event.readAt);
+  const recentOpportunities = overview.opportunities.slice(0, RECENT_OPPORTUNITIES);
+
+  const todayItems: TodayItem[] = [];
+  {
+    const seen = new Set<string>();
+    const push = (item: TodayItem) => {
+      if (seen.has(item.id) || todayItems.length >= TODAY_CAP) return;
+      seen.add(item.id);
+      todayItems.push(item);
+    };
+
+    for (const row of overview.deadlines) {
+      if (row.daysRemaining > 2) continue;
+      const monitored = overview.monitoring.find((m) => m.tender.id === row.tenderId);
+      push({
+        id: `deadline:${row.tenderId}`,
+        kind: "Προθεσμία",
+        title: row.title || row.referenceNumber,
+        meta:
+          row.daysRemaining === 0
+            ? "Σήμερα"
+            : row.daysRemaining === 1
+              ? "Αύριο"
+              : `Σε ${row.daysRemaining} ημέρες`,
+        href: tenderHref(monitored?.tender.recordType, row.referenceNumber),
+        accent: "urgent",
+      });
+    }
+
+    for (const doc of overview.documentsAttention) {
+      push({
+        id: `doc:${doc.id}`,
+        kind: "Έγγραφο",
+        title: doc.name,
+        meta: doc.status === "EXPIRED" ? "Έληξε" : "Λήγει σύντομα",
+        href: "/app/documents",
+        accent: doc.status === "EXPIRED" ? "urgent" : "default",
+      });
+    }
+
+    for (const event of unreadAttention) {
+      const view = attentionEventViewModel(event);
+      push({
+        id: `attention:${event.id}`,
+        kind: view.eyebrow || "Ενημέρωση",
+        title: view.primary || event.title,
+        meta: view.secondary,
+        href: attentionEventHref(event),
+        onDismiss: () => handleMarkAttentionRead(event.id),
+      });
+    }
+
+    for (const action of nextActions) {
+      push({
+        id: `action:${action.id}`,
+        kind: "Ενέργεια",
+        title: action.title || action.referenceNumber,
+        meta: action.actionLabel,
+        href: tenderHref(action.recordType, action.referenceNumber),
+      });
+    }
+
+    if (overview.metrics.newOpportunities > 0) {
+      const n = overview.metrics.newOpportunities;
+      push({
+        id: "digest:opportunities",
+        kind: "Ευκαιρίες",
+        title: n === 1 ? "1 νέα ευκαιρία" : `${n} νέες ευκαιρίες`,
+        meta: "Από αποθηκευμένες αναζητήσεις",
+        href: "/app/opportunities",
+      });
+    }
+
+    if (expiringMatchingReady && expiringCount != null && expiringCount > 0) {
+      push({
+        id: "digest:expiring",
+        kind: "Συμβάσεις",
+        title:
+          expiringCount === 1
+            ? "1 σύμβαση που λήγει"
+            : `${expiringCount} συμβάσεις που λήγουν`,
+        meta: "Σε 3–9 μήνες",
+        href: "/app/expiring-contracts",
+      });
+    }
+  }
+
+  const todayCount = todayItems.length;
+  const statusLine = isBrandNew
+    ? "Ξεκινήστε με μία αποθηκευμένη αναζήτηση."
+    : todayCount === 0
+      ? "Τίποτα επείγον αυτή τη στιγμή."
+      : todayCount === 1
+        ? "1 θέμα για σήμερα."
+        : `${todayCount} θέματα για σήμερα.`;
 
   return (
-    <div className="min-w-0 space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Καλημέρα, {displayName}
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {isBrandNew
-              ? "Δημιουργήστε την πρώτη αποθηκευμένη αναζήτηση ή εξερευνήστε το ΚΗΜΔΗΣ."
-              : nextActions.length > 0
-                ? nextActions.length === 1
-                  ? "Έχετε 1 εκκρεμή ενέργεια."
-                  : `Έχετε ${nextActions.length} εκκρεμείς ενέργειες.`
-                : "Δεν υπάρχουν ενέργειες που απαιτούν την προσοχή σας."}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => navigate("/app/search")}>Αναζήτηση στο ΚΗΜΔΗΣ</Button>
-          <Button variant="outline" onClick={() => navigate("/app/saved-searches")}>
-            Νέα αποθηκευμένη αναζήτηση
-          </Button>
-        </div>
-      </div>
+    <div className="min-w-0 space-y-8">
+      <PageHeader
+        title={`${getGreeting()}, ${displayName}`}
+        description={statusLine}
+        meta={
+          !ingestFresh && ingestLabel ? (
+            <span className="text-amber-700 dark:text-amber-400">{ingestLabel}</span>
+          ) : null
+        }
+        actions={
+          isBrandNew ? null : (
+            <Button variant="outline" size="sm" onClick={() => navigate("/app/search")}>
+              Αναζήτηση
+            </Button>
+          )
+        }
+      />
 
       {overview.scanningProfiles > 0 ? (
-        <Card className="border-primary/40 bg-primary/5">
-          <CardContent className="flex items-center gap-3 py-3 text-sm">
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
-            <span>
-              Εκτελούμε {overview.scanningProfiles}{" "}
-              {overview.scanningProfiles === 1
-                ? "αποθηκευμένη αναζήτηση"
-                : "αποθηκευμένες αναζητήσεις"}
-              .
-            </span>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {ingestLabel ? (
-        <p
-          className={`text-xs ${ingestFresh ? "text-muted-foreground" : "text-amber-700 dark:text-amber-400"}`}
+        <div
+          className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 text-xs text-primary"
+          role="status"
         >
-          {ingestLabel}
-          {!ingestFresh ? " · Τα αποτελέσματα μπορεί να μην είναι φρέσκα." : ""}
-        </p>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Εκτελείται έλεγχος αναζητήσεων…
+        </div>
       ) : null}
 
       {showProfileBanner && profileProgress ? (
@@ -341,466 +356,246 @@ export const OverviewPage = () => {
           progress={profileProgress}
           canEdit={canEditProfile}
           onDismiss={canEditProfile ? handleDismissProfileBanner : undefined}
+          compact
         />
       ) : null}
 
-      {expiringLoading ? (
-        <div
-          className="h-14 animate-pulse rounded-lg border border-border/60 bg-muted/30"
-          aria-hidden
-        />
-      ) : expiringError ? (
-        <Card>
-          <CardContent className="py-3 text-sm text-muted-foreground">
-            Δεν ήταν δυνατή η φόρτωση συμβάσεων που λήγουν. Δοκιμάστε ξανά αργότερα.
-          </CardContent>
-        </Card>
-      ) : !expiringMatchingReady ? (
-        showProfileBanner ? null : (
-          <Card>
-            <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-              <div className="min-w-0 space-y-0.5">
-                <div className="font-medium">Ανακάλυψε συμβάσεις που σε αφορούν</div>
-                <p className="text-muted-foreground">
-                  Συμπλήρωσε τη δραστηριότητα της επιχείρησής σου για να εντοπίζουμε σχετικές
-                  συμβάσεις που πλησιάζουν στη λήξη τους.
-                </p>
-              </div>
-              {canEditProfile && profileProgress ? (
-                <Button size="sm" variant="outline" asChild>
-                  <Link to={profileProgress.setupPath}>Συμπλήρωση δραστηριότητας</Link>
-                </Button>
-              ) : null}
-            </CardContent>
-          </Card>
-        )
-      ) : expiringCount != null && expiringCount > 0 ? (
-        <Card>
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-            <span>
-              {expiringCount === 1
-                ? "1 σχετική σύμβαση λήγει τους επόμενους 3–9 μήνες."
-                : `${expiringCount} σχετικές συμβάσεις λήγουν τους επόμενους 3–9 μήνες.`}
-            </span>
-            <Button size="sm" variant="outline" asChild>
-              <Link to="/app/expiring-contracts">Προβολή</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="py-3 text-sm text-muted-foreground">
-            Δεν εντοπίστηκαν σχετικές συμβάσεις που λήγουν τους επόμενους 3–9 μήνες.
-          </CardContent>
-        </Card>
-      )}
-
-      {isBrandNew && !showProfileBanner ? (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Ξεκινήστε με ARC Tenders</CardTitle>
-            <CardDescription>
-              Δημιουργήστε την πρώτη αποθηκευμένη αναζήτηση ή εξερευνήστε το ΚΗΜΔΗΣ.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
+      {isBrandNew ? (
+        <div className="rounded-xl border border-border/50 bg-card/60 px-5 py-8 sm:px-8">
+          <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
+            Ορίστε κριτήρια μία φορά. Το ARC Tenders εντοπίζει σχετικά αιτήματα και σας
+            τα δείχνει εδώ όταν χρειάζονται απόφαση.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
             <Button onClick={() => navigate("/app/saved-searches")}>
               Νέα αποθηκευμένη αναζήτηση
             </Button>
-            <Button variant="outline" onClick={() => navigate("/app/search")}>
-              Αναζήτηση στο ΚΗΜΔΗΣ
+            <Button variant="ghost" onClick={() => navigate("/app/search")}>
+              Χειροκίνητη αναζήτηση
             </Button>
-            <Button variant="ghost" onClick={() => navigate("/app/documents")}>
-              Έγγραφα εταιρείας
-            </Button>
-          </CardContent>
-        </Card>
-      ) : isBrandNew && showProfileBanner ? (
-        <p className="text-sm text-muted-foreground">
-          Μπορείτε επίσης να{" "}
-          <Link to="/app/search" className="underline underline-offset-2">
-            εξερευνήσετε το ΚΗΜΔΗΣ
-          </Link>{" "}
-          ή να{" "}
-          <Link to="/app/saved-searches" className="underline underline-offset-2">
-            δημιουργήσετε αποθηκευμένη αναζήτηση
-          </Link>{" "}
-          χωρίς να ολοκληρώσετε το προφίλ.
-        </p>
+          </div>
+        </div>
       ) : (
         <>
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {metrics.map((metric) => (
-              <Link
-                key={metric.label}
-                to={metric.href}
-                title={metric.hint}
-                className="min-w-0 rounded-lg border border-border px-4 py-3 transition-colors hover:bg-muted/40"
-              >
-                <div className="text-xs text-muted-foreground">{metric.label}</div>
-                <div className="mt-1 text-2xl font-semibold">{metric.value}</div>
-                <div className="mt-1 text-[11px] text-muted-foreground">{metric.hint}</div>
-              </Link>
-            ))}
-          </div>
+          <MetricStrip>
+            <Metric
+              label="Νέες ευκαιρίες"
+              value={overview.metrics.newOpportunities}
+              to="/app/opportunities"
+            />
+            <Metric
+              label="Παρακολουθούμενα"
+              value={overview.metrics.monitoringActive}
+              to="/app/monitoring"
+            />
+            <Metric
+              label="Προθεσμίες"
+              value={overview.metrics.deadlinesSoon}
+              to="/app/monitoring"
+            />
+            <Metric
+              label="Υποβολές"
+              value={overview.metrics.submissionsActive}
+              to="/app/submissions"
+            />
+          </MetricStrip>
 
-          <div
-            className={`grid min-w-0 gap-4 ${
-              nextActions.length === 0 ? "lg:grid-cols-1" : "lg:grid-cols-2"
-            }`}
-          >
-            <Card className="min-w-0 overflow-hidden">
-              <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 p-4 pb-3 sm:p-5 sm:pb-3">
-                <div className="min-w-0">
-                  <CardTitle className="text-base">Νέες ευκαιρίες</CardTitle>
-                  <CardDescription>
-                    Νέα αποτελέσματα από τις αποθηκευμένες αναζητήσεις σας.
-                  </CardDescription>
-                </div>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link to="/app/opportunities">Όλες οι ευκαιρίες</Link>
-                </Button>
-              </CardHeader>
-              <CardContent className="min-w-0 space-y-3 p-4 pt-0 sm:p-5 sm:pt-0">
-                {digestAttention.length > 0
-                  ? digestAttention.slice(0, 2).map((event) => (
-                      <div
-                        key={event.id}
-                        className="flex min-w-0 flex-col gap-2 rounded-md border border-border px-3 py-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
-                      >
-                        <div className="min-w-0 break-words text-sm font-medium">
-                          {event.title}
-                        </div>
-                        <div className="flex min-w-0 flex-wrap gap-2">
-                          <Button size="sm" variant="outline" asChild>
-                            <Link to={attentionEventHref(event)}>Προβολή</Link>
-                          </Button>
-                          {!event.readAt ? (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() =>
-                                void saasApi
-                                  .markAttentionRead(activeOrganization.id, event.id)
-                                  .then(() => load({ silent: true }))
-                              }
-                            >
-                              Σήμανση ως αναγνωσμένο
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))
-                  : null}
-                {opportunityPages.total === 0 && digestAttention.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    Καμία πρόσφατη ευκαιρία.
+          <div className="grid min-w-0 gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+            {/* TODAY — primary visual block */}
+            <section
+              aria-label="Σήμερα"
+              className="min-w-0 overflow-hidden rounded-xl border border-border/50 bg-card/50"
+            >
+              <div className="flex items-center justify-between border-b border-border/40 px-4 py-3 sm:px-5">
+                <h3 className="text-sm font-semibold tracking-tight">Σήμερα</h3>
+                {todayCount > 0 ? (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+                    {todayCount}
+                  </span>
+                ) : null}
+              </div>
+
+              {todayItems.length === 0 ? (
+                <div className="flex flex-col items-start gap-2 px-5 py-10 sm:items-center sm:text-center">
+                  <CheckCircle2
+                    className="h-5 w-5 text-primary/70"
+                    aria-hidden
+                  />
+                  <p className="text-sm font-medium">Όλα εντάξει</p>
+                  <p className="max-w-xs text-xs text-muted-foreground">
+                    Νέες εξελίξεις θα εμφανιστούν εδώ όταν χρειάζονται ενέργεια.
                   </p>
-                ) : (
-                  <>
-                    {opportunityPages.pageItems.map((opportunity) => {
-                      const meta = parseMatchMeta(opportunity.matchMeta);
-                      const topScore = meta?.highestScore ?? opportunity.score ?? 0;
-                      const profileName =
-                        meta?.matchedProfiles?.[0]?.name ??
-                        opportunity.watchProfile?.name ??
-                        "—";
-                      const reasonsFromMeta = meta?.matchedProfiles?.[0]?.reasons;
-                      const reasonsFromScore = Array.isArray(opportunity.scoreReasons)
-                        ? opportunity.scoreReasons.map(String)
-                        : [];
-                      const whyReasons =
-                        (reasonsFromMeta && reasonsFromMeta.length > 0
-                          ? reasonsFromMeta
-                          : reasonsFromScore
-                        ).slice(0, 3);
-                      return (
-                        <div
-                          key={opportunity.id}
-                          className={
-                            opportunity.invitationIssued
-                              ? "min-w-0 space-y-2 rounded-md border border-destructive/40 bg-destructive/[0.04] p-3 ring-1 ring-destructive/15"
-                              : "min-w-0 space-y-2 rounded-md border border-border p-3"
-                          }
+                </div>
+              ) : (
+                <ul className="divide-y divide-border/40">
+                  {todayItems.map((item) => (
+                    <li key={item.id}>
+                      <div
+                        className={cn(
+                          "group flex items-stretch gap-0",
+                          item.accent === "urgent" && "bg-amber-500/[0.04]",
+                        )}
+                      >
+                        <Link
+                          to={item.href}
+                          className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30 sm:px-5"
                         >
-                          <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <Badge>{opportunity.tender.recordType}</Badge>
+                          <span
+                            className={cn(
+                              "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                              item.accent === "urgent"
+                                ? "bg-amber-500"
+                                : "bg-primary/70",
+                            )}
+                            aria-hidden
+                          />
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge
+                                variant="secondary"
+                                className="h-5 px-1.5 text-[10px] font-medium"
+                              >
+                                {item.kind}
+                              </Badge>
+                              <span className="text-[11px] text-muted-foreground">
+                                {item.meta}
+                              </span>
+                            </div>
+                            <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
+                              {item.title}
+                            </p>
+                          </div>
+                          <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground" />
+                        </Link>
+                        {item.onDismiss ? (
+                          <button
+                            type="button"
+                            className="shrink-0 border-l border-border/40 px-3 text-[11px] text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                            onClick={item.onDismiss}
+                            aria-label="Σήμανση ως αναγνωσμένο"
+                          >
+                            OK
+                          </button>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {/* OPPORTUNITIES — secondary visual block */}
+            <section
+              aria-label="Πρόσφατες ευκαιρίες"
+              className="min-w-0 overflow-hidden rounded-xl border border-border/50 bg-card/30"
+            >
+              <div className="flex items-center justify-between border-b border-border/40 px-4 py-3 sm:px-5">
+                <h3 className="text-sm font-semibold tracking-tight">Ευκαιρίες</h3>
+                <Link
+                  to="/app/opportunities"
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Όλες →
+                </Link>
+              </div>
+
+              {recentOpportunities.length === 0 ? (
+                <div className="px-5 py-10 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Δεν υπάρχουν ακόμη νέα αποτελέσματα.
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3"
+                    asChild
+                  >
+                    <Link to="/app/saved-searches">Αποθηκευμένες αναζητήσεις</Link>
+                  </Button>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border/40">
+                  {recentOpportunities.map((opportunity) => {
+                    const meta = parseMatchMeta(opportunity.matchMeta);
+                    const topScore = meta?.highestScore ?? opportunity.score ?? 0;
+                    return (
+                      <li
+                        key={opportunity.id}
+                        className="flex items-start gap-3 px-4 py-3.5 sm:px-5"
+                      >
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge
+                              variant="outline"
+                              className="h-5 px-1.5 font-mono text-[10px]"
+                            >
+                              {opportunity.tender.recordType}
+                            </Badge>
+                            <ScoreBadge
+                              score={topScore}
+                              className="h-5 px-1.5 text-[10px]"
+                            />
                             {opportunity.invitationIssued ? (
                               <InvitationIssuedBadge
                                 compact
                                 relatedProcAdam={opportunity.relatedProcAdam}
                               />
                             ) : null}
-                            <ScoreBadge score={topScore} />
-                            <span className="min-w-0 break-words text-xs text-muted-foreground">
-                              {profileName}
-                            </span>
                           </div>
-                          <div className="break-words font-medium leading-snug">
+                          <Link
+                            to={tenderPath(opportunity)}
+                            className="line-clamp-2 block text-sm font-medium leading-snug hover:underline"
+                          >
                             {opportunity.tender.title || "—"}
-                          </div>
-                          <div className="break-words text-sm text-muted-foreground">
-                            {opportunity.tender.contractingAuthority || "—"} ·{" "}
+                          </Link>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {opportunity.tender.contractingAuthority || "—"}
+                            {" · "}
                             {formatMoney(opportunity.tender.budgetWithoutVat)}
-                          </div>
-                          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                            {formatDate(opportunity.tender.submissionDate) ? (
-                              <span>
-                                Καταχώριση: {formatDate(opportunity.tender.submissionDate)}
-                              </span>
-                            ) : null}
-                            {opportunity.tender.finalSubmissionDate ? (
-                              <span
-                                className={
-                                  isExpiredDeadline(opportunity.tender.finalSubmissionDate)
-                                    ? "font-medium text-destructive"
-                                    : undefined
-                                }
-                              >
-                                {isExpiredDeadline(opportunity.tender.finalSubmissionDate)
-                                  ? "Έληξε: "
-                                  : "Προθεσμία υποβολής: "}
-                                {formatDate(opportunity.tender.finalSubmissionDate)}
-                              </span>
-                            ) : null}
-                          </div>
-                          {whyReasons.length > 0 ? (
-                            <div className="space-y-0.5 break-words text-xs text-muted-foreground">
-                              <div className="font-medium text-foreground/80">
-                                Γιατί εμφανίζεται στις ευκαιρίες σας
-                              </div>
-                              {whyReasons.map((reason) => (
-                                <div key={reason}>· {formatMatchReason(reason)}</div>
-                              ))}
-                            </div>
-                          ) : null}
-                          <div className="flex flex-wrap items-center gap-2">
-                            <PdfAction
-                              onClick={() => setPdfPreview(opportunity)}
-                            />
-                            <Button size="sm" variant="outline" asChild>
-                              <Link to={tenderPath(opportunity)}>Προβολή λεπτομερειών</Link>
-                            </Button>
-                            {!opportunity.following ? (
-                              <Button
-                                size="sm"
-                                onClick={() => void handleFollow(opportunity)}
-                              >
-                                Παρακολούθηση
-                              </Button>
-                            ) : (
-                              <Badge variant="success">Παρακολουθείται</Badge>
-                            )}
-                          </div>
+                          </p>
                         </div>
-                      );
-                    })}
-                    <Pagination
-                      page={opportunityPages.page}
-                      totalPages={opportunityPages.totalPages}
-                      total={opportunityPages.total}
-                      pageSize={opportunityPages.pageSize}
-                      onPageChange={opportunityPages.setPage}
-                    />
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            {nextActions.length > 0 ? (
-              <Card className="min-w-0 overflow-hidden">
-                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
-                  <div>
-                    <CardTitle className="text-base">Επόμενες ενέργειες</CardTitle>
-                    <CardDescription>
-                      Εκκρεμότητες στους διαγωνισμούς που παρακολουθείτε.
-                    </CardDescription>
-                  </div>
-                  <Button variant="ghost" size="sm" asChild>
-                    <Link to="/app/monitoring">Παρακολούθηση</Link>
-                  </Button>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {nextActions.map((action) => (
-                    <Link
-                      key={action.id}
-                      to={tenderHref(action.recordType, action.referenceNumber)}
-                      className="block rounded-md border border-border px-3 py-2.5 hover:bg-muted/50"
-                    >
-                      <div className="truncate text-sm font-medium">
-                        {action.title || action.referenceNumber}
-                      </div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
-                        {action.recordType} · {action.actionLabel}
-                      </div>
-                    </Link>
-                  ))}
-                </CardContent>
-              </Card>
-            ) : (
-              <p className="text-sm text-muted-foreground lg:col-span-1">
-                Δεν υπάρχουν ενέργειες που απαιτούν την προσοχή σας.
-              </p>
-            )}
+                        {!opportunity.following ? (
+                          <Button
+                            size="sm"
+                            className="shrink-0"
+                            onClick={() => void handleFollow(opportunity)}
+                          >
+                            Παρακολούθηση
+                          </Button>
+                        ) : (
+                          <span className="shrink-0 pt-1 text-[11px] text-muted-foreground">
+                            Ενεργή
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
           </div>
 
-          {overview.monitoring.length > 0 ? (
-            <Card>
-              <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
-                <div>
-                  <CardTitle className="text-base">Παρακολούθηση</CardTitle>
-                  <CardDescription>
-                    Πού βρισκόμαστε και τι περιμένουμε.
-                  </CardDescription>
-                </div>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link to="/app/monitoring">Όλα</Link>
-                </Button>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {overview.monitoring.map((row) => (
-                  <Link
-                    key={row.id}
-                    to={tenderHref(row.tender.recordType, row.tender.referenceNumber)}
-                    className="block space-y-1 rounded-md border border-border px-3 py-2.5 hover:bg-muted/50"
-                  >
-                    <div className="truncate text-sm font-medium">
-                      {row.tender.title || row.tender.referenceNumber}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {row.tender.recordType} · {row.tender.referenceNumber}
-                    </div>
-                    <div className="text-xs">
-                      Στάδιο: {row.stageLabel || row.pipelineStage}
-                    </div>
-                    {row.waitingFor ? (
-                      <div className="text-xs text-muted-foreground">
-                        Αναμένουμε: {row.waitingFor}
-                      </div>
-                    ) : row.nextActionLabel ? (
-                      <div className="text-xs text-muted-foreground">
-                        Επόμενο: {row.nextActionLabel}
-                      </div>
-                    ) : null}
-                    <div className="text-xs text-muted-foreground">
-                      Τελευταία δραστηριότητα: {formatDay(row.latestActivityAt)}
-                    </div>
-                  </Link>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0">
-                <div>
-                  <CardTitle className="text-base">Αποθηκευμένες αναζητήσεις</CardTitle>
-                  <CardDescription className="mt-1">
-                    {overview.watchUsage.active} από{" "}
-                    {overview.entitlements.maxActiveWatchProfiles} ενεργές · τελευταίος
-                    έλεγχος {formatRelative(overview.lastSystemScanAt)} · νεότερη
-                    αντιστοίχιση {formatRelative(overview.latestMatchAt)}
-                    {failedScanCount > 0
-                      ? failedScanCount === 1
-                        ? " · 1 αποτυχημένος έλεγχος"
-                        : ` · ${failedScanCount} αποτυχημένοι έλεγχοι`
-                      : ""}
-                  </CardDescription>
-                </div>
-                <Button variant="outline" size="sm" asChild>
-                  <Link to="/app/saved-searches">Διαχείριση</Link>
-                </Button>
-              </CardHeader>
-            </Card>
-
-            {overview.deadlines.length > 0 ? (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Επερχόμενες προθεσμίες</CardTitle>
-                  <CardDescription>Καταληκτικές υποβολής εντός 7 ημερών.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {overview.deadlines.map((row) => (
-                    <div
-                      key={row.tenderId}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">
-                          {row.title || row.referenceNumber}
-                        </div>
-                        <div className="font-mono text-xs text-muted-foreground">
-                          {row.referenceNumber}
-                        </div>
-                      </div>
-                      <Badge variant={row.daysRemaining <= 2 ? "warning" : "outline"}>
-                        {row.daysRemaining === 0
-                          ? "Σήμερα"
-                          : row.daysRemaining === 1
-                            ? "Αύριο"
-                            : `${row.daysRemaining} ημέρες`}
-                      </Badge>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ) : null}
-
-            {overview.documentsAttention.length > 0 ? (
-              <Card>
-                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 space-y-0 pb-3">
-                  <div>
-                    <CardTitle className="text-base">Έγγραφα που λήγουν</CardTitle>
-                    <CardDescription>
-                      Χρειάζονται ανανέωση πριν την επόμενη υποβολή.
-                    </CardDescription>
-                  </div>
-                  <Button variant="ghost" size="sm" asChild>
-                    <Link to="/app/documents">Έγγραφα</Link>
-                  </Button>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {overview.documentsAttention.map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
-                    >
-                      <div className="min-w-0 truncate text-sm font-medium">{doc.name}</div>
-                      <Badge variant={doc.status === "EXPIRED" ? "destructive" : "warning"}>
-                        {doc.status === "EXPIRED" ? "Έληξε" : "Λήγει σύντομα"}
-                      </Badge>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ) : null}
-          </div>
+          <nav
+            aria-label="Συντομεύσεις"
+            className="flex flex-wrap gap-2"
+          >
+            {[
+              { to: "/app/monitoring", label: "Παρακολουθούμενα" },
+              { to: "/app/saved-searches", label: "Αναζητήσεις" },
+              { to: "/app/submissions", label: "Υποβολές" },
+              { to: "/app/documents", label: "Έγγραφα" },
+            ].map((link) => (
+              <Link
+                key={link.to}
+                to={link.to}
+                className="rounded-full border border-border/50 bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted/40 hover:text-foreground"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
         </>
       )}
-
-      <PdfPreviewModal
-        open={Boolean(
-          pdfPreview &&
-            (pdfPreview.tender.recordType === "REQ" ||
-              pdfPreview.tender.recordType === "PROC"),
-        )}
-        onOpenChange={(open) => !open && setPdfPreview(null)}
-        organizationId={activeOrganization.id}
-        recordType={pdfPreview?.tender.recordType === "PROC" ? "PROC" : "REQ"}
-        adam={pdfPreview?.tender.referenceNumber ?? ""}
-        title={pdfPreview?.tender.title}
-        officialUrl={pdfPreview?.tender.publicKimdisUrl}
-        actions={
-          pdfPreview ? (
-            <Button size="sm" variant="outline" asChild>
-              <Link to={tenderPath(pdfPreview)} onClick={() => setPdfPreview(null)}>
-                Άνοιγμα σελίδας πράξης
-              </Link>
-            </Button>
-          ) : null
-        }
-      />
     </div>
   );
 };

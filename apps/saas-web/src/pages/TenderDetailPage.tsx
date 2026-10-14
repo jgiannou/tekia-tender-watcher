@@ -773,6 +773,7 @@ export const TenderDetailPage = () => {
         recordType={item.recordType}
         title={item.title}
         authority={item.contractingAuthority}
+        summaryDescription={item.description}
         adam={item.adam}
         budgetWithoutVat={item.budgetWithoutVat}
         budgetLabel={item.adam.startsWith("TED:") ? "εκτιμώμενη αξία" : "χωρίς ΦΠΑ"}

@@ -6,6 +6,7 @@ import { useSessionContext } from "@/auth/SessionProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader, SectionHeader } from "@/components/ui/page-header";
 import {
   saasApi,
   type BillingCatalogPlan,
@@ -286,60 +287,49 @@ export const SubscriptionPage = () => {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-10">
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary via-slate-800 to-slate-950 px-6 py-8 text-white shadow-xl shadow-primary/20 md:px-10 md:py-10">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_85%_20%,rgba(255,255,255,0.18),transparent_42%),radial-gradient(circle_at_10%_90%,rgba(255,255,255,0.08),transparent_40%)]"
-        />
-        <div className="relative max-w-xl space-y-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/80">
-            ARC Tenders
-          </p>
-          <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Συνδρομή</h1>
-          <p className="text-sm text-white/90 md:text-base">
-            {activeLaunchPromo
-              ? "Αποτελεσματικό πακέτο: Pro · Προωθητική δοκιμή (δωρεάν) · χωρίς αυτόματη χρέωση."
-              : launchPromo?.canActivate
-                ? "Επιλέξτε το πακέτο που ταιριάζει στις ανάγκες σας. Διατίθεται προσφορά γνωριμίας: 30 ημέρες Pro δωρεάν, χωρίς κάρτα."
-                : "Επιλέξτε το πακέτο που ταιριάζει στις ανάγκες σας. Ξεκινήστε δωρεάν ή δοκιμάστε το Pro για 7 ημέρες, χωρίς κάρτα."}
-          </p>
-          <div className="flex flex-wrap gap-2 pt-1">
-            <span className="rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-semibold">
+      <PageHeader
+        title="Συνδρομή"
+        description={
+          activeLaunchPromo
+            ? "Αποτελεσματικό πακέτο: Pro · Προωθητική δοκιμή (δωρεάν) · χωρίς αυτόματη χρέωση."
+            : launchPromo?.canActivate
+              ? "Επιλέξτε το πακέτο που ταιριάζει στις ανάγκες σας. Διατίθεται προσφορά γνωριμίας: 30 ημέρες Pro δωρεάν, χωρίς κάρτα."
+              : "Επιλέξτε το πακέτο που ταιριάζει στις ανάγκες σας. Ξεκινήστε δωρεάν ή δοκιμάστε το Pro για 7 ημέρες, χωρίς κάρτα."
+        }
+        meta={
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span className="font-medium text-foreground">
               {activeLaunchPromo
                 ? `Αποτελεσματικό: ${currentLabel}`
                 : `Το πακέτο σας: ${currentLabel}`}
             </span>
             {activeLaunchPromo ? (
-              <span className="rounded-full border border-emerald-300/40 bg-emerald-400/15 px-3 py-1 text-xs font-semibold">
-                Δωρεάν προωθητική δοκιμή
-              </span>
+              <span className="text-primary">Δωρεάν προωθητική δοκιμή</span>
             ) : null}
             {activeLaunchPromo && promoExpiryLabel ? (
-              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs">
+              <span>
                 Έως {promoExpiryLabel}
-                {promoDaysRemaining != null
-                  ? ` · ${promoDaysRemaining} ημ.`
-                  : ""}
+                {promoDaysRemaining != null ? ` · ${promoDaysRemaining} ημ.` : ""}
               </span>
             ) : status?.trialEndsAt && status.planKey === "trial" ? (
-              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs">
-                Δοκιμή έως{" "}
-                {new Date(status.trialEndsAt).toLocaleDateString("el-GR")}
+              <span>
+                Δοκιμή έως {new Date(status.trialEndsAt).toLocaleDateString("el-GR")}
               </span>
             ) : null}
             {status?.cancelAtPeriodEnd && periodEnd ? (
-              <span className="rounded-full border border-amber-300/50 bg-amber-400/20 px-3 py-1 text-xs font-semibold">
+              <span className="text-amber-700 dark:text-amber-400">
                 Ακύρωση · πρόσβαση έως {periodEnd}
               </span>
             ) : null}
           </div>
-          {status?.configured &&
+        }
+        actions={
+          status?.configured &&
           status.canManageBilling &&
           (status.planKey === "basic" || status.planKey === "pro") ? (
-            <div className="flex flex-wrap gap-2 pt-2">
+            <>
               <Button
                 variant="outline"
-                className="border-white/50 bg-transparent text-white hover:bg-white/10"
                 disabled={busyKey === "portal" || busyKey === "cancel"}
                 onClick={() => void handlePortal()}
               >
@@ -347,21 +337,21 @@ export const SubscriptionPage = () => {
               </Button>
               {!status.cancelAtPeriodEnd ? (
                 <Button
-                  variant="outline"
-                  className="border-red-200/70 bg-transparent text-white hover:bg-red-500/20"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-destructive"
                   disabled={busyKey === "portal" || busyKey === "cancel"}
                   onClick={() => void handlePortal("cancel")}
                 >
                   {busyKey === "cancel" ? "Άνοιγμα…" : "Ακύρωση συνδρομής"}
                 </Button>
               ) : null}
-            </div>
-          ) : null}
-        </div>
-      </section>
+            </>
+          ) : undefined
+        }
+      />
 
       {activeLaunchPromo && status?.launchPromo?.redemption ? (
-        <Card className="border-emerald-500/30 bg-emerald-500/[0.05]">
+        <Card className="border-primary/30">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
               Το Pro σου είναι ενεργό — προωθητική δοκιμή
@@ -428,7 +418,7 @@ export const SubscriptionPage = () => {
       {launchPromo?.enabled &&
       launchPromo.canActivate &&
       status?.canManageBilling ? (
-        <Card className="border-primary/30 bg-primary/[0.04]">
+        <Card className="border-border/60">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
               Προσφορά γνωριμίας: 30 ημέρες Pro δωρεάν
@@ -459,7 +449,7 @@ export const SubscriptionPage = () => {
       {launchPromo?.enabled &&
       launchPromo.reason === "promo_cap_reached" &&
       !activeLaunchPromo ? (
-        <Card className="border-border/70">
+        <Card className="border-border/50">
           <CardContent className="py-4 text-sm text-muted-foreground">
             Η προσφορά ολοκληρώθηκε. Οι διαθέσιμες θέσεις έχουν καλυφθεί. Μπορείτε να
             συνεχίσετε με το Free Plan ή να επιλέξετε πληρωμένη συνδρομή.
@@ -468,7 +458,7 @@ export const SubscriptionPage = () => {
       ) : null}
 
       {status?.configured === false ? (
-        <Card className="border-amber-500/40 bg-amber-500/5">
+        <Card className="border-amber-500/30">
           <CardContent className="py-4 text-sm text-muted-foreground">
             Το Stripe δεν είναι πλήρως ρυθμισμένο ακόμη (λείπουν Price IDs). Μπορείτε να
             δείτε τα πλάνα· το checkout θα ενεργοποιηθεί μόλις οριστούν τα προϊόντα στο
@@ -477,57 +467,60 @@ export const SubscriptionPage = () => {
         </Card>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">Επιλέξτε πακέτο</h2>
-          <p className="text-sm text-muted-foreground">
-            Οι τιμές δεν περιλαμβάνουν ΦΠΑ. Με ετήσια χρέωση πληρώνετε για 10 μήνες και
-            χρησιμοποιείτε την υπηρεσία για 12.
-          </p>
-        </div>
-        <div className="inline-flex rounded-lg border border-border bg-card p-1">
-          {(["monthly", "annual"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
-                interval === value
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => setInterval(value)}
-            >
-              {value === "monthly" ? "Μηνιαία χρέωση" : "Ετήσια χρέωση"}
-            </button>
-          ))}
-        </div>
-      </div>
+      <SectionHeader
+        className="mb-0 sm:items-end"
+        title="Επιλέξτε πακέτο"
+        description="Οι τιμές δεν περιλαμβάνουν ΦΠΑ. Με ετήσια χρέωση πληρώνετε για 10 μήνες και χρησιμοποιείτε την υπηρεσία για 12."
+        action={
+          <div className="inline-flex rounded-md bg-muted/40 p-0.5" role="group" aria-label="Διάστημα χρέωσης">
+            {(["monthly", "annual"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={interval === value}
+                className={cn(
+                  "rounded px-3 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  interval === value
+                    ? "bg-background font-medium text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setInterval(value)}
+              >
+                {value === "monthly" ? "Μηνιαία χρέωση" : "Ετήσια χρέωση"}
+              </button>
+            ))}
+          </div>
+        }
+      />
 
       {free ? (
-        <Card className="mb-4">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{free.labelEl || free.label}</CardTitle>
-            <CardDescription>{free.positioningEl || free.positioning}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <p className="text-2xl font-semibold">0 €</p>
-            <ul className="space-y-1.5 text-muted-foreground">
-              {(free.featuresEl ?? []).map((feature) => (
-                <li key={feature}>• {feature}</li>
-              ))}
-            </ul>
-            {status?.planKey === "free" && !activeLaunchPromo ? (
-              <Badge variant="success">Το πακέτο σας</Badge>
-            ) : activeLaunchPromo ? (
-              <p className="text-xs text-muted-foreground">
-                Μετά τη λήξη της προσφοράς επιστρέφετε στο Free.
+        <Card className="border-border/50 bg-transparent">
+          <CardContent className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-1.5">
+              <div className="flex items-baseline gap-3">
+                <h3 className="text-base font-semibold tracking-tight">
+                  {free.labelEl || free.label}
+                </h3>
+                <span className="text-sm text-muted-foreground">0 €</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {free.positioningEl || free.positioning}
               </p>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Δωρεάν χρήση, χωρίς κάρτα.
-              </p>
-            )}
+              <ul className="space-y-1 pt-1 text-[13px] text-muted-foreground">
+                {(free.featuresEl ?? []).map((feature) => (
+                  <li key={feature}>• {feature}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="shrink-0 text-xs text-muted-foreground">
+              {status?.planKey === "free" && !activeLaunchPromo ? (
+                <Badge variant="success">Το πακέτο σας</Badge>
+              ) : activeLaunchPromo ? (
+                "Μετά τη λήξη της προσφοράς επιστρέφετε στο Free."
+              ) : (
+                "Δωρεάν χρήση, χωρίς κάρτα."
+              )}
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -566,20 +559,20 @@ export const SubscriptionPage = () => {
             <Card
               key={plan.key}
               className={cn(
-                "relative flex flex-col transition-transform hover:-translate-y-1",
-                highlight && "border-primary shadow-lg shadow-primary/10 md:-translate-y-1",
+                "relative flex flex-col",
+                highlight ? "border-primary/60" : "border-border/70",
               )}
             >
               {highlight ? (
-                <div className="absolute -top-2.5 right-4 rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
+                <div className="absolute right-4 top-4 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary">
                   Προτεινόμενο
                 </div>
               ) : null}
               <CardHeader>
-                <CardTitle className="text-xl">{plan.labelEl}</CardTitle>
+                <CardTitle className="text-base">{plan.labelEl}</CardTitle>
                 <CardDescription>{plan.positioningEl || plan.positioning}</CardDescription>
                 <div className="pt-2">
-                  <span className="text-3xl font-semibold tracking-tight">
+                  <span className="text-2xl font-semibold tracking-tight">
                     {formatSubscriptionPrice(amount)}
                   </span>
                   <span className="ml-1 text-sm text-muted-foreground">
@@ -588,17 +581,17 @@ export const SubscriptionPage = () => {
                 </div>
               </CardHeader>
               <CardContent className="flex flex-1 flex-col gap-4">
-                <ul className="space-y-2 text-sm">
+                <ul className="space-y-2 text-[13px] text-muted-foreground">
                   {(plan.featuresEl ?? []).map((feature) => (
                     <li key={feature} className="flex gap-2">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/80" />
                       <span>{feature}</span>
                     </li>
                   ))}
                 </ul>
 
                 {plan.key === "pro" ? (
-                  <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+                  <div className="space-y-2 border-t border-border/50 pt-4">
                     <div className="flex items-center justify-between text-sm">
                       <label htmlFor="extra-seats">Επιπλέον χρήστες</label>
                       <span className="font-medium">{extraSeats}</span>
@@ -697,9 +690,9 @@ export const SubscriptionPage = () => {
         })}
       </div>
 
-      <Card>
+      <Card className="border-border/50 bg-transparent">
         <CardHeader>
-          <CardTitle className="text-base">Δωρεάν πακέτο και δοκιμή Pro</CardTitle>
+          <CardTitle className="text-sm">Δωρεάν πακέτο και δοκιμή Pro</CardTitle>
           <CardDescription>
             Με την εγγραφή σας αποκτάτε το δωρεάν πακέτο, χωρίς κάρτα και χωρίς χρονικό
             περιορισμό.{" "}

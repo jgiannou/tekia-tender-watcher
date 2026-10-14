@@ -54,8 +54,8 @@
   --arc-accent-foreground: #006870;
   --arc-destructive: #d92d4a;
   --arc-destructive-foreground: #ffffff;
-  --arc-border: rgb(0 80 90 / 0.14);
-  --arc-input: rgb(0 80 90 / 0.18);
+  --arc-border: rgb(15 30 35 / 0.1);
+  --arc-input: rgb(15 30 35 / 0.14);
   --arc-ring: #008b96;
   --arc-sidebar: #0b1214;
   --arc-sidebar-foreground: #f5f5f5;
@@ -67,33 +67,33 @@
 }
 
 .dark {
-  /* App chrome — original ARC dark (unchanged for logged-in UI) */
-  --arc-background: #0a0a0a;
-  --arc-foreground: #f5f5f5;
-  --arc-card: #111111;
-  --arc-card-foreground: #f5f5f5;
-  --arc-popover: #141414;
-  --arc-popover-foreground: #f5f5f5;
-  --arc-primary: #00f3ff;
-  --arc-primary-foreground: #050505;
-  --arc-secondary: #1a1a1a;
-  --arc-secondary-foreground: #f5f5f5;
-  --arc-muted: #171717;
-  --arc-muted-foreground: #a0a0a0;
-  --arc-accent: #161b1c;
-  --arc-accent-foreground: #00f3ff;
+  /* Calm dark — neutral borders; teal reserved for accent/CTA */
+  --arc-background: #090d0e;
+  --arc-foreground: #f2f5f5;
+  --arc-card: #0f1416;
+  --arc-card-foreground: #f2f5f5;
+  --arc-popover: #12181a;
+  --arc-popover-foreground: #f2f5f5;
+  --arc-primary: #00d4e0;
+  --arc-primary-foreground: #041014;
+  --arc-secondary: #161c1e;
+  --arc-secondary-foreground: #f2f5f5;
+  --arc-muted: #13191b;
+  --arc-muted-foreground: #8b989c;
+  --arc-accent: #132022;
+  --arc-accent-foreground: #00d4e0;
   --arc-destructive: #ff3b5c;
   --arc-destructive-foreground: #ffffff;
-  --arc-border: rgb(0 243 255 / 0.16);
-  --arc-input: rgb(0 243 255 / 0.22);
-  --arc-ring: #00f3ff;
-  --arc-sidebar: #050505;
-  --arc-sidebar-foreground: #f5f5f5;
-  --arc-sidebar-muted: #a0a0a0;
-  --arc-sidebar-accent: #121212;
-  --arc-sidebar-border: rgb(0 243 255 / 0.14);
-  --arc-glow-ink: rgb(0 243 255 / 0.1);
-  --arc-glow-signal: rgb(0 243 255 / 0.12);
+  --arc-border: rgb(255 255 255 / 0.08);
+  --arc-input: rgb(255 255 255 / 0.1);
+  --arc-ring: #00d4e0;
+  --arc-sidebar: #070a0b;
+  --arc-sidebar-foreground: #eef2f2;
+  --arc-sidebar-muted: #7a878b;
+  --arc-sidebar-accent: #111719;
+  --arc-sidebar-border: rgb(255 255 255 / 0.06);
+  --arc-glow-ink: rgb(0 212 224 / 0.06);
+  --arc-glow-signal: rgb(0 212 224 / 0.08);
 }
 
 @layer base {
@@ -227,27 +227,29 @@
  * Scoped tokens — logged-in app keeps original ARC dark.
  */
 .arc-public-atmosphere {
-  --arc-background: #0e1416;
+  --arc-background: #090d0e;
   --arc-foreground: #e8eef0;
-  --arc-card: #151c1f;
+  --arc-card: #101618;
   --arc-card-foreground: #e8eef0;
-  --arc-popover: #1a2226;
+  --arc-popover: #141c1f;
   --arc-popover-foreground: #e8eef0;
   --arc-primary: #5ec4c9;
   --arc-primary-foreground: #061012;
-  --arc-secondary: #1c262a;
+  --arc-secondary: #161e21;
   --arc-secondary-foreground: #e8eef0;
-  --arc-muted: #182024;
-  --arc-muted-foreground: #9aabae;
-  --arc-accent: #1a2a2e;
+  --arc-muted: #12191c;
+  --arc-muted-foreground: #8fa0a4;
+  --arc-accent: #152226;
   --arc-accent-foreground: #5ec4c9;
-  --arc-border: rgb(94 196 201 / 0.16);
-  --arc-input: rgb(94 196 201 / 0.2);
+  --arc-border: rgb(255 255 255 / 0.08);
+  --arc-input: rgb(255 255 255 / 0.1);
   --arc-ring: #5ec4c9;
   background-color: var(--arc-background);
   background-image:
-    radial-gradient(ellipse 80% 50% at 50% -12%, rgb(94 196 201 / 0.12), transparent 55%),
-    radial-gradient(ellipse 55% 40% at 100% 80%, rgb(30 55 60 / 0.45), transparent 50%);
+    radial-gradient(ellipse 70% 45% at 50% -8%, rgb(94 196 201 / 0.1), transparent 55%),
+    linear-gradient(rgb(255 255 255 / 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.015) 1px, transparent 1px);
+  background-size: auto, 64px 64px, 64px 64px;
   color: var(--arc-foreground);
 }
 
@@ -270,12 +272,48 @@
   animation: arc-hero-rise 0.7s ease-out 0.1s both;
 }
 
+@keyframes arc-hero-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.arc-hero-float {
+  animation: arc-hero-float 7s ease-in-out infinite;
+}
+
+.arc-hero-float-delayed {
+  animation: arc-hero-float 8s ease-in-out 1.2s infinite;
+}
+
+.arc-nav-active {
+  position: relative;
+}
+
+.arc-nav-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 1rem;
+  width: 2px;
+  translate: 0 -50%;
+  border-radius: 1px;
+  background: var(--arc-primary);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .auth-panel-enter,
   .auth-form-enter,
   .auth-highlight-enter,
   .arc-hero-copy,
-  .arc-hero-visual {
+  .arc-hero-visual,
+  .arc-hero-float,
+  .arc-hero-float-delayed {
     animation: none;
   }
 }

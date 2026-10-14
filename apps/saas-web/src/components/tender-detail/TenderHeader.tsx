@@ -11,6 +11,8 @@ type TenderHeaderProps = {
   recordType: string;
   title: string | null;
   authority: string | null;
+  /** KIMDIS «Περιληπτική περιγραφή» (objectDetails.shortDescription). */
+  summaryDescription?: string | null;
   adam: string;
   budgetWithoutVat: number | null;
   budgetLabel?: string;
@@ -50,6 +52,7 @@ export const TenderHeader = ({
   recordType,
   title,
   authority,
+  summaryDescription,
   adam,
   budgetWithoutVat,
   budgetLabel = "χωρίς ΦΠΑ",
@@ -126,6 +129,16 @@ export const TenderHeader = ({
           {title || "—"}
         </h1>
         <p className="text-sm text-muted-foreground">{authority || "—"}</p>
+        {summaryDescription?.trim() ? (
+          <div className="max-w-3xl space-y-1 pt-1">
+            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              Περιληπτική περιγραφή
+            </p>
+            <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/90">
+              {summaryDescription.trim()}
+            </p>
+          </div>
+        ) : null}
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
           {metaParts.map((part, index) => (
             <span key={`${part}-${index}`} className="inline-flex items-center gap-2">

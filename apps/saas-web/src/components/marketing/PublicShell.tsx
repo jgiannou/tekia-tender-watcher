@@ -12,14 +12,17 @@ const COPYRIGHT_YEAR = new Date().getFullYear();
 
 type PublicShellProps = {
   children: ReactNode;
-  /** When on landing, Χαρακτηριστικά scrolls to #features */
   featuresHref?: string;
+  howItWorksHref?: string;
+  faqHref?: string;
   contactHref?: string;
 };
 
 export const PublicShell = ({
   children,
   featuresHref = "/#features",
+  howItWorksHref = "/#how-it-works",
+  faqHref = "/#faq",
   contactHref = "/#contact",
 }: PublicShellProps) => {
   const [open, setOpen] = useState(false);
@@ -30,10 +33,12 @@ export const PublicShell = ({
       isActive && "text-foreground",
     );
 
+  const close = () => setOpen(false);
+
   return (
     <div className="arc-public-atmosphere relative min-h-screen overflow-x-clip bg-background text-foreground">
       <PromoAnnouncementBar />
-      <header className="relative z-20 border-b border-border/60 bg-background/85 backdrop-blur-md">
+      <header className="sticky top-0 z-20 border-b border-border/40 bg-background/70 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
           <Link
             to="/"
@@ -43,27 +48,44 @@ export const PublicShell = ({
             <ArcBrand compact />
           </Link>
 
-          <nav className="hidden items-center gap-6 md:flex" aria-label="Δημόσια πλοήγηση">
-            <a href={featuresHref} className="text-sm text-muted-foreground hover:text-foreground">
+          <nav
+            className="hidden items-center gap-7 md:flex"
+            aria-label="Δημόσια πλοήγηση"
+          >
+            <a
+              href={featuresHref}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
               Χαρακτηριστικά
+            </a>
+            <a
+              href={howItWorksHref}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Πώς λειτουργεί
             </a>
             <NavLink to="/pricing" className={navLinkClass}>
               Τιμές
             </NavLink>
-            <a href={contactHref} className="text-sm text-muted-foreground hover:text-foreground">
-              Επικοινωνία
+            <a
+              href={faqHref}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Συχνές ερωτήσεις
             </a>
-            <NavLink to="/login" className={navLinkClass}>
-              Σύνδεση
-            </NavLink>
-            <Button asChild size="sm">
-              <Link to="/signup">Ξεκινήστε δωρεάν</Link>
-            </Button>
+            <div className="ml-2 flex items-center gap-3">
+              <NavLink to="/login" className={navLinkClass}>
+                Σύνδεση
+              </NavLink>
+              <Button asChild size="sm">
+                <Link to="/signup">Ξεκινήστε δωρεάν</Link>
+              </Button>
+            </div>
           </nav>
 
           <button
             type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border md:hidden"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md md:hidden"
             aria-label={open ? "Κλείσιμο μενού" : "Άνοιγμα μενού"}
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
@@ -73,30 +95,28 @@ export const PublicShell = ({
         </div>
 
         {open ? (
-          <div className="border-t border-border/60 px-4 py-3 md:hidden">
+          <div className="border-t border-border/40 px-4 py-4 md:hidden">
             <nav className="flex flex-col gap-3" aria-label="Κινητό μενού">
-              <a
-                href={featuresHref}
-                className="text-sm text-muted-foreground"
-                onClick={() => setOpen(false)}
-              >
+              <a href={featuresHref} className="text-sm" onClick={close}>
                 Χαρακτηριστικά
               </a>
-              <Link to="/pricing" className="text-sm text-muted-foreground" onClick={() => setOpen(false)}>
+              <a href={howItWorksHref} className="text-sm" onClick={close}>
+                Πώς λειτουργεί
+              </a>
+              <Link to="/pricing" className="text-sm" onClick={close}>
                 Τιμές
               </Link>
-              <a
-                href={contactHref}
-                className="text-sm text-muted-foreground"
-                onClick={() => setOpen(false)}
-              >
+              <a href={faqHref} className="text-sm" onClick={close}>
+                Συχνές ερωτήσεις
+              </a>
+              <a href={contactHref} className="text-sm" onClick={close}>
                 Επικοινωνία
               </a>
-              <Link to="/login" className="text-sm text-muted-foreground" onClick={() => setOpen(false)}>
+              <Link to="/login" className="text-sm" onClick={close}>
                 Σύνδεση
               </Link>
-              <Button asChild className="w-full">
-                <Link to="/signup" onClick={() => setOpen(false)}>
+              <Button asChild className="mt-1 w-full">
+                <Link to="/signup" onClick={close}>
                   Ξεκινήστε δωρεάν
                 </Link>
               </Button>
@@ -107,8 +127,8 @@ export const PublicShell = ({
 
       <div className="relative z-10">{children}</div>
 
-      <footer className="relative z-10 border-t border-border/60">
-        <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-8 text-xs text-muted-foreground sm:px-6">
+      <footer className="relative z-10 border-t border-border/40">
+        <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-10 text-xs text-muted-foreground sm:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <p className="max-w-xl">
               Το ARC Tenders είναι ανεξάρτητη ιδιωτική υπηρεσία. Δεν αποτελεί επίσημη
@@ -133,7 +153,7 @@ export const PublicShell = ({
             </nav>
           </div>
 
-          <div className="flex flex-col gap-2 border-t border-border/50 pt-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-col gap-2 border-t border-border/40 pt-5 sm:flex-row sm:items-end sm:justify-between">
             <div className="space-y-1">
               <p>
                 © {COPYRIGHT_YEAR}{" "}
@@ -168,11 +188,6 @@ export const PublicShell = ({
                 >
                   {LEGAL_CONTROLLER.email}
                 </a>
-              </p>
-              <p>
-                <Link className="hover:text-foreground" to="/legal/provider">
-                  Στοιχεία παρόχου
-                </Link>
               </p>
             </div>
           </div>

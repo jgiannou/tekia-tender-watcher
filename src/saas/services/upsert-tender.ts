@@ -19,6 +19,7 @@ export const upsertTenderFromKimdisItem = async (
       referenceNumber: item.adam,
       recordType,
       title: item.title || null,
+      description: item.description?.trim() || null,
       contractingAuthority: item.contractingAuthority || null,
       submissionDate,
       signedDate,
@@ -41,6 +42,9 @@ export const upsertTenderFromKimdisItem = async (
     },
     update: {
       title: item.title || null,
+      ...(item.description?.trim()
+        ? { description: item.description.trim() }
+        : {}),
       contractingAuthority: item.contractingAuthority || null,
       submissionDate,
       signedDate,

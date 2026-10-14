@@ -48,7 +48,7 @@ export const ProfileSetupBanner = ({
 
   return (
     <section
-      className="rounded-lg border border-primary/35 bg-primary/[0.07] px-4 py-3.5 sm:px-5"
+      className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3.5 sm:px-5"
       aria-labelledby="profile-setup-banner-title"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

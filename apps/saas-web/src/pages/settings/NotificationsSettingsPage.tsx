@@ -4,9 +4,10 @@ import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader, SectionHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
 import {
   saasApi,
@@ -247,253 +248,274 @@ export const NotificationsSettingsPage = () => {
   const weekdayLabel = WEEKDAY_EL[((weekday % 7) + 7) % 7] ?? "Δευτέρα";
   const nextLabel = formatNextSend(nextWeeklyIso);
 
+  const eventToggleRowClass =
+    "flex items-center justify-between gap-4 border-b border-border/50 py-3 text-sm last:border-b-0";
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Ειδοποιήσεις</CardTitle>
-        <CardDescription>
-          {isWeekly
+    <div className="space-y-8">
+      <PageHeader
+        title="Ειδοποιήσεις"
+        description={
+          isWeekly
             ? "Έως μία εβδομαδιαία σύνοψη email όταν υπάρχουν νέα. Οι ενημερώσεις εμφανίζονται στην εφαρμογή χωρίς να περιμένετε το email."
-            : `Τρόπος ενημέρωσης μέσω email για την εταιρεία σας. Επιλέξτε έως ${maxHours} ώρες την ημέρα (ώρα Ελλάδας).`}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-3">
-          <div>
-            <div className="text-sm font-medium">Email ειδοποιήσεις</div>
-            <div className="text-xs text-muted-foreground">
-              {user?.email ? `Προεπιλογή: ${user.email}` : "Χωρίς email χρήστη"}
-            </div>
-          </div>
-          <Switch
-            checked={prefs.emailEnabled}
-            onCheckedChange={(checked) =>
-              setPrefs((p) => ({ ...p, emailEnabled: checked }))
-            }
-            aria-label="Email ειδοποιήσεις"
-          />
-        </div>
+            : `Τρόπος ενημέρωσης μέσω email για την εταιρεία σας. Επιλέξτε έως ${maxHours} ώρες την ημέρα (ώρα Ελλάδας).`
+        }
+      />
 
-        {isWeekly ? (
-          <div className="space-y-4 rounded-md border border-border px-3 py-3">
-            <div>
-              <div className="text-sm font-medium">Εβδομαδιαία σύνοψη email</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Λάβετε συγκεντρωμένα τις νέες ευκαιρίες και τις εξελίξεις στους
-                διαγωνισμούς που παρακολουθείτε. Αν δεν υπάρχουν νέα, δεν στέλνουμε
-                email.
-              </p>
-            </div>
-            <label className="flex items-center justify-between gap-4 text-sm">
-              <span>Λήψη εβδομαδιαίας σύνοψης</span>
-              <Switch
-                checked={prefs.weeklyEmailEnabled !== false}
-                onCheckedChange={(checked) =>
-                  setPrefs((p) => ({ ...p, weeklyEmailEnabled: checked }))
-                }
-                aria-label="Λήψη εβδομαδιαίας σύνοψης"
-              />
-            </label>
-            <div className="space-y-2">
-              <Label htmlFor="weeklyRecipient">Παραλήπτης εβδομαδιαίας σύνοψης</Label>
-              <Input
-                id="weeklyRecipient"
-                value={prefs.weeklyRecipient ?? ""}
-                onChange={(e) =>
-                  setPrefs((p) => ({
-                    ...p,
-                    weeklyRecipient: e.target.value.trim() || null,
-                  }))
-                }
-                aria-label="Παραλήπτης εβδομαδιαίας σύνοψης"
-              />
-            </div>
-            <p className="text-sm text-foreground">
-              Προγραμματισμένη αποστολή: κάθε {weekdayLabel}, στις{" "}
-              {prefs.weeklyDigestHour}, ώρα Ελλάδας.
-            </p>
-            {nextLabel ? (
-              <p className="text-sm text-muted-foreground">
-                Επόμενη προγραμματισμένη αποστολή: {nextLabel}
-              </p>
-            ) : null}
-            <p className="text-xs text-muted-foreground">
-              Οι νέες ενημερώσεις εμφανίζονται στην εφαρμογή χωρίς να περιμένετε την
-              εβδομαδιαία σύνοψη.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Θέλετε συχνότερα email; Με το Basic επιλέγετε έως 2 καθημερινές ώρες
-              ενημέρωσης ή άμεσες ειδοποιήσεις για σημαντικές εξελίξεις.{" "}
-              <Link
-                to="/app/subscription"
-                className="text-foreground underline underline-offset-2"
-              >
-                Δείτε τα πακέτα
-              </Link>
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="space-y-3 rounded-md border border-border px-3 py-3">
-              <div className="text-sm font-medium">Τρόπος ενημέρωσης μέσω email</div>
-              <div className="flex flex-wrap gap-2" role="group" aria-label="Τρόπος ενημέρωσης">
-                {(
-                  [
-                    ["DIGEST", "Συγκεντρωτική ενημέρωση"],
-                    ["IMMEDIATE", "Άμεσες ενημερώσεις"],
-                  ] as const
-                ).map(([mode, label]) => {
-                  const selected = (prefs.emailDeliveryMode ?? "DIGEST") === mode;
-                  return (
-                    <button
-                      key={mode}
-                      type="button"
-                      tabIndex={0}
-                      aria-pressed={selected}
-                      aria-label={label}
-                      onClick={() =>
-                        setPrefs((p) => ({ ...p, emailDeliveryMode: mode }))
-                      }
-                      className={cn(
-                        "rounded-md border px-3 py-2 text-sm transition-colors",
-                        selected
-                          ? "border-primary bg-primary/15 text-foreground"
-                          : "border-border text-muted-foreground",
-                      )}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {(prefs.emailDeliveryMode ?? "DIGEST") === "IMMEDIATE"
-                  ? "Οι άμεσες ενημερώσεις αποστέλλονται αφού εντοπιστεί η εξέλιξη. Κοντινές χρονικά ενημερώσεις μπορεί να ομαδοποιούνται σε ένα email."
-                  : "Οι ενημερώσεις από όλες τις αναζητήσεις σας συγκεντρώνονται στο ίδιο email. Αν δεν υπάρχουν νέα, δεν στέλνουμε σύνοψη."}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="recipients">Παραλήπτες (διαχωρισμός με κόμμα)</Label>
-              <Input
-                id="recipients"
-                value={prefs.recipients.join(", ")}
-                onChange={(e) =>
-                  setPrefs((p) => ({
-                    ...p,
-                    recipients: e.target.value
-                      .split(",")
-                      .map((v) => v.trim())
-                      .filter(Boolean),
-                  }))
-                }
-              />
-            </div>
-
-            <div className="space-y-3">
+      <section aria-labelledby="notifications-email-heading">
+        <SectionHeader
+          title="Email"
+          description="Παραλήπτες, συχνότητα και ώρες αποστολής."
+        />
+        <Card>
+          <CardContent className="p-5">
+            <div className={cn(eventToggleRowClass, "pt-0")}>
               <div>
-                <div className="text-sm font-medium">Ώρες αποστολής, ώρα Ελλάδας</div>
+                <div id="notifications-email-heading" className="font-medium">
+                  Email ειδοποιήσεις
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {user?.email ? `Προεπιλογή: ${user.email}` : "Χωρίς email χρήστη"}
+                </div>
+              </div>
+              <Switch
+                checked={prefs.emailEnabled}
+                onCheckedChange={(checked) =>
+                  setPrefs((p) => ({ ...p, emailEnabled: checked }))
+                }
+                aria-label="Email ειδοποιήσεις"
+              />
+            </div>
+
+            {isWeekly ? (
+              <div className="space-y-4 pt-4">
+                <div>
+                  <div className="text-sm font-medium">Εβδομαδιαία σύνοψη</div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Συγκεντρωμένες νέες ευκαιρίες και εξελίξεις. Αν δεν υπάρχουν νέα,
+                    δεν στέλνουμε email.
+                  </p>
+                </div>
+                <label className="flex items-center justify-between gap-4 text-sm">
+                  <span>Λήψη εβδομαδιαίας σύνοψης</span>
+                  <Switch
+                    checked={prefs.weeklyEmailEnabled !== false}
+                    onCheckedChange={(checked) =>
+                      setPrefs((p) => ({ ...p, weeklyEmailEnabled: checked }))
+                    }
+                    aria-label="Λήψη εβδομαδιαίας σύνοψης"
+                  />
+                </label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="weeklyRecipient">Παραλήπτης εβδομαδιαίας σύνοψης</Label>
+                  <Input
+                    id="weeklyRecipient"
+                    value={prefs.weeklyRecipient ?? ""}
+                    onChange={(e) =>
+                      setPrefs((p) => ({
+                        ...p,
+                        weeklyRecipient: e.target.value.trim() || null,
+                      }))
+                    }
+                    aria-label="Παραλήπτης εβδομαδιαίας σύνοψης"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-foreground">
+                    Προγραμματισμένη αποστολή: κάθε {weekdayLabel}, στις{" "}
+                    {prefs.weeklyDigestHour}, ώρα Ελλάδας.
+                  </p>
+                  {nextLabel ? (
+                    <p className="text-xs text-muted-foreground">
+                      Επόμενη αποστολή: {nextLabel}
+                    </p>
+                  ) : null}
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Επιλέξτε έως {maxHours} ώρες την ημέρα. Επιλεγμένες:{" "}
-                  {prefs.digestHours.length}/{maxHours}
+                  Θέλετε συχνότερα email; Με το Basic επιλέγετε έως 2 καθημερινές ώρες
+                  ενημέρωσης ή άμεσες ειδοποιήσεις για σημαντικές εξελίξεις.{" "}
+                  <Link
+                    to="/app/subscription"
+                    className="text-foreground underline underline-offset-2"
+                  >
+                    Δείτε τα πακέτα
+                  </Link>
                 </p>
               </div>
-              <div
-                className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6"
-                role="group"
-                aria-label="Ώρες αποστολής"
-              >
-                {DIGEST_HOUR_OPTIONS.map((hour) => {
-                  const selected = prefs.digestHours.includes(hour);
-                  return (
-                    <button
-                      key={hour}
-                      type="button"
-                      tabIndex={0}
-                      aria-pressed={selected}
-                      aria-label={`Ώρα ${hour}`}
-                      onClick={() => handleToggleHour(hour)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          handleToggleHour(hour);
-                        }
-                      }}
-                      className={cn(
-                        "rounded-md border px-2 py-2 text-sm tabular-nums transition-colors",
-                        selected
-                          ? "border-primary bg-primary/15 text-foreground"
-                          : "border-border bg-background text-muted-foreground hover:border-primary/40",
-                      )}
-                    >
-                      {hour}
-                    </button>
-                  );
-                })}
+            ) : (
+              <div className="space-y-5 pt-4">
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Τρόπος ενημέρωσης</div>
+                  <div
+                    className="inline-flex rounded-md bg-muted/40 p-0.5"
+                    role="group"
+                    aria-label="Τρόπος ενημέρωσης"
+                  >
+                    {(
+                      [
+                        ["DIGEST", "Συγκεντρωτική"],
+                        ["IMMEDIATE", "Άμεσες"],
+                      ] as const
+                    ).map(([mode, label]) => {
+                      const selected = (prefs.emailDeliveryMode ?? "DIGEST") === mode;
+                      return (
+                        <button
+                          key={mode}
+                          type="button"
+                          tabIndex={0}
+                          aria-pressed={selected}
+                          aria-label={label}
+                          onClick={() =>
+                            setPrefs((p) => ({ ...p, emailDeliveryMode: mode }))
+                          }
+                          className={cn(
+                            "rounded px-3 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            selected
+                              ? "bg-background font-medium text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {(prefs.emailDeliveryMode ?? "DIGEST") === "IMMEDIATE"
+                      ? "Οι άμεσες ενημερώσεις αποστέλλονται αφού εντοπιστεί η εξέλιξη. Κοντινές χρονικά ενημερώσεις μπορεί να ομαδοποιούνται σε ένα email."
+                      : "Οι ενημερώσεις από όλες τις αναζητήσεις σας συγκεντρώνονται στο ίδιο email. Αν δεν υπάρχουν νέα, δεν στέλνουμε σύνοψη."}
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="recipients">Παραλήπτες (διαχωρισμός με κόμμα)</Label>
+                  <Input
+                    id="recipients"
+                    value={prefs.recipients.join(", ")}
+                    onChange={(e) =>
+                      setPrefs((p) => ({
+                        ...p,
+                        recipients: e.target.value
+                          .split(",")
+                          .map((v) => v.trim())
+                          .filter(Boolean),
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <div className="text-sm font-medium">Ώρες αποστολής (ώρα Ελλάδας)</div>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {prefs.digestHours.length}/{maxHours} επιλεγμένες
+                    </span>
+                  </div>
+                  <div
+                    className="grid grid-cols-6 gap-1 sm:grid-cols-9"
+                    role="group"
+                    aria-label="Ώρες αποστολής"
+                  >
+                    {DIGEST_HOUR_OPTIONS.map((hour) => {
+                      const selected = prefs.digestHours.includes(hour);
+                      return (
+                        <button
+                          key={hour}
+                          type="button"
+                          tabIndex={0}
+                          aria-pressed={selected}
+                          aria-label={`Ώρα ${hour}`}
+                          onClick={() => handleToggleHour(hour)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              handleToggleHour(hour);
+                            }
+                          }}
+                          className={cn(
+                            "rounded px-1 py-1 text-xs tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            selected
+                              ? "bg-primary/20 font-medium text-primary"
+                              : "bg-muted/30 text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                          )}
+                        >
+                          {hour}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
-            </div>
-          </>
-        )}
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
-        <div className="space-y-3">
-          <div className="text-sm font-medium">Γεγονότα στην εφαρμογή</div>
-          {(
-            [
-              ["newOpportunity", "Νέα σχετική ευκαιρία"],
-              ["relatedActOnFollowed", "Νέα επίσημη πράξη για κάτι που παρακολουθώ"],
-              ["postSubmissionUpdate", "Νέα εξέλιξη μετά από υποβολή"],
-            ] as const
-          ).map(([key, label]) => (
-            <label
-              key={key}
-              className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2 text-sm"
-            >
-              <span>{label}</span>
-              <Switch
-                checked={prefs.events[key]}
-                onCheckedChange={(checked) =>
-                  setPrefs((p) => ({
-                    ...p,
-                    events: { ...p.events, [key]: checked },
-                  }))
-                }
-                aria-label={label}
-              />
-            </label>
-          ))}
+      <section>
+        <SectionHeader
+          title="In-app"
+          description="Γεγονότα που εμφανίζονται στην εφαρμογή."
+        />
+        <Card>
+          <CardContent className="p-5 py-2">
+            {(
+              [
+                ["newOpportunity", "Νέα σχετική ευκαιρία"],
+                ["relatedActOnFollowed", "Νέα επίσημη πράξη για κάτι που παρακολουθώ"],
+                ["postSubmissionUpdate", "Νέα εξέλιξη μετά από υποβολή"],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className={eventToggleRowClass}>
+                <span>{label}</span>
+                <Switch
+                  checked={prefs.events[key]}
+                  onCheckedChange={(checked) =>
+                    setPrefs((p) => ({
+                      ...p,
+                      events: { ...p.events, [key]: checked },
+                    }))
+                  }
+                  aria-label={label}
+                />
+              </label>
+            ))}
 
-          {deadlineRadarAllowed ? (
-            <label className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2 text-sm">
-              <span>Επερχόμενες προθεσμίες (έως 7 ημέρες) μέσω email</span>
-              <Switch
-                checked={prefs.events.deadlineRadar}
-                onCheckedChange={(checked) =>
-                  setPrefs((p) => ({
-                    ...p,
-                    events: { ...p.events, deadlineRadar: checked },
-                  }))
-                }
-                aria-label="Επερχόμενες προθεσμίες"
-              />
-            </label>
-          ) : (
-            <div className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
-              Συγκεντρωτική προβολή επερχόμενων προθεσμιών μέσω email — διαθέσιμο στο{" "}
-              <Link
-                to="/app/subscription"
-                className="text-foreground underline underline-offset-2"
-              >
-                Pro
-              </Link>
-              .
-            </div>
-          )}
-        </div>
+            {deadlineRadarAllowed ? (
+              <label className={eventToggleRowClass}>
+                <span>Επερχόμενες προθεσμίες (έως 7 ημέρες) μέσω email</span>
+                <Switch
+                  checked={prefs.events.deadlineRadar}
+                  onCheckedChange={(checked) =>
+                    setPrefs((p) => ({
+                      ...p,
+                      events: { ...p.events, deadlineRadar: checked },
+                    }))
+                  }
+                  aria-label="Επερχόμενες προθεσμίες"
+                />
+              </label>
+            ) : (
+              <p className={cn(eventToggleRowClass, "text-muted-foreground")}>
+                <span>
+                  Συγκεντρωτική προβολή επερχόμενων προθεσμιών μέσω email — διαθέσιμο
+                  στο{" "}
+                  <Link
+                    to="/app/subscription"
+                    className="text-foreground underline underline-offset-2"
+                  >
+                    Pro
+                  </Link>
+                  .
+                </span>
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
-        <Button onClick={() => void handleSave()} disabled={saving}>
-          {saving ? "Αποθήκευση…" : "Αποθήκευση"}
-        </Button>
-      </CardContent>
-    </Card>
+      <Button onClick={() => void handleSave()} disabled={saving}>
+        {saving ? "Αποθήκευση…" : "Αποθήκευση"}
+      </Button>
+    </div>
   );
 };

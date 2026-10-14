@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { AlertCircle, Inbox, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,26 +30,29 @@ export const EmptyState = ({
   description,
   actionLabel,
   onAction,
+  children,
 }: {
   title: string;
   description: string;
   actionLabel?: string;
   onAction?: () => void;
+  children?: ReactNode;
 }) => (
-  <Card className="border-dashed">
-    <CardContent className="flex flex-col items-center justify-center gap-3 px-6 py-14 text-center">
-      <div className="rounded-full bg-muted p-3">
-        <Inbox className="h-5 w-5 text-muted-foreground" />
-      </div>
-      <div className="space-y-1">
-        <h3 className="text-base font-semibold">{title}</h3>
-        <p className="max-w-md text-sm text-muted-foreground">{description}</p>
-      </div>
-      {actionLabel && onAction ? (
-        <Button onClick={onAction}>{actionLabel}</Button>
-      ) : null}
-    </CardContent>
-  </Card>
+  <div className="flex flex-col items-start gap-3 py-10 sm:items-center sm:py-12 sm:text-center">
+    <Inbox className="h-5 w-5 text-muted-foreground/70" aria-hidden />
+    <div className="space-y-1.5">
+      <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
+      <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
+        {description}
+      </p>
+    </div>
+    {actionLabel && onAction ? (
+      <Button size="sm" onClick={onAction}>
+        {actionLabel}
+      </Button>
+    ) : null}
+    {children}
+  </div>
 );
 
 export const ErrorState = ({

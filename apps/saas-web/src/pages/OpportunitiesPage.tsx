@@ -11,7 +11,9 @@ import { ScoreBadge } from "@/components/ScoreBadge";
 import { SourceBadge } from "@/components/SourceBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataList, DataRow } from "@/components/ui/data-row";
+import { Metric, MetricStrip } from "@/components/ui/metric";
+import { PageHeader } from "@/components/ui/page-header";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import {
@@ -32,6 +34,9 @@ const SORT_OPTIONS: Array<{ value: OpportunitySort; label: string }> = [
   { value: "score", label: "Υψηλότερη συνάφεια" },
   { value: "deadline", label: "Κοντινότερη προθεσμία" },
 ];
+
+/** Match reasons shown inline; the rest sit behind "Γιατί εμφανίστηκε;". */
+const MAX_VISIBLE_REASONS = 2;
 
 const SCAN_FORCE_RETRY_MS = 3 * 60 * 1000;
 
@@ -423,226 +428,250 @@ export const OpportunitiesPage = () => {
     setSearchParams(next, { replace: true });
   };
 
+  const pageDescription = (
+    <>
+      Δημοσιεύσεις που εντοπίστηκαν αυτόματα από τις αποθηκευμένες αναζητήσεις σας.
+      {unreadNewCount > 0
+        ? ` ${unreadNewCount} νέ${unreadNewCount === 1 ? "α" : "ες"} — η ένδειξη «Νέα» αφαιρείται όταν περάσετε τον δείκτη πάνω από τη γραμμή ή ανοίξετε τις λεπτομέρειες.`
+        : ""}
+    </>
+  );
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Ευκαιρίες</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Δημοσιεύσεις που εντοπίστηκαν αυτόματα από τις αποθηκευμένες αναζητήσεις σας.
-            {unreadNewCount > 0
-              ? ` · ${unreadNewCount} νέ${unreadNewCount === 1 ? "α" : "ες"} ευκαιρί${unreadNewCount === 1 ? "α" : "ες"}. Η ένδειξη “Νέα” αφαιρείται όταν περάσετε τον δείκτη πάνω από την κάρτα ή ανοίξετε τις λεπτομέρειες.`
-              : ""}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <Label htmlFor="opportunities-sort" className="text-xs text-muted-foreground">
-              Ταξινόμηση
-            </Label>
-            <Select
-              id="opportunities-sort"
-              value={sort}
-              onChange={(e) => handleSortChange(e.target.value as OpportunitySort)}
-              aria-label="Ταξινόμηση ευκαιριών"
-              className="w-[13.5rem]"
+      <PageHeader
+        title="Ευκαιρίες"
+        description={pageDescription}
+        actions={
+          <>
+            <div className="flex items-center gap-2">
+              <Label
+                htmlFor="opportunities-sort"
+                className="text-xs text-muted-foreground"
+              >
+                Ταξινόμηση
+              </Label>
+              <Select
+                id="opportunities-sort"
+                value={sort}
+                onChange={(e) => handleSortChange(e.target.value as OpportunitySort)}
+                aria-label="Ταξινόμηση ευκαιριών"
+                className="w-[13.5rem]"
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <Button
+              onClick={() => void handleScan()}
+              disabled={
+                scanBusy ||
+                profileScansBlocked ||
+                scanTargets.length === 0 ||
+                anyTargetScanning
+              }
+              aria-label="Έλεγχος αποθηκευμένων αναζητήσεων"
             >
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <Button
-            onClick={() => void handleScan()}
-            disabled={
-              scanBusy ||
-              profileScansBlocked ||
-              scanTargets.length === 0 ||
-              anyTargetScanning
-            }
-            aria-label="Έλεγχος αποθηκευμένων αναζητήσεων"
-          >
-            {scanButtonLabel}
-          </Button>
-          <div className="flex gap-2 pb-1">
-            <Badge variant="secondary">REQ</Badge>
-            <Badge variant="outline">PROC</Badge>
-          </div>
-        </div>
-      </div>
+              {scanButtonLabel}
+            </Button>
+          </>
+        }
+      />
 
       {profileFilter ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/30 px-3 py-2 text-sm">
           <span>
             Φίλτρο αποθηκευμένης αναζήτησης:{" "}
             <strong>{filterProfileName || profileFilter}</strong> · {filtered.length}{" "}
             {filtered.length === 1 ? "αποτέλεσμα" : "αποτελέσματα"}
           </span>
-          <Button size="sm" variant="outline" onClick={handleClearProfileFilter}>
+          <Button size="sm" variant="ghost" onClick={handleClearProfileFilter}>
             Καθαρισμός φίλτρου
           </Button>
         </div>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {[
-          ["Δεν παρακολουθούνται", String(unfollowed)],
-          ["Υψηλή συνάφεια με τα κριτήριά σας", String(highScore)],
-          ["Παρακολούθηση", String(following)],
-          ["Ενεργές αναζητήσεις", String(enabledProfiles.length)],
-        ].map(([label, value]) => (
-          <Card key={label}>
-            <CardHeader className="pb-2">
-              <CardDescription>{label}</CardDescription>
-              <CardTitle className="text-2xl">{value}</CardTitle>
-            </CardHeader>
-          </Card>
-        ))}
-      </div>
+      <MetricStrip>
+        <Metric label="Δεν παρακολουθούνται" value={unfollowed} />
+        <Metric label="Υψηλή συνάφεια" value={highScore} hint="≥ 70% με τα κριτήριά σας" />
+        <Metric label="Παρακολούθηση" value={following} />
+        <Metric label="Ενεργές αναζητήσεις" value={enabledProfiles.length} />
+      </MetricStrip>
 
       {filtered.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center gap-4 px-6 py-12 text-center">
-            <div className="space-y-2">
-              <h3 className="text-base font-semibold">{empty.title}</h3>
-              <p className="max-w-lg text-sm text-muted-foreground">{empty.description}</p>
-              {empty.showMonitoringNote ? (
-                <p className="text-xs text-muted-foreground">
-                  Τα παρακολουθούμενα νήματα δεν επηρεάζονται.
-                </p>
-              ) : null}
+        <EmptyState
+          title={empty.title}
+          description={
+            empty.showMonitoringNote
+              ? `${empty.description} Τα παρακολουθούμενα νήματα δεν επηρεάζονται.`
+              : empty.description
+          }
+        >
+          {emptyVariant === "no-active" ? (
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" asChild>
+                <Link to="/app/saved-searches">Νέα αποθηκευμένη αναζήτηση</Link>
+              </Button>
+              <Button size="sm" variant="outline" asChild>
+                <Link to="/app/search">Αναζήτηση στο ΚΗΜΔΗΣ</Link>
+              </Button>
             </div>
-            {emptyVariant === "no-active" ? (
-              <div className="flex flex-wrap justify-center gap-2">
-                <Button asChild>
-                  <Link to="/app/saved-searches">Νέα αποθηκευμένη αναζήτηση</Link>
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link to="/app/search">Αναζήτηση στο ΚΗΜΔΗΣ</Link>
-                </Button>
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
+          ) : null}
+        </EmptyState>
       ) : (
-        <div className="space-y-3">
-          {paged.pageItems.map((opportunity) => {
-            const meta = parseMatchMeta(opportunity.matchMeta);
-            const profilesMatched = meta?.matchedProfiles ?? [];
-            const topScore = meta?.highestScore ?? opportunity.score ?? 0;
-            const isNew = Boolean(opportunity.isNew);
-            const invitationIssued = Boolean(opportunity.invitationIssued);
-            return (
-              <Card
-                key={opportunity.id}
-                className={cn(
-                  isNew &&
-                    "border-primary/50 bg-primary/5 shadow-md shadow-primary/10 ring-1 ring-primary/20",
-                  invitationIssued &&
-                    !isNew &&
-                    "border-destructive/40 bg-destructive/[0.04] ring-1 ring-destructive/15",
-                )}
-                onPointerEnter={() => {
-                  if (isNew) void handleMarkSeen(opportunity);
-                }}
-              >
-                <CardContent className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-start md:justify-between">
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {isNew ? <Badge variant="default">Νέα</Badge> : null}
-                      <Badge>{opportunity.tender.recordType}</Badge>
-                      <SourceBadge
-                        referenceNumber={opportunity.tender.referenceNumber}
-                      />
-                      {invitationIssued ? (
-                        <InvitationIssuedBadge
-                          relatedProcAdam={opportunity.relatedProcAdam}
-                        />
-                      ) : null}
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {opportunity.tender.referenceNumber}
-                      </span>
-                      <ScoreBadge score={topScore} label="συνάφεια" />
-                    </div>
-                    <h3 className="text-base font-semibold leading-snug">
-                      {opportunity.tender.title || "—"}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      {opportunity.tender.contractingAuthority || "—"}
-                    </p>
-                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                      <span>
-                        Αξία: {formatMoney(opportunity.tender.budgetWithoutVat)}
-                      </span>
-                      <span>
-                        Καταχώριση: {formatDate(opportunity.tender.submissionDate)}
-                      </span>
-                      {opportunity.tender.finalSubmissionDate ? (
-                        <span>
-                          Προθεσμία υποβολής:{" "}
-                          {formatDate(opportunity.tender.finalSubmissionDate)}
-                        </span>
-                      ) : null}
-                    </div>
-                    {profilesMatched.length ? (
-                      <div className="space-y-1 text-xs text-muted-foreground">
-                        <div>
-                          Αναζήτηση: {profilesMatched.map((p) => p.name).join(" · ")}
-                        </div>
-                        <ul className="space-y-0.5">
-                          {[
-                            ...new Set(profilesMatched.flatMap((p) => p.reasons)),
-                          ]
-                            .slice(0, 4)
-                            .map((reason) => (
-                              <li key={reason}>✓ {formatMatchReason(reason)}</li>
-                            ))}
-                        </ul>
-                      </div>
-                    ) : opportunity.watchProfile ? (
-                      <div className="text-xs text-muted-foreground">
-                        Αναζήτηση: {opportunity.watchProfile.name}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <PdfAction
-                      onClick={() => {
-                        void handleMarkSeen(opportunity);
-                        setSelected(opportunity);
-                      }}
-                    />
-                    <Button size="sm" variant="outline" asChild>
-                      <Link
-                        to={tenderPath(opportunity)}
-                        onClick={() => void handleMarkSeen(opportunity)}
-                      >
-                        Προβολή λεπτομερειών
-                      </Link>
-                    </Button>
-                    {!opportunity.following ? (
-                      <Button size="sm" onClick={() => void handleFollow(opportunity)}>
-                        Παρακολούθηση
-                      </Button>
-                    ) : (
-                      <Badge variant="success">Παρακολουθείται</Badge>
+        <section aria-label="Λίστα ευκαιριών">
+          <DataList>
+            {paged.pageItems.map((opportunity) => {
+              const meta = parseMatchMeta(opportunity.matchMeta);
+              const profilesMatched = meta?.matchedProfiles ?? [];
+              const topScore = meta?.highestScore ?? opportunity.score ?? 0;
+              const isNew = Boolean(opportunity.isNew);
+              const invitationIssued = Boolean(opportunity.invitationIssued);
+              const reasons = [
+                ...new Set(profilesMatched.flatMap((p) => p.reasons)),
+              ].map(formatMatchReason);
+              const visibleReasons = reasons.slice(0, MAX_VISIBLE_REASONS);
+              const hiddenReasons = reasons.slice(MAX_VISIBLE_REASONS);
+              const profileNames = profilesMatched.length
+                ? profilesMatched.map((p) => p.name).join(" · ")
+                : (opportunity.watchProfile?.name ?? null);
+              const detailPath = tenderPath(opportunity);
+              const metaLine = [
+                opportunity.tender.contractingAuthority || "—",
+                formatMoney(opportunity.tender.budgetWithoutVat),
+                formatDate(opportunity.tender.submissionDate),
+                opportunity.tender.finalSubmissionDate
+                  ? `Προθεσμία ${formatDate(opportunity.tender.finalSubmissionDate)}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+
+              return (
+                <div
+                  key={opportunity.id}
+                  className="border-b border-border/50 last:border-b-0"
+                  onPointerEnter={() => {
+                    if (isNew) void handleMarkSeen(opportunity);
+                  }}
+                >
+                  <DataRow
+                    interactive
+                    className={cn(
+                      "gap-2 border-b-0 py-3 sm:gap-4",
+                      isNew && "-ml-3 border-l-2 border-l-primary pl-[0.625rem]",
+                      invitationIssued &&
+                        !isNew &&
+                        "-ml-3 border-l-2 border-l-destructive/60 pl-[0.625rem]",
                     )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void handleDismiss(opportunity)}
-                    >
-                      {isExpiredDeadline(opportunity.tender.finalSubmissionDate)
-                        ? "Σήμανση ως ληγμένο"
-                        : "Απόκρυψη"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                    actions={
+                      <div className="flex flex-col gap-1.5 sm:items-end">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {!opportunity.following ? (
+                            <Button
+                              size="sm"
+                              onClick={() => void handleFollow(opportunity)}
+                            >
+                              Παρακολούθηση
+                            </Button>
+                          ) : (
+                            <Badge variant="success">Παρακολουθείται</Badge>
+                          )}
+                          <Button size="sm" variant="outline" asChild>
+                            <Link
+                              to={detailPath}
+                              onClick={() => void handleMarkSeen(opportunity)}
+                            >
+                              Προβολή
+                            </Link>
+                          </Button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <PdfAction
+                            className="h-7 border-transparent bg-transparent px-2 text-xs font-medium text-muted-foreground shadow-none hover:text-foreground"
+                            onClick={() => {
+                              void handleMarkSeen(opportunity);
+                              setSelected(opportunity);
+                            }}
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-muted-foreground hover:text-foreground"
+                            onClick={() => void handleDismiss(opportunity)}
+                          >
+                            {isExpiredDeadline(opportunity.tender.finalSubmissionDate)
+                              ? "Σήμανση ως ληγμένο"
+                              : "Απόκρυψη"}
+                          </Button>
+                        </div>
+                      </div>
+                    }
+                  >
+                    <div className="space-y-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        {isNew ? <Badge variant="default">Νέα</Badge> : null}
+                        <Badge variant="outline">{opportunity.tender.recordType}</Badge>
+                        <span title="Συνάφεια με τα κριτήριά σας">
+                          <ScoreBadge score={topScore} />
+                        </span>
+                        <h3 className="min-w-0 text-sm font-semibold leading-snug">
+                          <Link
+                            to={detailPath}
+                            onClick={() => void handleMarkSeen(opportunity)}
+                            className="hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {opportunity.tender.title || "—"}
+                          </Link>
+                        </h3>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                        <span className="min-w-0">{metaLine}</span>
+                        <span className="font-mono">
+                          {opportunity.tender.referenceNumber}
+                        </span>
+                        <SourceBadge
+                          referenceNumber={opportunity.tender.referenceNumber}
+                        />
+                        {invitationIssued ? (
+                          <InvitationIssuedBadge
+                            relatedProcAdam={opportunity.relatedProcAdam}
+                          />
+                        ) : null}
+                      </div>
+                      {profileNames ? (
+                        <p className="text-xs text-muted-foreground">
+                          Από: <span className="text-foreground/80">{profileNames}</span>
+                        </p>
+                      ) : null}
+                      {visibleReasons.length ? (
+                        <ul className="space-y-0.5 text-xs text-muted-foreground">
+                          {visibleReasons.map((reason) => (
+                            <li key={reason}>✓ {reason}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {hiddenReasons.length ? (
+                        <details className="group/why text-xs text-muted-foreground">
+                          <summary className="cursor-pointer select-none text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            Γιατί εμφανίστηκε; (+{hiddenReasons.length})
+                          </summary>
+                          <ul className="mt-1 space-y-0.5">
+                            {hiddenReasons.map((reason) => (
+                              <li key={reason}>✓ {reason}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : null}
+                    </div>
+                  </DataRow>
+                </div>
+              );
+            })}
+          </DataList>
           <Pagination
             page={paged.page}
             totalPages={paged.totalPages}
@@ -650,7 +679,7 @@ export const OpportunitiesPage = () => {
             pageSize={paged.pageSize}
             onPageChange={paged.setPage}
           />
-        </div>
+        </section>
       )}
 
       <PdfPreviewModal

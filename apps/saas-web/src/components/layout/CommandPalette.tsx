@@ -22,7 +22,7 @@ import {
 
 const items = [
   { label: "Επισκόπηση", to: "/app", icon: LayoutDashboard },
-  { label: "Αναζήτηση στο ΚΗΜΔΗΣ", to: "/app/search", icon: FileSearch },
+  { label: "Αναζήτηση", to: "/app/search", icon: FileSearch },
   { label: "Ευκαιρίες", to: "/app/opportunities", icon: Radar },
   { label: "Παρακολουθούμενα", to: "/app/monitoring", icon: Binoculars },
   { label: "Υποβολές", to: "/app/submissions", icon: Send },

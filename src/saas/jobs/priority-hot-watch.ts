@@ -20,7 +20,7 @@ const writeMeta = async (prisma: PrismaClient, key: string, value: string) => {
  * Dedupes by tender ID: many orgs following the same REQ → one relation check,
  * then existing monitorFollowedThreads fans out attention per org.
  *
- * Interval target: ~60s. Does not replace shared KIMDIS ingest.
+ * Interval target: ~2 min (aligned with shared ingest). Does not replace shared KIMDIS ingest.
  */
 export const runPriorityHotWatch = async (
   prisma: PrismaClient,
@@ -72,13 +72,12 @@ export const runPriorityHotWatch = async (
     let attentionEventsCreated = 0;
 
     if (tenderIds.length > 0) {
-      // Restrict monitorFollowedThreads to these source tenders via loading
-      // only matching active rows — pass discoveries empty and rely on the
-      // job's internal query. Narrow by temporarily checking only due tender IDs:
+      // Hot path: local/canonical relations only.
+      // Public UI scraping stays on the shared ingest cycle — doing it every
+      // minute saturates the API process and makes the app feel frozen.
       const result = await monitorFollowedThreads(prisma, {
         enableLocalDiscovery: true,
-        enablePublicUiDiscovery: true,
-        // Only evaluate due priority sources (filter inside by tender id set).
+        enablePublicUiDiscovery: false,
         sourceTenderIds: tenderIds,
       });
       relatedLinksUpserted = result.relatedLinksUpserted;

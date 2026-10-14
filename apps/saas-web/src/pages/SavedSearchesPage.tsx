@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Eye, MoreHorizontal } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
-import { IconAction } from "@/components/IconAction";
 import { InvitationIssuedBadge } from "@/components/InvitationIssuedBadge";
 import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataList, DataRow } from "@/components/ui/data-row";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +40,7 @@ import {
   type WatchProfileInput,
 } from "@/lib/api";
 import { humanSaasError } from "@/lib/labels";
+import { cn } from "@/lib/utils";
 import { GREEK_NUTS2_REGIONS } from "@/lib/regions";
 
 const asStringArray = (value: unknown): string[] =>
@@ -240,6 +241,36 @@ const profileToForm = (profile: WatchProfile): WatchProfileInput & { id: string 
       : ["kimdis"],
 });
 
+const isScanInFlight = (profile: WatchProfile): boolean =>
+  ["PENDING", "RUNNING"].includes((profile.scanState ?? "").toUpperCase());
+
+type NoticeTone = "neutral" | "warning" | "danger";
+
+const noticeToneClass: Record<NoticeTone, string> = {
+  neutral: "border-border/60 bg-muted/20",
+  warning: "border-amber-500/30 bg-amber-500/5",
+  danger: "border-destructive/30 bg-destructive/5",
+};
+
+type NoticeProps = {
+  tone?: NoticeTone;
+  action?: ReactNode;
+  children: ReactNode;
+};
+
+/** Quiet inline note — replaces full-width bordered card banners. */
+const Notice = ({ tone = "neutral", action, children }: NoticeProps) => (
+  <div
+    className={cn(
+      "flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm",
+      noticeToneClass[tone],
+    )}
+  >
+    <div className="min-w-0 space-y-1">{children}</div>
+    {action}
+  </div>
+);
+
 export const SavedSearchesPage = () => {
   const { activeOrganization, user } = useSessionContext();
   const [loading, setLoading] = useState(true);
@@ -292,9 +323,7 @@ export const SavedSearchesPage = () => {
     void load();
   }, [activeOrganization?.id]);
 
-  const scanInFlight = profiles.some((profile) =>
-    ["PENDING", "RUNNING"].includes((profile.scanState ?? "").toUpperCase()),
-  );
+  const scanInFlight = profiles.some(isScanInFlight);
 
   useEffect(() => {
     if (!activeOrganization || !scanInFlight) return;
@@ -542,72 +571,91 @@ export const SavedSearchesPage = () => {
   }
   if (error) return <ErrorState description={error} onRetry={() => void load()} />;
 
+  const showManualQuota = Boolean(
+    scanAccess &&
+      !profileScansBlocked &&
+      (scanAccess.status === "trial" ||
+        (scanAccess.status === "active" &&
+          scanAccess.limits.manualProfileScansPerDay > 0 &&
+          scanAccess.planKey !== "free")),
+  );
+  const manualQuotaLabel =
+    scanAccess && showManualQuota
+      ? [
+          `Χειροκίνητοι έλεγχοι σήμερα: ${scanAccess.usage.manual} από ${scanAccess.limits.manualProfileScansPerDay}`,
+          scanAccess.limits.periodicScansPerDay > 0
+            ? `συγκεντρωτικά slots: ${scanAccess.usage.periodic} από ${scanAccess.limits.periodicScansPerDay}`
+            : null,
+          scanAccess.trialEndsAt
+            ? `δοκιμή έως ${new Date(scanAccess.trialEndsAt).toLocaleDateString("el-GR")}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : null;
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Αποθηκευμένες αναζητήσεις</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Η εφαρμογή ελέγχει αυτόματα τις επιλεγμένες πηγές (ΚΗΜΔΗΣ / TED / Διαύγεια) και εμφανίζει τα νέα αποτελέσματα στις Ευκαιρίες.
-          </p>
-          <p className="mt-2 text-sm font-medium">
-            {usageCounterLabel({ activeCount, maxActive, emailUnverified })}
-          </p>
-        </div>
-        <Button onClick={openCreate}>Νέα αποθηκευμένη αναζήτηση</Button>
-      </div>
+      <PageHeader
+        title="Αποθηκευμένες αναζητήσεις"
+        description="Η εφαρμογή ελέγχει αυτόματα τις επιλεγμένες πηγές (ΚΗΜΔΗΣ / TED / Διαύγεια) και εμφανίζει τα νέα αποτελέσματα στις Ευκαιρίες."
+        meta={
+          <div className="flex flex-col gap-0.5">
+            <span className="font-medium text-foreground/80">
+              {usageCounterLabel({ activeCount, maxActive, emailUnverified })}
+            </span>
+            {manualQuotaLabel ? <span>{manualQuotaLabel}</span> : null}
+          </div>
+        }
+        actions={<Button onClick={openCreate}>Νέα αποθηκευμένη αναζήτηση</Button>}
+      />
 
       {runningScanProfiles.length > 0 ? (
-        <Card className="border-primary/40 bg-primary/5">
-          <CardContent className="py-3 text-sm">
-            {runningScanProfiles.length === 1
-              ? "1 έλεγχος σε εξέλιξη…"
-              : `${runningScanProfiles.length} έλεγχοι σε εξέλιξη…`}
-          </CardContent>
-        </Card>
+        <Notice>
+          {runningScanProfiles.length === 1
+            ? "1 έλεγχος σε εξέλιξη…"
+            : `${runningScanProfiles.length} έλεγχοι σε εξέλιξη…`}
+        </Notice>
       ) : null}
 
       {pendingInitialProfiles.length > 0 ? (
-        <Card className="border-primary/40 bg-primary/5">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-            <span>
-              {pendingInitialProfiles.length === 1
-                ? "1 αναζήτηση εκκρεμεί αρχικό έλεγχο."
-                : `${pendingInitialProfiles.length} αναζητήσεις εκκρεμούν αρχικό έλεγχο.`}
-            </span>
+        <Notice
+          action={
             <Button size="sm" disabled={busy} onClick={() => void handleRunPendingScans()}>
               {busy ? "Έλεγχος…" : "Έλεγχος τώρα"}
             </Button>
-          </CardContent>
-        </Card>
+          }
+        >
+          {pendingInitialProfiles.length === 1
+            ? "1 αναζήτηση εκκρεμεί αρχικό έλεγχο."
+            : `${pendingInitialProfiles.length} αναζητήσεις εκκρεμούν αρχικό έλεγχο.`}
+        </Notice>
       ) : null}
 
       {failedScanProfiles.length > 0 ? (
-        <Card className="border-destructive/40 bg-destructive/5">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-            <div className="min-w-0 space-y-1">
-              <div>
-                {failedScanProfiles.length === 1
-                  ? "Ο τελευταίος έλεγχος απέτυχε."
-                  : `${failedScanProfiles.length} αναζητήσεις απέτυχαν στον τελευταίο έλεγχο.`}
-              </div>
-              {failedScanProfiles.slice(0, 2).map((profile) => (
-                <div key={profile.id} className="text-xs text-muted-foreground">
-                  {profile.name}
-                  {profile.scanError
-                    ? ` · ${humanScanError(profile.scanError)}`
-                    : ""}
-                  {profile.lastScannedAt
-                    ? ` · τελευταία προσπάθεια ${formatRelative(profile.lastScannedAt)}`
-                    : ""}
-                </div>
-              ))}
-            </div>
+        <Notice
+          tone="danger"
+          action={
             <Button size="sm" disabled={busy} onClick={() => void handleRunPendingScans()}>
               {busy ? "Έλεγχος…" : "Επανάληψη"}
             </Button>
-          </CardContent>
-        </Card>
+          }
+        >
+          <div>
+            {failedScanProfiles.length === 1
+              ? "Ο τελευταίος έλεγχος απέτυχε."
+              : `${failedScanProfiles.length} αναζητήσεις απέτυχαν στον τελευταίο έλεγχο.`}
+          </div>
+          {failedScanProfiles.slice(0, 2).map((profile) => (
+            <div key={profile.id} className="text-xs text-muted-foreground">
+              {profile.name}
+              {profile.scanError ? ` · ${humanScanError(profile.scanError)}` : ""}
+              {profile.lastScannedAt
+                ? ` · τελευταία προσπάθεια ${formatRelative(profile.lastScannedAt)}`
+                : ""}
+            </div>
+          ))}
+        </Notice>
       ) : null}
 
       {/* Email verify CTA lives in AppShell EmailVerificationBanner — avoid a
@@ -615,62 +663,38 @@ export const SavedSearchesPage = () => {
       {scanAccess &&
       profileScansBlocked &&
       scanAccess.status !== "unverified" ? (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardContent className="space-y-1 py-3 text-sm">
-            <p className="font-medium text-foreground">
-              {scanAccess.status === "trial_expired"
-                ? "Η δοκιμή έληξε"
-                : "Έλεγχοι προσωρινά μη διαθέσιμοι"}
-            </p>
-            <p className="text-muted-foreground">
-              {humanSaasError(scanAccess.blockCode ?? "manual_scan_blocked")}
-              {scanAccess.status === "trial"
-                ? ` Δοκιμή: έως ${scanAccess.limits.manualProfileScansPerDay} χειροκίνητους ελέγχους/ημέρα.`
-                : ""}
-              {scanAccess.status === "active" &&
-              scanAccess.limits.periodicScansPerDay > 0
-                ? ` Πακέτο: έως ${scanAccess.limits.periodicScansPerDay} συγκεντρωτικά email slots/ημέρα.`
-                : ""}
-            </p>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {scanAccess &&
-      !profileScansBlocked &&
-      (scanAccess.status === "trial" ||
-        (scanAccess.status === "active" &&
-          scanAccess.limits.manualProfileScansPerDay > 0 &&
-          scanAccess.planKey !== "free")) ? (
-        <Card className="border-border/80">
-          <CardContent className="py-3 text-sm text-muted-foreground">
-            Σημερινοί χειροκίνητοι έλεγχοι: {scanAccess.usage.manual} από{" "}
-            {scanAccess.limits.manualProfileScansPerDay}
-            {scanAccess.limits.periodicScansPerDay > 0
-              ? ` · συγκεντρωτικά slots: ${scanAccess.usage.periodic} από ${scanAccess.limits.periodicScansPerDay}`
+        <Notice tone="warning">
+          <p className="font-medium text-foreground">
+            {scanAccess.status === "trial_expired"
+              ? "Η δοκιμή έληξε"
+              : "Έλεγχοι προσωρινά μη διαθέσιμοι"}
+          </p>
+          <p className="text-muted-foreground">
+            {humanSaasError(scanAccess.blockCode ?? "manual_scan_blocked")}
+            {scanAccess.status === "trial"
+              ? ` Δοκιμή: έως ${scanAccess.limits.manualProfileScansPerDay} χειροκίνητους ελέγχους/ημέρα.`
               : ""}
-            {scanAccess.trialEndsAt
-              ? ` · δοκιμή έως ${new Date(scanAccess.trialEndsAt).toLocaleDateString("el-GR")}`
+            {scanAccess.status === "active" &&
+            scanAccess.limits.periodicScansPerDay > 0
+              ? ` Πακέτο: έως ${scanAccess.limits.periodicScansPerDay} συγκεντρωτικά email slots/ημέρα.`
               : ""}
-          </CardContent>
-        </Card>
+          </p>
+        </Notice>
       ) : null}
 
       {nearActiveLimit ? (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardContent className="py-3 text-sm text-muted-foreground">
+        <Notice tone="warning">
+          <span className="text-muted-foreground">
             Πλησιάζετε το όριο ενεργών αναζητήσεων. Σκεφτείτε να παύσετε ή να
             συγχωνεύσετε υπάρχουσες πριν προσθέσετε νέες.
-          </CardContent>
-        </Card>
+          </span>
+        </Notice>
       ) : null}
 
       {atActiveLimit ? (
-        <Card className="border-border/80 bg-muted/20">
-          <CardContent className="space-y-1 py-3 text-sm">
-            <p className="font-medium text-foreground">{activeLimitMessage(maxActive)}</p>
-          </CardContent>
-        </Card>
+        <Notice>
+          <p className="font-medium text-foreground">{activeLimitMessage(maxActive)}</p>
+        </Notice>
       ) : null}
 
       {profiles.length === 0 ? (
@@ -685,64 +709,62 @@ export const SavedSearchesPage = () => {
           onAction={openCreate}
         />
       ) : (
-        <div className="space-y-3">
-          {paged.pageItems.map((profile) => {
-            const keywords = asStringArray(profile.keywords);
-            const cpvs = asStringArray(profile.cpvs);
-            const recordTypes = asStringArray(profile.recordTypes);
-            return (
-              <Card key={profile.id}>
-                <CardHeader className="pb-2">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <CardTitle className="text-base">{profile.name}</CardTitle>
-                      <CardDescription className="mt-1">
-                        {scanLabel(profile)}
-                        {profile.scanState === "COMPLETED" && profile.scanPartial
-                          ? ` · μερικός έλεγχος (${humanScanError(profile.scanError)})`
-                          : ""}
-                        {" · πηγές: "}
-                        {(profile.dataSources ?? ["kimdis"])
-                          .map((s) =>
-                            s === "ted" ? "TED" : s === "diavgeia" ? "Διαύγεια" : "ΚΗΜΔΗΣ",
-                          )
-                          .join(", ")}
-                        {profile.lastSourceFetchedAt
-                          ? ` · ενημέρωση πηγών ${formatRelative(profile.lastSourceFetchedAt)}`
-                          : ""}
-                      </CardDescription>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-end gap-2">
+        <section>
+          <DataList>
+            {paged.pageItems.map((profile) => {
+              const keywords = asStringArray(profile.keywords);
+              const cpvs = asStringArray(profile.cpvs);
+              const recordTypes = asStringArray(profile.recordTypes);
+              const scanState = (profile.scanState ?? "PENDING").toUpperCase();
+              const forceRetry = canForceRetryStuckScan(profile);
+              const rescanInFlight = isScanInFlight(profile) && !forceRetry;
+              const rescanDisabled =
+                profileScansBlocked || !profile.enabled || rescanInFlight;
+              const newCount =
+                typeof profile.scanNewCount === "number" ? profile.scanNewCount : 0;
+              const invitationCount = profile.invitationIssuedMatchCount ?? 0;
+              const metaParts = [
+                `${profile.matchCount ?? 0} αποτελέσματα · ${newCount} νέα`,
+                (recordTypes.length ? recordTypes : ["REQ", "PROC"]).join(" + "),
+                matchingLabel(profile.matchingMode),
+                `Τελευταίος έλεγχος ${formatRelative(profile.lastScannedAt)}`,
+              ];
+              const showScanStatus = scanState !== "COMPLETED" || profile.scanPartial;
+              return (
+                <DataRow
+                  key={profile.id}
+                  actions={
+                    <>
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={
-                          profileScansBlocked ||
-                          !profile.enabled ||
-                          busy ||
-                          (((profile.scanState ?? "").toUpperCase() === "PENDING" ||
-                            (profile.scanState ?? "").toUpperCase() === "RUNNING") &&
-                            !canForceRetryStuckScan(profile))
-                        }
+                        disabled={rescanDisabled || busy}
                         onClick={() => void handleRescan(profile)}
                         aria-label={`Έλεγχος τώρα για ${profile.name}`}
                       >
-                        {((profile.scanState ?? "").toUpperCase() === "RUNNING" ||
-                          (profile.scanState ?? "").toUpperCase() === "PENDING") &&
-                        !canForceRetryStuckScan(profile)
+                        {rescanInFlight
                           ? "Έλεγχος…"
-                          : canForceRetryStuckScan(profile)
+                          : forceRetry
                             ? "Επανεκκίνηση"
                             : "Έλεγχος τώρα"}
                       </Button>
-                      <IconAction label="Προβολή" onClick={() => setViewProfile(profile)}>
-                        <Eye />
-                      </IconAction>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        asChild
+                        aria-label={`Προβολή αποτελεσμάτων για ${profile.name}`}
+                      >
+                        <Link
+                          to={`/app/opportunities?profile=${encodeURIComponent(profile.id)}`}
+                        >
+                          Προβολή αποτελεσμάτων
+                        </Link>
+                      </Button>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
                             size="icon"
-                            variant="outline"
+                            variant="ghost"
                             className="h-8 w-8"
                             aria-label="Περισσότερες ενέργειες"
                           >
@@ -750,6 +772,9 @@ export const SavedSearchesPage = () => {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setViewProfile(profile)}>
+                            Λεπτομέρειες
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => openEdit(profile)}>
                             Επεξεργασία
                           </DropdownMenuItem>
@@ -762,25 +787,12 @@ export const SavedSearchesPage = () => {
                             {profile.enabled ? "Παύση" : "Ενεργοποίηση"}
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            disabled={
-                              profileScansBlocked ||
-                              !profile.enabled ||
-                              (((profile.scanState ?? "").toUpperCase() ===
-                                "PENDING" ||
-                                (profile.scanState ?? "").toUpperCase() ===
-                                  "RUNNING") &&
-                                !canForceRetryStuckScan(profile))
-                            }
+                            disabled={rescanDisabled}
                             onClick={() => void handleRescan(profile)}
                           >
-                            {canForceRetryStuckScan(profile)
+                            {forceRetry
                               ? "Επανεκκίνηση (κολλημένη)"
                               : "Επανάληψη ελέγχου"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link to={`/app/opportunities?profile=${encodeURIComponent(profile.id)}`}>
-                              Προβολή ευκαιριών
-                            </Link>
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive"
@@ -790,91 +802,84 @@ export const SavedSearchesPage = () => {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <div className="grid gap-2 md:grid-cols-2">
-                    <div>
-                      <span className="text-muted-foreground">Κατάσταση: </span>
-                      <Badge variant={profile.enabled ? "default" : "outline"}>
+                    </>
+                  }
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">
+                        {profile.name}
+                      </span>
+                      <Badge
+                        variant={profile.enabled ? "success" : "outline"}
+                        className="px-1.5 py-0 text-[11px]"
+                      >
                         {profile.enabled ? "Ενεργή" : "Σε παύση"}
                       </Badge>
+                      {invitationCount > 0 ? <InvitationIssuedBadge compact /> : null}
                     </div>
-                    <div>
-                      <span className="text-muted-foreground">Τύποι πράξεων: </span>
-                      {(recordTypes.length ? recordTypes : ["REQ", "PROC"]).join(" + ")}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Αντιστοίχιση αποτελεσμάτων: </span>
-                      {matchingLabel(profile.matchingMode)}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Τελευταίος έλεγχος: </span>
-                      {formatRelative(profile.lastScannedAt)}
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Αποτελέσματα: </span>
-                      {profile.matchCount ?? 0}
-                    </div>
-                    {(profile.invitationIssuedMatchCount ?? 0) > 0 ? (
-                      <div className="flex flex-wrap items-center gap-2 md:col-span-2">
-                        <InvitationIssuedBadge compact />
-                        <span className="text-xs text-muted-foreground">
-                          {profile.invitationIssuedMatchCount} από τα matches έχουν ήδη
-                          επίσημη πρόσκληση — δείτε τα στις ευκαιρίες πριν αφιερώσετε χρόνο.
-                        </span>
-                      </div>
+                    <p className="text-xs text-muted-foreground">
+                      {metaParts.join(" · ")}
+                      {invitationCount > 0
+                        ? ` · ${invitationCount} με επίσημη πρόσκληση`
+                        : ""}
+                    </p>
+                    {showScanStatus ? (
+                      <p
+                        className={cn(
+                          "text-xs text-muted-foreground",
+                          scanState === "FAILED" && "text-destructive",
+                        )}
+                      >
+                        {scanLabel(profile)}
+                        {scanState === "COMPLETED" && profile.scanPartial
+                          ? ` · μερικός έλεγχος (${humanScanError(profile.scanError)})`
+                          : ""}
+                      </p>
                     ) : null}
-                    <div>
-                      <span className="text-muted-foreground">Ειδοποιήσεις: </span>
-                      {notificationLabel(profile.notificationOverride)}
-                    </div>
-                    <div className="md:col-span-2">
-                      <span className="text-muted-foreground">Ημερομηνίες καταχώρισης: </span>
-                      {profile.dateFrom && profile.dateTo
-                        ? `${profile.dateFrom} – ${profile.dateTo}`
-                        : profile.dateFrom
-                          ? `Από ${profile.dateFrom}`
-                          : profile.dateTo
-                            ? `Έως ${profile.dateTo}`
-                            : "Τελευταίες 30 ημέρες (προεπιλογή)"}
-                    </div>
-                  </div>
-                  {keywords.length ? (
-                    <div>
-                      <div className="mb-1 text-muted-foreground">Λέξεις-κλειδιά</div>
-                      <div className="flex flex-wrap gap-1">
+                    {keywords.length || cpvs.length ? (
+                      <div className="flex flex-wrap gap-1 pt-0.5">
                         {keywords.slice(0, 8).map((keyword) => (
-                          <Badge key={keyword} variant="secondary">
+                          <Badge
+                            key={keyword}
+                            variant="secondary"
+                            className="px-1.5 py-0 text-[11px] font-normal"
+                          >
                             {keyword}
                           </Badge>
                         ))}
                         {keywords.length > 8 ? (
-                          <Badge variant="outline">+{keywords.length - 8}</Badge>
+                          <Badge
+                            variant="outline"
+                            className="px-1.5 py-0 text-[11px] font-normal"
+                          >
+                            +{keywords.length - 8}
+                          </Badge>
                         ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                  {cpvs.length ? (
-                    <div>
-                      <div className="mb-1 text-muted-foreground">CPVs</div>
-                      <div className="flex flex-wrap gap-1">
                         {cpvs.slice(0, 6).map((cpv) => (
-                          <Badge key={cpv} variant="outline" className="font-mono">
+                          <Badge
+                            key={cpv}
+                            variant="outline"
+                            className="px-1.5 py-0 font-mono text-[11px] font-normal"
+                          >
                             {cpv}
                           </Badge>
                         ))}
                         {cpvs.length > 6 ? (
-                          <Badge variant="outline">+{cpvs.length - 6}</Badge>
+                          <Badge
+                            variant="outline"
+                            className="px-1.5 py-0 text-[11px] font-normal"
+                          >
+                            +{cpvs.length - 6}
+                          </Badge>
                         ) : null}
                       </div>
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
-            );
-          })}
+                    ) : null}
+                  </div>
+                </DataRow>
+              );
+            })}
+          </DataList>
           <Pagination
             page={paged.page}
             totalPages={paged.totalPages}
@@ -882,7 +887,7 @@ export const SavedSearchesPage = () => {
             pageSize={paged.pageSize}
             onPageChange={paged.setPage}
           />
-        </div>
+        </section>
       )}
 
       <Dialog open={Boolean(viewProfile)} onOpenChange={(o) => !o && setViewProfile(null)}>
@@ -896,6 +901,15 @@ export const SavedSearchesPage = () => {
               <div className="space-y-2 text-sm">
                 <div>Κατάσταση: {viewProfile.enabled ? "Ενεργή" : "Σε παύση"}</div>
                 <div>Αντιστοίχιση αποτελεσμάτων: {matchingLabel(viewProfile.matchingMode)}</div>
+                <div>
+                  Πηγές:{" "}
+                  {(viewProfile.dataSources ?? ["kimdis"])
+                    .map((s) =>
+                      s === "ted" ? "TED" : s === "diavgeia" ? "Διαύγεια" : "ΚΗΜΔΗΣ",
+                    )
+                    .join(", ")}
+                </div>
+                <div>Ειδοποιήσεις: {notificationLabel(viewProfile.notificationOverride)}</div>
                 <div>
                   Λέξεις-κλειδιά: {asStringArray(viewProfile.keywords).join(", ") || "—"}
                 </div>

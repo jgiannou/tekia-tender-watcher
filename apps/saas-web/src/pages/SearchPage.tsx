@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, Search } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { CpvCombobox } from "@/components/CpvCombobox";
 import { PdfAction } from "@/components/PdfAction";
+import { RegionPicker } from "@/components/RegionPicker";
 import { InvitationIssuedBadge } from "@/components/InvitationIssuedBadge";
 import { SourceBadge } from "@/components/SourceBadge";
 import { DateInput } from "@/components/ui/date-input";
@@ -17,7 +19,8 @@ import { PdfPreviewModal } from "@/components/PdfPreviewModal";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DataList, DataRow } from "@/components/ui/data-row";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +46,7 @@ import {
   parseKimdisAdamInput,
 } from "@/lib/kimdis-adam";
 import { formatRegion, GREEK_NUTS2_REGIONS } from "@/lib/regions";
+import { cn } from "@/lib/utils";
 
 type TedNoticeRow = {
   publicationNumber: string;
@@ -264,6 +268,22 @@ const toApiFilters = (state: SearchFormState): KimdisSearchFilters => {
   };
 };
 
+/** Number of active filters that live behind "Περισσότερα φίλτρα". */
+const countAdvancedFilters = (state: SearchFormState): number =>
+  [
+    state.adam.trim(),
+    state.cpv.trim(),
+    state.authority.trim(),
+    state.contractType,
+    state.type === "REQ" && state.requestKind !== "any" ? state.requestKind : "",
+    state.type === "PROC" ? state.procedureType : "",
+    state.amountMin,
+    state.amountMax,
+    state.signer.trim(),
+    state.type === "PROC" ? state.finalFrom : "",
+    state.type === "PROC" ? state.finalTo : "",
+  ].filter(Boolean).length;
+
 const criteriaFingerprint = (state: SearchFormState): string =>
   [
     state.type,
@@ -336,7 +356,7 @@ export const SearchPage = () => {
   const urlState = useMemo(() => parseState(searchParams), [searchParams]);
 
   const [draft, setDraft] = useState<SearchFormState>(urlState);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(() => countAdvancedFilters(urlState) > 0);
   const [meta, setMeta] = useState<{
     contractTypes: Record<string, string>;
     procedureTypes: Record<string, string>;
@@ -541,7 +561,13 @@ export const SearchPage = () => {
   };
 
   const handleSearchSubmit = () => {
-    const adamParsed = parseKimdisAdamInput(draft.adam);
+    // A full ADAM typed in the main field is promoted to the ADAM filter.
+    const titleAdam = parseKimdisAdamInput(draft.q);
+    const submitDraft: SearchFormState =
+      !draft.adam.trim() && titleAdam.status === "exact"
+        ? { ...draft, q: "", adam: titleAdam.adam }
+        : draft;
+    const adamParsed = parseKimdisAdamInput(submitDraft.adam);
     if (adamParsed.status === "invalid") {
       toast.error(adamValidationMessageEl(adamParsed.reason));
       return;
@@ -549,12 +575,12 @@ export const SearchPage = () => {
     if (
       adamParsed.status === "exact" &&
       (adamParsed.recordType === "REQ" || adamParsed.recordType === "PROC") &&
-      adamParsed.recordType !== draft.type
+      adamParsed.recordType !== submitDraft.type
     ) {
-      toast.error(adamValidationMessageEl(`adam_family_mismatch:expected_${adamParsed.recordType}_got_${draft.type}`));
+      toast.error(adamValidationMessageEl(`adam_family_mismatch:expected_${adamParsed.recordType}_got_${submitDraft.type}`));
       return;
     }
-    commitSearch({ ...draft, page: 1, run: true });
+    commitSearch({ ...submitDraft, page: 1, run: true });
   };
 
   const handlePageChange = (page: number) => {
@@ -660,114 +686,170 @@ export const SearchPage = () => {
   }
 
   const currentPage = urlState.page;
+  const advancedFilterCount = countAdvancedFilters(draft);
+  const isExactAdamDraft = draftAdamParsed.status === "exact";
+  const titleLooksLikeAdam =
+    !draft.adam.trim() && parseKimdisAdamInput(draft.q).status === "exact";
+
+  const handleTypeChange = (type: SearchFormState["type"]) => {
+    setDraft((prev) => ({ ...prev, type }));
+    setItems([]);
+  };
+
+  const handleToggleAllHistory = (checked: boolean) => {
+    setDraft((prev) => {
+      if (checked) return { ...prev, allHistory: true, dateFrom: "", dateTo: "" };
+      const recent = defaultRecentDates();
+      return {
+        ...prev,
+        allHistory: false,
+        dateFrom: recent.dateFrom,
+        dateTo: recent.dateTo,
+      };
+    });
+  };
+
+  const handleResetTed = () => {
+    const recent = defaultRecentDates();
+    setTedQuery("");
+    setTedCpv("");
+    setTedAuthority("");
+    setTedDateFrom(recent.dateFrom);
+    setTedDateTo(recent.dateTo);
+    setTedNotices([]);
+    setTedTotal(null);
+    setTedError(null);
+  };
+
+  const registryTabs = (
+    <div
+      role="tablist"
+      aria-label="Πηγή αναζήτησης"
+      className="flex gap-4 border-b border-border/60"
+    >
+      {(
+        [
+          ["kimdis", "ΚΗΜΔΗΣ"],
+          ["ted", "TED"],
+        ] as const
+      ).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={registryTab === id}
+          tabIndex={0}
+          onClick={() => setRegistryTab(id)}
+          className={cn(
+            "-mb-px border-b-2 px-1 pb-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            registryTab === id
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Αναζήτηση</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Χειροκίνητη αναζήτηση σε ΚΗΜΔΗΣ ή TED. Για αυτόματη εύρεση, αποθηκεύστε κριτήρια με τις επιλεγμένες πηγές.
-          </p>
-        </div>
-        {registryTab === "kimdis" ? (
-          <Button
-            variant="outline"
-            onClick={() => void handleOpenSave()}
-            disabled={!urlState.run}
-          >
-            Αποθήκευση αναζήτησης
-          </Button>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Αναζήτηση"
+        description="Χειροκίνητη αναζήτηση σε ΚΗΜΔΗΣ ή TED. Για αυτόματη εύρεση, αποθηκεύστε τα κριτήρια ως αποθηκευμένη αναζήτηση."
+        actions={
+          registryTab === "kimdis" ? (
+            <Button
+              variant="outline"
+              onClick={() => void handleOpenSave()}
+              disabled={!urlState.run}
+            >
+              Αποθήκευση αναζήτησης
+            </Button>
+          ) : null
+        }
+      />
 
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant={registryTab === "kimdis" ? "default" : "outline"}
-          onClick={() => setRegistryTab("kimdis")}
-        >
-          ΚΗΜΔΗΣ
-        </Button>
-        <Button
-          variant={registryTab === "ted" ? "default" : "outline"}
-          onClick={() => setRegistryTab("ted")}
-        >
-          TED
-        </Button>
-      </div>
+      {registryTabs}
 
       {registryTab === "ted" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Αναζήτηση TED <SourceBadge system="ted" />
-            </CardTitle>
-            <CardDescription>
-              Ευρωπαϊκές προκηρύξεις για την Ελλάδα από το TED. Τα αποτελέσματα δεν
-              προστίθενται αυτόματα στις Ευκαιρίες — χρησιμοποιήστε Παρακολούθηση ή
-              αποθηκευμένη αναζήτηση με πηγή TED.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {!tedEnabled ? (
-              <p className="text-sm text-amber-700 dark:text-amber-400">
-                Η αναζήτηση TED δεν είναι διαθέσιμη προς το παρόν. Μπορείτε να
-                συνεχίσετε με το ΚΗΜΔΗΣ.
-              </p>
-            ) : null}
-            <div className="space-y-2">
-              <Label htmlFor="ted-title">Λέξεις στον τίτλο</Label>
-              <Input
-                id="ted-title"
-                value={tedQuery}
-                onChange={(e) => setTedQuery(e.target.value)}
-                placeholder="π.χ. φόρτιση, απορρίμματα"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void handleTedSearch();
-                }}
-                aria-label="Λέξεις στον τίτλο TED"
+        <section className="space-y-4" aria-label="Αναζήτηση TED">
+          <p className="text-sm text-muted-foreground">
+            Ευρωπαϊκές προκηρύξεις για την Ελλάδα από το TED <SourceBadge system="ted" />. Τα
+            αποτελέσματα δεν προστίθενται αυτόματα στις Ευκαιρίες — χρησιμοποιήστε
+            Παρακολούθηση ή αποθηκευμένη αναζήτηση με πηγή TED.
+          </p>
+          {!tedEnabled ? (
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              Η αναζήτηση TED δεν είναι διαθέσιμη προς το παρόν. Μπορείτε να
+              συνεχίσετε με το ΚΗΜΔΗΣ.
+            </p>
+          ) : null}
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              id="ted-title"
+              value={tedQuery}
+              onChange={(e) => setTedQuery(e.target.value)}
+              placeholder="Αναζήτηση λέξεων στον τίτλο, π.χ. φόρτιση, απορρίμματα…"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleTedSearch();
+              }}
+              aria-label="Λέξεις στον τίτλο TED"
+              className="h-12 pl-11 text-base"
+            />
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto] lg:items-end">
+            <div className="space-y-1.5">
+              <Label htmlFor="ted-cpv" className="text-xs text-muted-foreground">
+                CPV
+              </Label>
+              <CpvCombobox
+                id="ted-cpv"
+                value={tedCpv}
+                onChange={setTedCpv}
+                suggestions={cpvSuggestions}
               />
             </div>
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor="ted-cpv">CPV</Label>
-                <CpvCombobox
-                  id="ted-cpv"
-                  value={tedCpv}
-                  onChange={setTedCpv}
-                  suggestions={cpvSuggestions}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ted-authority">Αναθέτουσα αρχή / φορέας</Label>
-                <Input
-                  id="ted-authority"
-                  value={tedAuthority}
-                  onChange={(e) => setTedAuthority(e.target.value)}
-                  placeholder="π.χ. ΔΗΜΟΣ ΑΘΗΝΑΙΩΝ"
-                  aria-label="Αναθέτουσα αρχή TED"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ted-date-from">Ημερομηνία από</Label>
-                <DateInput
-                  id="ted-date-from"
-                  value={tedDateFrom}
-                  onChange={setTedDateFrom}
-                  aria-label="Ημερομηνία δημοσίευσης από"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ted-date-to">Ημερομηνία έως</Label>
-                <DateInput
-                  id="ted-date-to"
-                  value={tedDateTo}
-                  onChange={setTedDateTo}
-                  aria-label="Ημερομηνία δημοσίευσης έως"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ted-authority" className="text-xs text-muted-foreground">
+                Αναθέτουσα αρχή / φορέας
+              </Label>
+              <Input
+                id="ted-authority"
+                value={tedAuthority}
+                onChange={(e) => setTedAuthority(e.target.value)}
+                placeholder="π.χ. ΔΗΜΟΣ ΑΘΗΝΑΙΩΝ"
+                aria-label="Αναθέτουσα αρχή TED"
+              />
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="ted-date-from" className="text-xs text-muted-foreground">
+                Ημερομηνία από
+              </Label>
+              <DateInput
+                id="ted-date-from"
+                value={tedDateFrom}
+                onChange={setTedDateFrom}
+                aria-label="Ημερομηνία δημοσίευσης από"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ted-date-to" className="text-xs text-muted-foreground">
+                Ημερομηνία έως
+              </Label>
+              <DateInput
+                id="ted-date-to"
+                value={tedDateTo}
+                onChange={setTedDateTo}
+                aria-label="Ημερομηνία δημοσίευσης έως"
+              />
+            </div>
+            <div className="flex gap-2">
               <Button
                 disabled={!tedEnabled || tedLoading}
                 onClick={() => void handleTedSearch()}
@@ -776,677 +858,660 @@ export const SearchPage = () => {
               </Button>
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 disabled={tedLoading}
-                onClick={() => {
-                  const recent = defaultRecentDates();
-                  setTedQuery("");
-                  setTedCpv("");
-                  setTedAuthority("");
-                  setTedDateFrom(recent.dateFrom);
-                  setTedDateTo(recent.dateTo);
-                  setTedNotices([]);
-                  setTedTotal(null);
-                  setTedError(null);
-                }}
+                onClick={handleResetTed}
               >
                 Καθαρισμός
               </Button>
             </div>
-            {tedError ? <ErrorState description={tedError} /> : null}
-            {tedEnabled && !tedLoading && !tedError && tedNotices.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Συμπληρώστε κριτήρια και πατήστε Αναζήτηση.
-              </p>
-            ) : null}
-            {tedTotal != null && tedNotices.length > 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {tedTotal === 1
-                  ? "1 αποτέλεσμα"
-                  : `${tedTotal.toLocaleString("el-GR")} αποτελέσματα`}
-                {tedNotices.length < tedTotal
-                  ? ` · εμφανίζονται ${tedNotices.length}`
-                  : ""}
-              </p>
-            ) : null}
-            <div className="space-y-3">
-              {tedNotices.map((notice) => (
-                <div
+          </div>
+          {tedError ? <ErrorState description={tedError} /> : null}
+          {tedEnabled && !tedLoading && !tedError && tedNotices.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Συμπληρώστε κριτήρια και πατήστε Αναζήτηση.
+            </p>
+          ) : null}
+          {tedTotal != null && tedNotices.length > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {tedTotal === 1
+                ? "1 αποτέλεσμα"
+                : `${tedTotal.toLocaleString("el-GR")} αποτελέσματα`}
+              {tedNotices.length < tedTotal
+                ? ` · εμφανίζονται ${tedNotices.length}`
+                : ""}
+            </p>
+          ) : null}
+          <DataList>
+            {tedNotices.map((notice) => {
+              const natureLabel = tedContractNatureLabel(notice.contractNature);
+              const metaLine = [
+                notice.buyerName || "—",
+                formatMoney(
+                  typeof notice.estimatedValue === "number"
+                    ? notice.estimatedValue
+                    : null,
+                ),
+                notice.publicationDate ? formatDate(notice.publicationDate) : null,
+                notice.deadline ? `Προθεσμία ${formatDate(notice.deadline)}` : null,
+                natureLabel,
+                formatRegion(notice.nutsCode),
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <DataRow
                   key={notice.publicationNumber}
-                  className="rounded-md border border-border px-3 py-3"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <SourceBadge system="ted" />
-                    <span className="font-mono text-xs text-muted-foreground">
-                      TED:{notice.publicationNumber}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="mt-1 w-full text-left text-sm font-semibold leading-snug hover:underline"
-                    onClick={() => void handleOpenTed(notice)}
-                    disabled={tedBusy}
-                    aria-label={`Άνοιγμα ${notice.title || notice.publicationNumber}`}
-                  >
-                    {notice.title || "—"}
-                  </button>
-                  <p className="text-xs text-muted-foreground">
-                    {notice.buyerName || "—"}
-                    {notice.publicationDate
-                      ? ` · ${formatDate(notice.publicationDate)}`
-                      : ""}
-                  </p>
-                  <div className="mt-1 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                    <span>
-                      Αξία:{" "}
-                      {formatMoney(
-                        typeof notice.estimatedValue === "number"
-                          ? notice.estimatedValue
-                          : null,
-                      )}
-                    </span>
-                    {notice.deadline ? (
-                      <span>Προθεσμία: {formatDate(notice.deadline)}</span>
-                    ) : null}
-                    {tedContractNatureLabel(notice.contractNature) ? (
-                      <span>{tedContractNatureLabel(notice.contractNature)}</span>
-                    ) : null}
-                    {formatRegion(notice.nutsCode) ? (
-                      <span>{formatRegion(notice.nutsCode)}</span>
-                    ) : null}
-                  </div>
-                  {notice.cpvs?.length ? (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {notice.cpvs.slice(0, 4).map((code) => (
-                        <Badge
-                          key={code}
-                          variant="outline"
-                          className="max-w-full truncate font-normal"
-                          title={formatCpvBadge(code)}
+                  interactive
+                  className="gap-2 py-3 sm:gap-4"
+                  actions={
+                    <div className="flex flex-col gap-1.5 sm:items-end">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          disabled={tedBusy}
+                          onClick={() => void handleFollowTed(notice)}
                         >
-                          {formatCpvBadge(code)}
-                        </Badge>
-                      ))}
+                          Παρακολούθηση
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={tedBusy}
+                          onClick={() => void handleOpenTed(notice)}
+                        >
+                          Προβολή
+                        </Button>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        asChild
+                        className="h-7 px-2 text-muted-foreground hover:text-foreground"
+                      >
+                        <a href={notice.url} target="_blank" rel="noreferrer">
+                          Στο TED
+                        </a>
+                      </Button>
                     </div>
-                  ) : null}
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      disabled={tedBusy}
-                      onClick={() => void handleOpenTed(notice)}
-                    >
-                      Άνοιγμα
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={tedBusy}
-                      onClick={() => void handleFollowTed(notice)}
-                    >
-                      Παρακολούθηση
-                    </Button>
-                    <Button size="sm" variant="ghost" asChild>
-                      <a href={notice.url} target="_blank" rel="noreferrer">
-                        Στο TED
-                      </a>
-                    </Button>
+                  }
+                >
+                  <div className="space-y-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <SourceBadge system="ted" />
+                      <h3 className="min-w-0 text-sm font-semibold leading-snug">
+                        <button
+                          type="button"
+                          className="text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => void handleOpenTed(notice)}
+                          disabled={tedBusy}
+                          aria-label={`Άνοιγμα ${notice.title || notice.publicationNumber}`}
+                        >
+                          {notice.title || "—"}
+                        </button>
+                      </h3>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{metaLine}</p>
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-mono">TED:{notice.publicationNumber}</span>
+                      {notice.cpvs?.length
+                        ? ` · ${notice.cpvs.slice(0, 3).map(formatCpvBadge).join(" · ")}`
+                        : ""}
+                    </p>
                   </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                </DataRow>
+              );
+            })}
+          </DataList>
+        </section>
       ) : null}
 
       {registryTab === "kimdis" ? (
-      <>
-      <div className="flex gap-2">
-        {(
-          [
-            ["REQ", "Αιτήματα"],
-            ["PROC", "Προσκλήσεις / Προκηρύξεις"],
-          ] as const
-        ).map(([id, label]) => (
-          <Button
-            key={id}
-            variant={draft.type === id ? "default" : "outline"}
-            onClick={() => {
-              setDraft((prev) => ({ ...prev, type: id }));
-              setItems([]);
-            }}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Κριτήρια αναζήτησης</CardTitle>
-          <CardDescription>
-            {draft.type === "REQ"
-              ? "Επιλέξτε τύπο αιτήματος και συμπληρώστε τα κριτήρια αναζήτησης."
-              : "Προσκλήσεις, προκηρύξεις και διακηρύξεις"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="title">Λέξεις στον τίτλο</Label>
-            <Input
-              id="title"
-              value={draft.q}
-              onChange={(e) => setDraft((prev) => ({ ...prev, q: e.target.value }))}
-              placeholder="π.χ. ιστοσελίδα"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSearchSubmit();
-              }}
-            />
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="search-cpv">CPV</Label>
-              <CpvCombobox
-                id="search-cpv"
-                value={draft.cpv}
-                onChange={(cpv) => setDraft((prev) => ({ ...prev, cpv }))}
-                suggestions={cpvSuggestions}
-                placeholder="########-#"
-                aria-label="CPV"
+        <>
+          <section className="space-y-4" aria-label="Κριτήρια αναζήτησης ΚΗΜΔΗΣ">
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
               />
-            </div>
-            <div className="space-y-2">
-              <Label>ΑΔΑΜ</Label>
               <Input
-                value={draft.adam}
-                onChange={(e) => setDraft((prev) => ({ ...prev, adam: e.target.value }))}
-                placeholder={draft.type === "REQ" ? "26REQ…" : "26PROC…"}
-                aria-label="ΑΔΑΜ"
-              />
-              {draftAdamParsed.status === "exact" ? (
-                <p className="text-xs text-muted-foreground">{EXACT_ADAM_SEARCH_HINT_EL}</p>
-              ) : draftAdamParsed.status === "invalid" ? (
-                <p className="text-xs text-amber-700 dark:text-amber-400">
-                  {adamValidationMessageEl(draftAdamParsed.reason)}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label>Κωδικός αναθέτουσας αρχής</Label>
-              <Input
-                value={draft.authority}
-                onChange={(e) =>
-                  setDraft((prev) => ({ ...prev, authority: e.target.value }))
-                }
-                placeholder="π.χ. 100024656"
+                id="title"
+                value={draft.q}
+                onChange={(e) => setDraft((prev) => ({ ...prev, q: e.target.value }))}
+                placeholder="Αναζήτηση τίτλου, ΑΔΑΜ, φορέα…"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSearchSubmit();
+                }}
+                aria-label="Αναζήτηση τίτλου, ΑΔΑΜ, φορέα"
+                className="h-12 pl-11 text-base"
               />
             </div>
-            <div className="space-y-2">
-              <Label>Χαρακτήρας σύμβασης</Label>
-              <Select
-                value={draft.contractType}
-                onChange={(e) =>
-                  setDraft((prev) => ({ ...prev, contractType: e.target.value }))
-                }
-              >
-                <option value="">Όλοι</option>
-                {meta
-                  ? Object.entries(meta.contractTypes).map(([code, label]) => (
-                      <option key={code} value={code}>
-                        {label}
-                      </option>
-                    ))
-                  : null}
-              </Select>
-            </div>
-            {draft.type === "REQ" ? (
-              <div className="space-y-2">
-                <Label>Τύπος αιτήματος</Label>
+            {titleLooksLikeAdam ? (
+              <p className="text-xs text-muted-foreground">{EXACT_ADAM_SEARCH_HINT_EL}</p>
+            ) : null}
+
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-[11rem_minmax(0,1fr)_14rem_auto] lg:items-end">
+              <div className="space-y-1.5">
+                <Label htmlFor="search-type" className="text-xs text-muted-foreground">
+                  Τύπος
+                </Label>
                 <Select
-                  value={draft.requestKind}
-                  disabled={draftAdamParsed.status === "exact"}
+                  id="search-type"
+                  value={draft.type}
                   onChange={(e) =>
+                    handleTypeChange(e.target.value === "PROC" ? "PROC" : "REQ")
+                  }
+                >
+                  <option value="REQ">Αιτήματα</option>
+                  <option value="PROC">Προσκλήσεις / Προκηρύξεις</option>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  Ημερομηνία καταχώρισης
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <DateInput
+                    disabled={draft.allHistory}
+                    value={draft.dateFrom}
+                    onChange={(dateFrom) =>
+                      setDraft((prev) => ({ ...prev, allHistory: false, dateFrom }))
+                    }
+                    aria-label="Ημερομηνία καταχώρισης από"
+                  />
+                  <DateInput
+                    disabled={draft.allHistory}
+                    value={draft.dateTo}
+                    onChange={(dateTo) =>
+                      setDraft((prev) => ({ ...prev, allHistory: false, dateTo }))
+                    }
+                    aria-label="Ημερομηνία καταχώρισης έως"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="search-region" className="text-xs text-muted-foreground">
+                  Περιοχή
+                </Label>
+                <RegionPicker
+                  id="search-region"
+                  regions={draft.regions}
+                  includeUnclassified={draft.includeUnclassifiedRegion}
+                  onChange={({ regions, includeUnclassified }) =>
                     setDraft((prev) => ({
                       ...prev,
-                      requestKind: e.target.value as SearchFormState["requestKind"],
+                      regions,
+                      includeUnclassifiedRegion: includeUnclassified,
                     }))
                   }
-                >
-                  {(meta?.requestKinds?.length
-                    ? meta.requestKinds
-                    : [
-                        { id: "any", label: "Όλοι οι τύποι αιτημάτων" },
-                        { id: "initial", label: "Πρωτογενή" },
-                        { id: "approved", label: "Εγκεκριμένα" },
-                        { id: "approval", label: "Εγκρίσεις" },
-                      ]
-                  ).map((kind) => (
-                    <option key={kind.id} value={kind.id}>
-                      {kind.label}
-                    </option>
-                  ))}
-                </Select>
+                />
               </div>
-            ) : (
-              <div className="space-y-2">
-                <Label>Διαδικασία ανάθεσης</Label>
-                <Select
-                  value={draft.procedureType}
-                  onChange={(e) =>
-                    setDraft((prev) => ({ ...prev, procedureType: e.target.value }))
-                  }
-                >
-                  <option value="">Όλες</option>
-                  {meta
-                    ? Object.entries(meta.procedureTypes).map(([code, label]) => (
-                        <option key={code} value={code}>
-                          {label}
-                        </option>
-                      ))
-                    : null}
-                </Select>
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label>Ημερομηνία καταχώρισης από</Label>
-              <DateInput
-                disabled={draft.allHistory}
-                value={draft.dateFrom}
-                onChange={(dateFrom) =>
-                  setDraft((prev) => ({
-                    ...prev,
-                    allHistory: false,
-                    dateFrom,
-                  }))
-                }
-                aria-label="Ημερομηνία καταχώρισης από"
-              />
+              <Button onClick={handleSearchSubmit} disabled={loading} className="md:col-span-2 lg:col-span-1">
+                {loading ? "Αναζήτηση…" : "Αναζήτηση"}
+              </Button>
             </div>
-            <div className="space-y-2">
-              <Label>Ημερομηνία καταχώρισης έως</Label>
-              <DateInput
-                disabled={draft.allHistory}
-                value={draft.dateTo}
-                onChange={(dateTo) =>
-                  setDraft((prev) => ({
-                    ...prev,
-                    allHistory: false,
-                    dateTo,
-                  }))
-                }
-                aria-label="Ημερομηνία καταχώρισης έως"
-              />
-            </div>
-            <div className="flex items-end pb-2 md:col-span-2 lg:col-span-3">
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <input
                   type="checkbox"
+                  className="accent-[var(--arc-primary)]"
                   checked={draft.allHistory}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setDraft((prev) => {
-                      if (checked) {
-                        return { ...prev, allHistory: true, dateFrom: "", dateTo: "" };
-                      }
-                      const recent = defaultRecentDates();
-                      return {
-                        ...prev,
-                        allHistory: false,
-                        dateFrom: recent.dateFrom,
-                        dateTo: recent.dateTo,
-                      };
-                    });
-                  }}
+                  onChange={(e) => handleToggleAllHistory(e.target.checked)}
                 />
                 Αναζήτηση σε όλες τις ημερομηνίες
               </label>
-              {draft.allHistory ? (
-                <p className="text-xs text-muted-foreground md:col-span-2 lg:col-span-3">
-                  Η αναζήτηση μπορεί να εμφανίσει μεγάλο αριθμό αποτελεσμάτων.
-                </p>
-              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-expanded={showAdvanced}
+                aria-controls="search-advanced-filters"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                {showAdvanced ? "Λιγότερα φίλτρα" : "Περισσότερα φίλτρα"}
+                {advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""}
+                <ChevronDown
+                  className={cn("transition-transform", showAdvanced && "rotate-180")}
+                  aria-hidden
+                />
+              </Button>
             </div>
-            <div className="space-y-2">
-              <Label>Ελάχιστο ποσό (€)</Label>
-              <Input
-                type="number"
-                value={draft.amountMin}
-                onChange={(e) =>
-                  setDraft((prev) => ({ ...prev, amountMin: e.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Μέγιστο ποσό (€)</Label>
-              <Input
-                type="number"
-                value={draft.amountMax}
-                onChange={(e) =>
-                  setDraft((prev) => ({ ...prev, amountMax: e.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-2 md:col-span-2 lg:col-span-3">
-              <Label>Περιφέρειες</Label>
+            {draft.allHistory ? (
               <p className="text-xs text-muted-foreground">
-                Καμία επιλογή = όλη η Ελλάδα. Ταίριασμα μόνο από επίσημο πεδίο NUTS του ΚΗΜΔΗΣ.
+                Η αναζήτηση μπορεί να εμφανίσει μεγάλο αριθμό αποτελεσμάτων.
               </p>
-              <div className="grid max-h-40 grid-cols-1 gap-1.5 overflow-y-auto rounded-md border border-border px-3 py-2 sm:grid-cols-2 lg:grid-cols-3">
-                {GREEK_NUTS2_REGIONS.map((region) => {
-                  const selected = draft.regions.includes(region.code);
-                  return (
-                    <label
-                      key={region.code}
-                      className="flex cursor-pointer items-center gap-2 text-sm"
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-3.5 w-3.5"
-                        checked={selected}
-                        onChange={() => {
-                          setDraft((prev) => {
-                            const next = selected
-                              ? prev.regions.filter((code) => code !== region.code)
-                              : [...prev.regions, region.code];
-                            return {
-                              ...prev,
-                              regions: next,
-                              includeUnclassifiedRegion:
-                                next.length === 0 ? false : prev.includeUnclassifiedRegion,
-                            };
-                          });
-                        }}
-                        aria-label={region.label}
-                      />
-                      <span>{region.label}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              {draft.regions.length > 0 ? (
-                <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={draft.includeUnclassifiedRegion}
-                    onChange={(e) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        includeUnclassifiedRegion: e.target.checked,
-                      }))
-                    }
-                    aria-label="Συμπερίληψη χωρίς δηλωμένη περιοχή"
+            ) : null}
+
+            {showAdvanced ? (
+              <div
+                id="search-advanced-filters"
+                className="grid gap-3 border-t border-border/60 pt-4 md:grid-cols-2 lg:grid-cols-3"
+              >
+                <div className="space-y-1.5">
+                  <Label htmlFor="search-adam" className="text-xs text-muted-foreground">
+                    ΑΔΑΜ
+                  </Label>
+                  <Input
+                    id="search-adam"
+                    value={draft.adam}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, adam: e.target.value }))}
+                    placeholder={draft.type === "REQ" ? "26REQ…" : "26PROC…"}
+                    aria-label="ΑΔΑΜ"
                   />
-                  Συμπερίληψη δημοσιεύσεων χωρίς δηλωμένη περιοχή
-                </label>
-              ) : null}
-            </div>
-          </div>
+                  {draftAdamParsed.status === "exact" ? (
+                    <p className="text-xs text-muted-foreground">
+                      {EXACT_ADAM_SEARCH_HINT_EL}
+                    </p>
+                  ) : draftAdamParsed.status === "invalid" ? (
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      {adamValidationMessageEl(draftAdamParsed.reason)}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="search-cpv" className="text-xs text-muted-foreground">
+                    CPV
+                  </Label>
+                  <CpvCombobox
+                    id="search-cpv"
+                    value={draft.cpv}
+                    onChange={(cpv) => setDraft((prev) => ({ ...prev, cpv }))}
+                    suggestions={cpvSuggestions}
+                    placeholder="########-#"
+                    aria-label="CPV"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="search-authority" className="text-xs text-muted-foreground">
+                    Κωδικός αναθέτουσας αρχής
+                  </Label>
+                  <Input
+                    id="search-authority"
+                    value={draft.authority}
+                    onChange={(e) =>
+                      setDraft((prev) => ({ ...prev, authority: e.target.value }))
+                    }
+                    placeholder="π.χ. 100024656"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="search-contract-type" className="text-xs text-muted-foreground">
+                    Χαρακτήρας σύμβασης
+                  </Label>
+                  <Select
+                    id="search-contract-type"
+                    value={draft.contractType}
+                    onChange={(e) =>
+                      setDraft((prev) => ({ ...prev, contractType: e.target.value }))
+                    }
+                  >
+                    <option value="">Όλοι</option>
+                    {meta
+                      ? Object.entries(meta.contractTypes).map(([code, label]) => (
+                          <option key={code} value={code}>
+                            {label}
+                          </option>
+                        ))
+                      : null}
+                  </Select>
+                </div>
+                {draft.type === "REQ" ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="search-request-kind" className="text-xs text-muted-foreground">
+                      Τύπος αιτήματος
+                    </Label>
+                    <Select
+                      id="search-request-kind"
+                      value={draft.requestKind}
+                      disabled={isExactAdamDraft}
+                      onChange={(e) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          requestKind: e.target.value as SearchFormState["requestKind"],
+                        }))
+                      }
+                    >
+                      {(meta?.requestKinds?.length
+                        ? meta.requestKinds
+                        : [
+                            { id: "any", label: "Όλοι οι τύποι αιτημάτων" },
+                            { id: "initial", label: "Πρωτογενή" },
+                            { id: "approved", label: "Εγκεκριμένα" },
+                            { id: "approval", label: "Εγκρίσεις" },
+                          ]
+                      ).map((kind) => (
+                        <option key={kind.id} value={kind.id}>
+                          {kind.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="search-procedure-type" className="text-xs text-muted-foreground">
+                      Διαδικασία ανάθεσης
+                    </Label>
+                    <Select
+                      id="search-procedure-type"
+                      value={draft.procedureType}
+                      onChange={(e) =>
+                        setDraft((prev) => ({ ...prev, procedureType: e.target.value }))
+                      }
+                    >
+                      <option value="">Όλες</option>
+                      {meta
+                        ? Object.entries(meta.procedureTypes).map(([code, label]) => (
+                            <option key={code} value={code}>
+                              {label}
+                            </option>
+                          ))
+                        : null}
+                    </Select>
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="search-amount-min" className="text-xs text-muted-foreground">
+                    Ελάχιστο ποσό (€)
+                  </Label>
+                  <Input
+                    id="search-amount-min"
+                    type="number"
+                    value={draft.amountMin}
+                    onChange={(e) =>
+                      setDraft((prev) => ({ ...prev, amountMin: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="search-amount-max" className="text-xs text-muted-foreground">
+                    Μέγιστο ποσό (€)
+                  </Label>
+                  <Input
+                    id="search-amount-max"
+                    type="number"
+                    value={draft.amountMax}
+                    onChange={(e) =>
+                      setDraft((prev) => ({ ...prev, amountMax: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="search-signer" className="text-xs text-muted-foreground">
+                    Κωδικός αποφαινόμενου οργάνου
+                  </Label>
+                  <Input
+                    id="search-signer"
+                    value={draft.signer}
+                    onChange={(e) =>
+                      setDraft((prev) => ({ ...prev, signer: e.target.value }))
+                    }
+                  />
+                </div>
+                {draft.type === "PROC" ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">
+                        Προθεσμία υποβολής από
+                      </Label>
+                      <DateInput
+                        value={draft.finalFrom}
+                        onChange={(finalFrom) =>
+                          setDraft((prev) => ({ ...prev, finalFrom }))
+                        }
+                        aria-label="Προθεσμία υποβολής από"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">
+                        Προθεσμία υποβολής έως
+                      </Label>
+                      <DateInput
+                        value={draft.finalTo}
+                        onChange={(finalTo) =>
+                          setDraft((prev) => ({ ...prev, finalTo }))
+                        }
+                        aria-label="Προθεσμία υποβολής έως"
+                      />
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
 
-          <Button variant="ghost" size="sm" onClick={() => setShowAdvanced((v) => !v)}>
-            {showAdvanced ? "Λιγότερα φίλτρα" : "Περισσότερα φίλτρα"}
-          </Button>
+            {!showAdvanced && draftAdamParsed.status === "invalid" ? (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                {adamValidationMessageEl(draftAdamParsed.reason)}
+              </p>
+            ) : null}
 
-          {showAdvanced ? (
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              <div className="space-y-2">
-                <Label>Κωδικός αποφαινόμενου οργάνου</Label>
-                <Input
-                  value={draft.signer}
-                  onChange={(e) =>
-                    setDraft((prev) => ({ ...prev, signer: e.target.value }))
+            {filtersDirty ? (
+              <p className="text-sm text-amber-700 dark:text-amber-400" role="status">
+                Έχετε αλλάξει τα φίλτρα. Πατήστε «Αναζήτηση» για ενημέρωση των αποτελεσμάτων.
+              </p>
+            ) : null}
+          </section>
+
+          {error ? (
+            <ErrorState description={error} onRetry={() => commitSearch(urlState)} />
+          ) : null}
+
+          {loading && !items.length ? <PageSkeleton /> : null}
+
+          {urlState.run && !error ? (
+            <section className="space-y-3" aria-label="Αποτελέσματα αναζήτησης">
+              <div className="space-y-1 text-xs text-muted-foreground">
+                <p>
+                  Ενεργά κριτήρια: {activeCriteriaSummary(urlState, meta?.requestKinds)}
+                </p>
+                {appliedAdamParsed.status === "exact" ||
+                searchMeta?.mode === "exact_adam" ? (
+                  <p>{EXACT_ADAM_SEARCH_HINT_EL}</p>
+                ) : null}
+                {urlState.allHistory && searchMeta?.mode !== "exact_adam" ? (
+                  <p className="text-amber-700 dark:text-amber-400">
+                    Προσοχή: η αναζήτηση καλύπτει όλο το ιστορικό — προτιμήστε φίλτρο
+                    ημερομηνιών όταν είναι δυνατό.
+                  </p>
+                ) : null}
+                {searchMeta?.regionFilter?.partial ? (
+                  <p className="text-amber-700 dark:text-amber-400">
+                    Μερική γεωγραφική κάλυψη: σαρώθηκαν{" "}
+                    {searchMeta.regionFilter.scannedUpstreamPages} σελίδες ΚΗΜΔΗΣ. Το πλήθος
+                    μπορεί να μην είναι πλήρες — συνεχίστε στις επόμενες σελίδες αποτελεσμάτων.
+                  </p>
+                ) : null}
+                {urlState.sort === "date_asc" &&
+                totalElements > 0 &&
+                items.length > 0 &&
+                items.length < totalElements ? (
+                  <p className="text-amber-700 dark:text-amber-400">
+                    Η ταξινόμηση «Παλαιότερα πρώτα» εφαρμόζεται αξιόπιστα μόνο όταν όλα τα
+                    αποτελέσματα χωρούν σε μία σελίδα. Εδώ υπάρχουν {totalPages} σελίδες — η
+                    σειρά μεταξύ σελίδων δεν είναι εγγυημένη από το ΚΗΜΔΗΣ.
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
+                <div className="text-sm text-muted-foreground">
+                  {searchMeta?.regionFilter?.partial
+                    ? `Τουλάχιστον ${totalElements} αποτελέσματα στην επιλεγμένη περιοχή`
+                    : totalElements === 1
+                      ? "1 αποτέλεσμα"
+                      : `${totalElements} αποτελέσματα`}
+                  {totalPages ? ` · σελίδα ${currentPage} από ${totalPages}` : ""}
+                  {items.length > 0
+                    ? ` · ${items.length} ανά σελίδα`
+                    : ` · έως ${KIMDIS_PAGE_SIZE} ανά σελίδα`}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="sort" className="text-xs text-muted-foreground">
+                    Ταξινόμηση
+                  </Label>
+                  <Select
+                    id="sort"
+                    value={urlState.sort}
+                    onChange={(e) =>
+                      handleSortChange(e.target.value as "date_desc" | "date_asc")
+                    }
+                    className="w-48"
+                  >
+                    <option value="date_desc">Πιο πρόσφατες πρώτα</option>
+                    <option value="date_asc">Παλαιότερα πρώτα</option>
+                  </Select>
+                </div>
+              </div>
+
+              {!loading && items.length === 0 ? (
+                <EmptyState
+                  title={
+                    searchMeta?.mode === "exact_adam" && searchMeta.exactAdamFound === false
+                      ? "Ο ΑΔΑΜ δεν βρέθηκε στην πηγή"
+                      : searchMeta?.regionFilter?.applied &&
+                          searchMeta.regionFilter.matchedSoFar === 0 &&
+                          searchMeta.regionFilter.partial
+                        ? "Δεν βρέθηκαν αντιστοιχίες στην σάρωση"
+                        : "Δεν βρέθηκαν αποτελέσματα"
+                  }
+                  description={
+                    searchMeta?.mode === "exact_adam" &&
+                    searchMeta.exactAdamFound === false &&
+                    searchMeta.exactAdam
+                      ? `Δεν βρέθηκε η πράξη με ΑΔΑΜ ${searchMeta.exactAdam} στην πηγή αναζήτησης.`
+                      : searchMeta?.regionFilter?.applied &&
+                          searchMeta.regionFilter.matchedSoFar === 0 &&
+                          searchMeta.regionFilter.partial
+                        ? "Στις πρώτες σελίδες του ΚΗΜΔΗΣ δεν υπήρχαν πράξεις στις επιλεγμένες περιφέρειες. Συνεχίστε στην επόμενη σελίδα αποτελεσμάτων ή διευρύνετε τα κριτήρια."
+                        : "Δοκιμάστε διαφορετικά κριτήρια ή ευρύτερο διάστημα ημερομηνιών."
                   }
                 />
-              </div>
-              {draft.type === "PROC" ? (
-                <>
-                  <div className="space-y-2">
-                    <Label>Προθεσμία υποβολής από</Label>
-                    <DateInput
-                      value={draft.finalFrom}
-                      onChange={(finalFrom) =>
-                        setDraft((prev) => ({ ...prev, finalFrom }))
-                      }
-                      aria-label="Προθεσμία υποβολής από"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Προθεσμία υποβολής έως</Label>
-                    <DateInput
-                      value={draft.finalTo}
-                      onChange={(finalTo) =>
-                        setDraft((prev) => ({ ...prev, finalTo }))
-                      }
-                      aria-label="Προθεσμία υποβολής έως"
-                    />
-                  </div>
-                </>
-              ) : null}
-            </div>
-          ) : null}
-
-          {filtersDirty ? (
-            <p className="text-sm text-amber-700 dark:text-amber-400" role="status">
-              Έχετε αλλάξει τα φίλτρα. Πατήστε «Αναζήτηση» για ενημέρωση των αποτελεσμάτων.
-            </p>
-          ) : null}
-
-          <Button onClick={handleSearchSubmit} disabled={loading}>
-            {loading ? "Αναζήτηση…" : "Αναζήτηση"}
-          </Button>
-        </CardContent>
-      </Card>
-
-      {error ? (
-        <ErrorState description={error} onRetry={() => commitSearch(urlState)} />
-      ) : null}
-
-      {loading && !items.length ? <PageSkeleton /> : null}
-
-      {urlState.run && !error ? (
-        <div className="space-y-3">
-          <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-            Ενεργά κριτήρια: {activeCriteriaSummary(urlState, meta?.requestKinds)}
-            {appliedAdamParsed.status === "exact" || searchMeta?.mode === "exact_adam" ? (
-              <span className="mt-1 block">{EXACT_ADAM_SEARCH_HINT_EL}</span>
-            ) : null}
-            {urlState.allHistory && searchMeta?.mode !== "exact_adam" ? (
-              <span className="mt-1 block text-amber-700 dark:text-amber-400">
-                Προσοχή: η αναζήτηση καλύπτει όλο το ιστορικό — προτιμήστε φίλτρο ημερομηνιών
-                όταν είναι δυνατό.
-              </span>
-            ) : null}
-            {searchMeta?.regionFilter?.partial ? (
-              <span className="mt-1 block text-amber-700 dark:text-amber-400">
-                Μερική γεωγραφική κάλυψη: σαρώθηκαν{" "}
-                {searchMeta.regionFilter.scannedUpstreamPages} σελίδες ΚΗΜΔΗΣ. Το πλήθος μπορεί να
-                μην είναι πλήρες — συνεχίστε στις επόμενες σελίδες αποτελεσμάτων.
-              </span>
-            ) : null}
-            {urlState.sort === "date_asc" &&
-            totalElements > 0 &&
-            items.length > 0 &&
-            items.length < totalElements ? (
-              <span className="mt-1 block text-amber-700 dark:text-amber-400">
-                Η ταξινόμηση «Παλαιότερα πρώτα» εφαρμόζεται αξιόπιστα μόνο όταν όλα τα αποτελέσματα
-                χωρούν σε μία σελίδα. Εδώ υπάρχουν {totalPages} σελίδες — η σειρά μεταξύ σελίδων δεν
-                είναι εγγυημένη από το ΚΗΜΔΗΣ.
-              </span>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm text-muted-foreground">
-              {searchMeta?.regionFilter?.partial
-                ? `Τουλάχιστον ${totalElements} αποτελέσματα στην επιλεγμένη περιοχή`
-                : totalElements === 1
-                  ? "1 αποτέλεσμα"
-                  : `${totalElements} αποτελέσματα`}
-              {totalPages ? ` · σελίδα ${currentPage} από ${totalPages}` : ""}
-              {items.length > 0
-                ? ` · ${items.length} ανά σελίδα`
-                : ` · έως ${KIMDIS_PAGE_SIZE} ανά σελίδα`}
-            </div>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="sort" className="text-xs text-muted-foreground">
-                Ταξινόμηση
-              </Label>
-              <Select
-                id="sort"
-                value={urlState.sort}
-                onChange={(e) =>
-                  handleSortChange(e.target.value as "date_desc" | "date_asc")
-                }
-                className="w-48"
-              >
-                <option value="date_desc">Πιο πρόσφατες πρώτα</option>
-                <option value="date_asc">Παλαιότερα πρώτα</option>
-              </Select>
-            </div>
-          </div>
-
-          {!loading && items.length === 0 ? (
-            <EmptyState
-              title={
-                searchMeta?.mode === "exact_adam" && searchMeta.exactAdamFound === false
-                  ? "Ο ΑΔΑΜ δεν βρέθηκε στην πηγή"
-                  : searchMeta?.regionFilter?.applied &&
-                      searchMeta.regionFilter.matchedSoFar === 0 &&
-                      searchMeta.regionFilter.partial
-                    ? "Δεν βρέθηκαν αντιστοιχίες στην σάρωση"
-                    : "Δεν βρέθηκαν αποτελέσματα"
-              }
-              description={
-                searchMeta?.mode === "exact_adam" &&
-                searchMeta.exactAdamFound === false &&
-                searchMeta.exactAdam
-                  ? `Δεν βρέθηκε η πράξη με ΑΔΑΜ ${searchMeta.exactAdam} στην πηγή αναζήτησης.`
-                  : searchMeta?.regionFilter?.applied &&
-                      searchMeta.regionFilter.matchedSoFar === 0 &&
-                      searchMeta.regionFilter.partial
-                    ? "Στις πρώτες σελίδες του ΚΗΜΔΗΣ δεν υπήρχαν πράξεις στις επιλεγμένες περιφέρειες. Συνεχίστε στην επόμενη σελίδα αποτελεσμάτων ή διευρύνετε τα κριτήρια."
-                    : "Δοκιμάστε διαφορετικά κριτήρια ή ευρύτερο διάστημα ημερομηνιών."
-              }
-            />
-          ) : (
-            items.map((item) => (
-              <Card
-                key={item.adam}
-                className={
-                  item.invitationIssued
-                    ? "border-destructive/40 bg-destructive/[0.04] ring-1 ring-destructive/15"
-                    : undefined
-                }
-              >
-                <CardContent className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-start md:justify-between">
-                  <div className="min-w-0 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={item.recordType === "REQ" ? "secondary" : "default"}>
-                        {item.recordType}
-                      </Badge>
-                      {item.recordType === "PROC" ? (
-                        <Badge
-                          variant={
-                            item.openState === "OPEN"
-                              ? "success"
-                              : item.openState === "CLOSED" ||
-                                  item.openState === "CANCELLED"
-                                ? "outline"
-                                : "secondary"
-                          }
-                        >
-                          {item.openState === "OPEN"
-                            ? "Ανοιχτή υποβολή"
-                            : item.openState === "CLOSED"
-                              ? "Κλειστή υποβολή"
-                              : item.openState === "CANCELLED"
-                                ? "Ματαίωση"
-                                : "Άγνωστη κατάσταση"}
-                        </Badge>
-                      ) : null}
-                      {item.invitationIssued ? (
-                        <InvitationIssuedBadge relatedProcAdam={item.relatedProcAdam} />
-                      ) : null}
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {item.adam}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-semibold leading-snug">
-                      {item.title || "—"}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      {item.contractingAuthority || "—"}
-                    </p>
-                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                      <span>Αξία: {formatMoney(item.budgetWithoutVat)}</span>
-                      <span>
-                        Καταχώριση: {formatDate(item.submissionDate || item.signedDate)}
-                      </span>
-                      {item.finalSubmissionDate ? (
-                        <span>Προθεσμία υποβολής: {formatDate(item.finalSubmissionDate)}</span>
-                      ) : null}
-                      {item.contractTypeLabel ? <span>{item.contractTypeLabel}</span> : null}
-                    </div>
-                    {item.cpvs.length ? (
-                      <div className="flex flex-wrap gap-1">
-                        {item.cpvs.slice(0, 4).map((code) => (
-                          <Badge key={code} variant="outline" className="font-mono">
-                            {code}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <PdfAction onClick={() => setSelected(item)} />
-                    <Button size="sm" variant="outline" asChild>
-                      <Link
-                        to={`/app/tenders/${item.recordType}/${encodeURIComponent(item.adam)}`}
+              ) : (
+                <DataList>
+                  {items.map((item) => {
+                    const detailPath = `/app/tenders/${item.recordType}/${encodeURIComponent(item.adam)}`;
+                    const metaLine = [
+                      item.contractingAuthority || "—",
+                      formatMoney(item.budgetWithoutVat),
+                      formatDate(item.submissionDate || item.signedDate),
+                      item.finalSubmissionDate
+                        ? `Προθεσμία ${formatDate(item.finalSubmissionDate)}`
+                        : null,
+                      item.contractTypeLabel,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <DataRow
+                        key={item.adam}
+                        interactive
+                        className={cn(
+                          "gap-2 py-3 sm:gap-4",
+                          item.invitationIssued &&
+                            "-ml-3 border-l-2 border-l-destructive/60 pl-[0.625rem]",
+                        )}
+                        actions={
+                          <div className="flex flex-col gap-1.5 sm:items-end">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button size="sm" onClick={() => void handleFollow(item)}>
+                                Παρακολούθηση
+                              </Button>
+                              <Button size="sm" variant="outline" asChild>
+                                <Link to={detailPath}>Προβολή</Link>
+                              </Button>
+                            </div>
+                            <PdfAction
+                              className="h-7 border-transparent bg-transparent px-2 text-xs font-medium text-muted-foreground shadow-none hover:text-foreground"
+                              onClick={() => setSelected(item)}
+                            />
+                          </div>
+                        }
                       >
-                        Προβολή λεπτομερειών
-                      </Link>
-                    </Button>
-                    <Button size="sm" onClick={() => void handleFollow(item)}>
-                      Παρακολούθηση
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
+                        <div className="space-y-1">
+                          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                            <Badge variant="outline">{item.recordType}</Badge>
+                            {item.recordType === "PROC" ? (
+                              <Badge
+                                variant={
+                                  item.openState === "OPEN"
+                                    ? "success"
+                                    : item.openState === "CLOSED" ||
+                                        item.openState === "CANCELLED"
+                                      ? "outline"
+                                      : "secondary"
+                                }
+                              >
+                                {item.openState === "OPEN"
+                                  ? "Ανοιχτή υποβολή"
+                                  : item.openState === "CLOSED"
+                                    ? "Κλειστή υποβολή"
+                                    : item.openState === "CANCELLED"
+                                      ? "Ματαίωση"
+                                      : "Άγνωστη κατάσταση"}
+                              </Badge>
+                            ) : null}
+                            {item.invitationIssued ? (
+                              <InvitationIssuedBadge relatedProcAdam={item.relatedProcAdam} />
+                            ) : null}
+                            <h3 className="min-w-0 text-sm font-semibold leading-snug">
+                              <Link
+                                to={detailPath}
+                                className="hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              >
+                                {item.title || "—"}
+                              </Link>
+                            </h3>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{metaLine}</p>
+                          <p className="text-xs text-muted-foreground">
+                            <span className="font-mono">{item.adam}</span>
+                            {item.cpvs.length ? (
+                              <span className="font-mono" title={item.cpvs.join(", ")}>
+                                {` · CPV ${item.cpvs.slice(0, 3).join(" · ")}`}
+                                {item.cpvs.length > 3 ? ` +${item.cpvs.length - 3}` : ""}
+                              </span>
+                            ) : null}
+                          </p>
+                        </div>
+                      </DataRow>
+                    );
+                  })}
+                </DataList>
+              )}
 
-          <Pagination
-            page={currentPage}
-            totalPages={totalPages}
-            total={totalElements > 0 ? totalElements : undefined}
-            pageSize={items.length > 0 ? items.length : KIMDIS_PAGE_SIZE}
-            onPageChange={handlePageChange}
-            disabled={loading}
-            hasNext={!last}
+              <Pagination
+                page={currentPage}
+                totalPages={totalPages}
+                total={totalElements > 0 ? totalElements : undefined}
+                pageSize={items.length > 0 ? items.length : KIMDIS_PAGE_SIZE}
+                onPageChange={handlePageChange}
+                disabled={loading}
+                hasNext={!last}
+              />
+            </section>
+          ) : null}
+
+          <PdfPreviewModal
+            open={Boolean(selected)}
+            onOpenChange={(open) => !open && setSelected(null)}
+            organizationId={activeOrganization.id}
+            recordType={selected?.recordType ?? "REQ"}
+            adam={selected?.adam ?? ""}
+            title={selected?.title}
+            officialUrl={selected?.publicKimdisUrl}
+            actions={
+              selected ? (
+                <Button size="sm" variant="outline" asChild>
+                  <Link
+                    to={`/app/tenders/${selected.recordType}/${encodeURIComponent(selected.adam)}`}
+                    onClick={() => setSelected(null)}
+                  >
+                    Άνοιγμα σελίδας πράξης
+                  </Link>
+                </Button>
+              ) : null
+            }
           />
-        </div>
-      ) : null}
-
-      <PdfPreviewModal
-        open={Boolean(selected)}
-        onOpenChange={(open) => !open && setSelected(null)}
-        organizationId={activeOrganization.id}
-        recordType={selected?.recordType ?? "REQ"}
-        adam={selected?.adam ?? ""}
-        title={selected?.title}
-        officialUrl={selected?.publicKimdisUrl}
-        actions={
-          selected ? (
-            <Button size="sm" variant="outline" asChild>
-              <Link
-                to={`/app/tenders/${selected.recordType}/${encodeURIComponent(selected.adam)}`}
-                onClick={() => setSelected(null)}
-              >
-                Άνοιγμα σελίδας πράξης
-              </Link>
-            </Button>
-          ) : null
-        }
-      />
-      </>
+        </>
       ) : null}
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>

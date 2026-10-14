@@ -17,7 +17,6 @@ import { Pagination, usePaginatedList } from "@/components/Pagination";
 import { ImportFromGoogleDriveDialog } from "@/components/ImportFromGoogleDriveDialog";
 import { UploadDocumentDialog } from "@/components/UploadDocumentDialog";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -26,7 +25,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { DataList, DataRow } from "@/components/ui/data-row";
 import { Input } from "@/components/ui/input";
+import { PageHeader, SectionHeader } from "@/components/ui/page-header";
 import {
   Tooltip,
   TooltipContent,
@@ -53,11 +54,11 @@ const statusLabel = (status: VaultDocument["status"]) => {
   }
 };
 
-const statusVariant = (status: VaultDocument["status"]) => {
-  if (status === "EXPIRED") return "destructive" as const;
-  if (status === "EXPIRING_SOON") return "warning" as const;
-  if (status === "VALID") return "success" as const;
-  return "outline" as const;
+const statusTone = (status: VaultDocument["status"]) => {
+  if (status === "EXPIRED") return "text-destructive";
+  if (status === "EXPIRING_SOON") return "text-amber-400";
+  if (status === "VALID") return "text-primary";
+  return "text-muted-foreground";
 };
 
 const formatDate = (value: string | null | undefined) => {
@@ -276,149 +277,155 @@ export const DocumentsPage = () => {
     return <ErrorState description={error} onRetry={() => void loadFolders()} />;
   }
 
+  const handleGenerateProfile = async () => {
+    if (!activeOrganization) return;
+    try {
+      const result = await saasApi.generateCompanyProfile(activeOrganization.id);
+      toast.success(
+        result.created
+          ? "Δημιουργήθηκε εταιρικό προφίλ στο φάκελο 08"
+          : "Ανανεώθηκε το εταιρικό προφίλ",
+      );
+      await loadFolders();
+      await loadDocuments();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Αποτυχία δημιουργίας προφίλ",
+      );
+    }
+  };
+
+  const handleSelectFolder = (id: string) => {
+    setSearch("");
+    setFolderId(id);
+  };
+
+  const isSearching = Boolean(search.trim());
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Έγγραφα</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Αποθηκεύστε και οργανώστε τα έγγραφα της εταιρείας σας για χρήση στους διαγωνισμούς που συμμετέχετε.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              if (!activeOrganization) return;
-              void (async () => {
-                try {
-                  const result = await saasApi.generateCompanyProfile(
-                    activeOrganization.id,
-                  );
-                  toast.success(
-                    result.created
-                      ? "Δημιουργήθηκε εταιρικό προφίλ στο φάκελο 08"
-                      : "Ανανεώθηκε το εταιρικό προφίλ",
-                  );
-                  await loadFolders();
-                  await loadDocuments();
-                } catch (err) {
-                  toast.error(
-                    err instanceof Error
-                      ? err.message
-                      : "Αποτυχία δημιουργίας προφίλ",
-                  );
-                }
-              })();
-            }}
-          >
-            Δημιουργία εταιρικού προφίλ
-          </Button>
-          {showDriveImport ? (
-            <Button
-              variant="secondary"
-              disabled={!googleView?.drive.pickerConfigured}
-              onClick={() => setDriveImportOpen(true)}
-              aria-label="Εισαγωγή από Google Drive"
-              aria-describedby={
-                googleView?.drive.pickerConfigured
-                  ? undefined
-                  : "drive-import-unavailable"
-              }
-            >
-              Εισαγωγή από Google Drive
+      <PageHeader
+        title="Έγγραφα"
+        description="Αποθηκεύστε και οργανώστε τα έγγραφα της εταιρείας σας για χρήση στους διαγωνισμούς που συμμετέχετε."
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => void handleGenerateProfile()}>
+              Δημιουργία εταιρικού προφίλ
             </Button>
-          ) : null}
-          <Button onClick={() => setUploadOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Ανέβασμα εγγράφου
-          </Button>
-        </div>
-        {showDriveImport && !googleView?.drive.pickerConfigured ? (
-          <p
-            id="drive-import-unavailable"
-            className="basis-full text-xs text-muted-foreground"
-          >
-            Η εισαγωγή από Google Drive δεν είναι διαθέσιμη προσωρινά.
-          </p>
-        ) : null}
-      </div>
+            {showDriveImport ? (
+              <Button
+                variant="outline"
+                disabled={!googleView?.drive.pickerConfigured}
+                onClick={() => setDriveImportOpen(true)}
+                aria-label="Εισαγωγή από Google Drive"
+                aria-describedby={
+                  googleView?.drive.pickerConfigured
+                    ? undefined
+                    : "drive-import-unavailable"
+                }
+              >
+                Εισαγωγή από Google Drive
+              </Button>
+            ) : null}
+            <Button onClick={() => setUploadOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Ανέβασμα εγγράφου
+            </Button>
+          </>
+        }
+      />
+      {showDriveImport && !googleView?.drive.pickerConfigured ? (
+        <p id="drive-import-unavailable" className="text-xs text-muted-foreground">
+          Η εισαγωγή από Google Drive δεν είναι διαθέσιμη προσωρινά.
+        </p>
+      ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1 basis-full sm:min-w-[220px] sm:basis-auto">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Αναζήτηση εγγράφων…"
-            aria-label="Αναζήτηση εγγράφων"
-          />
-        </div>
-        <Button variant="outline" onClick={() => void handleCreateFolder()}>
-          <FolderPlus className="h-4 w-4" />
-          Νέος φάκελος
-        </Button>
-      </div>
+      <div className="grid gap-6 lg:grid-cols-[232px_1fr]">
+        <nav aria-label="Φάκελοι εγγράφων" className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Φάκελοι
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={() => void handleCreateFolder()}
+              aria-label="Νέος φάκελος"
+            >
+              <FolderPlus className="h-3.5 w-3.5" />
+              Νέος
+            </Button>
+          </div>
+          <ul className="space-y-0.5">
+            {rootFolders.map((folder) => {
+              const isActive = folderId === folder.id && !isSearching;
+              return (
+                <li key={folder.id}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-current={isActive ? "true" : undefined}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-md border-l-2 border-transparent px-2.5 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          isActive &&
+                            "border-border bg-muted/60 font-medium text-foreground ring-1 ring-primary/40",
+                        )}
+                        onClick={() => handleSelectFolder(folder.id)}
+                      >
+                        <Folder className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                        {folderId === folder.id && !isSearching ? (
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {documents.length}
+                          </span>
+                        ) : null}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">{folder.name}</TooltipContent>
+                  </Tooltip>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
 
-      <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Φάκελοι</CardTitle>
-            <CardDescription>Οργάνωση εγγράφων ανά κατηγορία</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-1">
-            {rootFolders.map((folder) => (
-              <Tooltip key={folder.id}>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex w-full items-start gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-muted",
-                      folderId === folder.id && "bg-muted font-medium",
-                    )}
-                    onClick={() => {
-                      setSearch("");
-                      setFolderId(folder.id);
-                    }}
-                  >
-                    <Folder className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="leading-snug whitespace-normal break-words">
-                      {folder.name}
-                    </span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">{folder.name}</TooltipContent>
-              </Tooltip>
-            ))}
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          <div>
-            <h3 className="text-lg font-semibold tracking-tight">
-              {search.trim()
-                ? `Αποτελέσματα αναζήτησης`
-                : activeFolder?.name ?? "Έγγραφα"}
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {documents.length} έγγραφα
-              {expiringSoonCount > 0
-                ? ` · ${expiringSoonCount} λήγουν σύντομα`
-                : ""}
-            </p>
+        <section className="min-w-0 space-y-4" aria-label="Περιεχόμενο φακέλου">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <SectionHeader
+              className="mb-0"
+              title={isSearching ? "Αποτελέσματα αναζήτησης" : activeFolder?.name ?? "Έγγραφα"}
+              description={`${documents.length} έγγραφα${
+                expiringSoonCount > 0 ? ` · ${expiringSoonCount} λήγουν σύντομα` : ""
+              }`}
+            />
+            <div className="relative w-full sm:w-64">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                className="h-9 pl-9"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Αναζήτηση εγγράφων…"
+                aria-label="Αναζήτηση εγγράφων"
+              />
+            </div>
           </div>
 
-          {childFolders.length > 0 && !search.trim() ? (
-            <div className="flex flex-wrap gap-2">
+          {childFolders.length > 0 && !isSearching ? (
+            <div className="flex flex-wrap gap-1.5">
               {childFolders.map((folder) => (
                 <Button
                   key={folder.id}
                   size="sm"
-                  variant="outline"
+                  variant="ghost"
+                  className="h-7 text-muted-foreground"
                   onClick={() => setFolderId(folder.id)}
                 >
-                  <Folder className="h-3.5 w-3.5" />
+                  <Folder className="h-3.5 w-3.5" aria-hidden />
                   {folder.name}
                 </Button>
               ))}
@@ -427,99 +434,104 @@ export const DocumentsPage = () => {
 
           {documents.length === 0 ? (
             <EmptyState
-              title="Κενός φάκελος"
-              description="Δεν υπάρχουν ακόμη έγγραφα σε αυτή την κατηγορία."
-              actionLabel="Ανέβασμα εγγράφου"
-              onAction={() => setUploadOpen(true)}
+              title={isSearching ? "Κανένα αποτέλεσμα" : "Κενός φάκελος"}
+              description={
+                isSearching
+                  ? "Δοκιμάστε διαφορετικούς όρους αναζήτησης."
+                  : "Δεν υπάρχουν ακόμη έγγραφα σε αυτή την κατηγορία."
+              }
+              actionLabel={isSearching ? undefined : "Ανέβασμα εγγράφου"}
+              onAction={isSearching ? undefined : () => setUploadOpen(true)}
             />
           ) : (
-            <Card>
-              <CardContent className="overflow-x-auto p-0">
-                <table className="w-full min-w-[720px] text-left text-sm">
-                  <thead className="border-b border-border text-xs text-muted-foreground">
-                    <tr>
-                      <th className="px-4 py-3 font-medium">Έγγραφο</th>
-                      <th className="px-4 py-3 font-medium">Τύπος</th>
-                      <th className="px-4 py-3 font-medium">Κατάσταση</th>
-                      <th className="px-4 py-3 font-medium">Έκδοση</th>
-                      <th className="px-4 py-3 font-medium">Λήξη</th>
-                      <th className="px-4 py-3 font-medium">Τελευταία ενημέρωση</th>
-                      <th className="px-4 py-3 font-medium" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paged.pageItems.map((doc) => (
-                      <tr key={doc.id} className="border-b border-border/70">
-                        <td className="px-4 py-3">
-                          <div className="flex items-start gap-2">
-                            <FileText className="mt-0.5 h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <div className="font-medium">{doc.name}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {fileKind(doc)}
-                                {doc.documentType ? ` · ${doc.documentType}` : ""}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {doc.documentType || fileKind(doc)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant={statusVariant(doc.status)}>
-                            {statusLabel(doc.status)}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs">v{doc.version}</td>
-                        <td className="px-4 py-3">{formatDate(doc.expiryDate)}</td>
-                        <td className="px-4 py-3">
-                          {formatDate(doc.updatedAt ?? doc.createdAt)}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                aria-label={`Ενέργειες ${doc.name}`}
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => setPreviewDoc(doc)}>
-                                <Eye className="h-4 w-4" />
-                                Προβολή
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDownload(doc)}>
-                                <Download className="h-4 w-4" />
-                                Λήψη
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => void handleRename(doc)}>
-                                Μετονομασία
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setVersionTargetId(doc.id);
-                                  versionInputRef.current?.click();
-                                }}
-                              >
-                                Νέα έκδοση
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => void handleDelete(doc)}>
-                                <Trash2 className="h-4 w-4" />
-                                Διαγραφή
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
+            <div>
+              <DataList className="border-t border-border/50">
+                {paged.pageItems.map((doc) => (
+                  <DataRow
+                    key={doc.id}
+                    interactive
+                    className="items-center py-3"
+                    actions={
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            aria-label={`Ενέργειες ${doc.name}`}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => setPreviewDoc(doc)}>
+                            <Eye className="h-4 w-4" />
+                            Προβολή
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDownload(doc)}>
+                            <Download className="h-4 w-4" />
+                            Λήψη
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => void handleRename(doc)}>
+                            Μετονομασία
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setVersionTargetId(doc.id);
+                              versionInputRef.current?.click();
+                            }}
+                          >
+                            Νέα έκδοση
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => void handleDelete(doc)}>
+                            <Trash2 className="h-4 w-4" />
+                            Διαγραφή
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    }
+                  >
+                    <div className="flex items-start gap-3">
+                      <FileText
+                        className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                        aria-hidden
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{doc.name}</p>
+                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                          <span>{doc.documentType || fileKind(doc)}</span>
+                          <span aria-hidden>·</span>
+                          <span className="font-mono">v{doc.version}</span>
+                          <span aria-hidden>·</span>
+                          <span>Ενημ. {formatDate(doc.updatedAt ?? doc.createdAt)}</span>
+                          {isSearching && doc.folder?.name ? (
+                            <>
+                              <span aria-hidden>·</span>
+                              <span>{doc.folder.name}</span>
+                            </>
+                          ) : null}
+                        </p>
+                      </div>
+                      <div className="hidden shrink-0 text-right sm:block">
+                        <p
+                          className={cn(
+                            "inline-flex items-center gap-1.5 text-xs",
+                            statusTone(doc.status),
+                          )}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+                          {statusLabel(doc.status)}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Λήξη {formatDate(doc.expiryDate)}
+                        </p>
+                      </div>
+                    </div>
+                  </DataRow>
+                ))}
+              </DataList>
               {paged.totalPages > 1 ? (
-                <div className="border-t border-border px-4 py-3">
+                <div className="border-t border-border/50 pt-3">
                   <Pagination
                     page={paged.page}
                     totalPages={paged.totalPages}
@@ -529,9 +541,9 @@ export const DocumentsPage = () => {
                   />
                 </div>
               ) : null}
-            </Card>
+            </div>
           )}
-        </div>
+        </section>
       </div>
 
       <input

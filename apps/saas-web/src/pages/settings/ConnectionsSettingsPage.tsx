@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { MoreHorizontal } from "lucide-react";
+import { Hash, MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { useSessionContext } from "@/auth/SessionProvider";
 import { EmptyState, ErrorState, PageSkeleton } from "@/components/states";
@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
 import {
   saasApi,
@@ -107,13 +108,13 @@ const DeliveryStatus = ({
 }) => {
   const tone =
     state === "ACTIVE"
-      ? "text-emerald-700 dark:text-emerald-400"
+      ? "text-primary"
       : state === "NEEDS_RECONNECT" || state === "PLAN_PAUSED"
         ? "text-amber-700 dark:text-amber-400"
         : "text-muted-foreground";
   const dot =
     state === "ACTIVE"
-      ? "bg-emerald-500"
+      ? "bg-primary"
       : state === "NEEDS_RECONNECT" || state === "PLAN_PAUSED"
         ? "bg-amber-500"
         : "bg-muted-foreground/50";
@@ -401,20 +402,34 @@ export const ConnectionsSettingsPage = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Συνδέσεις</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Εξωτερικές εφαρμογές για ειδοποιήσεις της ομάδας σας.
-        </p>
-      </div>
+      <PageHeader
+        title="Συνδέσεις"
+        description="Εξωτερικές εφαρμογές για ειδοποιήσεις της ομάδας σας."
+      />
 
       <Card>
-        <CardHeader>
-          <CardTitle>Slack</CardTitle>
-          <CardDescription>
-            Λάβετε ενημερώσεις για νέες ευκαιρίες, εξελίξεις και προθεσμίες στο
-            κανάλι Slack της ομάδας σας.
-          </CardDescription>
+        <CardHeader className="flex-row items-start justify-between gap-4 pb-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted/50 text-muted-foreground"
+              aria-hidden
+            >
+              <Hash className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 space-y-1">
+              <CardTitle>Slack</CardTitle>
+              <CardDescription>
+                Ενημερώσεις για νέες ευκαιρίες, εξελίξεις και προθεσμίες στο
+                κανάλι της ομάδας σας.
+              </CardDescription>
+            </div>
+          </div>
+          {connection && deliveryState ? (
+            <DeliveryStatus
+              state={deliveryState}
+              label={connection.deliveryStateLabelEl}
+            />
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-5">
           {!view.featureAvailable ? (
@@ -457,14 +472,10 @@ export const ConnectionsSettingsPage = () => {
               <div className="space-y-2">
                 <p className="text-sm font-medium">
                   Συνδεδεμένο με {connection.teamName} ·{" "}
-                  {connection.channelLabel}
+                  <span className="text-muted-foreground">
+                    {connection.channelLabel}
+                  </span>
                 </p>
-                {deliveryState ? (
-                  <DeliveryStatus
-                    state={deliveryState}
-                    label={connection.deliveryStateLabelEl}
-                  />
-                ) : null}
                 {!view.entitled && connection.status === "PLAN_PAUSED" ? (
                   <Button asChild variant="secondary" size="sm">
                     <Link to="/app/subscription">Δείτε τα πακέτα</Link>
@@ -496,9 +507,9 @@ export const ConnectionsSettingsPage = () => {
               ) : null}
 
               {showPrefs ? (
-                <div className="space-y-4 rounded-md border border-border/60 p-4">
+                <div className="space-y-4 border-t border-border/50 pt-5">
                   <div>
-                    <h2 className="text-sm font-semibold">
+                    <h2 className="text-sm font-semibold tracking-tight">
                       Τι θέλετε να λαμβάνετε στο Slack;
                     </h2>
                     <p className="mt-1 text-xs text-muted-foreground">
@@ -552,11 +563,12 @@ export const ConnectionsSettingsPage = () => {
               ) : null}
 
               {canManage ? (
-                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
+                <div className="flex flex-col gap-3 border-t border-border/50 pt-5 sm:flex-row sm:flex-wrap sm:items-start">
                   {canTest ? (
                     <div className="flex min-w-0 flex-col gap-1">
                       <Button
-                        variant="secondary"
+                        variant="outline"
+                        size="sm"
                         disabled={busy || testing}
                         onClick={() => void handleTest()}
                         aria-label="Δοκιμή σύνδεσης"
@@ -577,7 +589,8 @@ export const ConnectionsSettingsPage = () => {
 
                   {canPause ? (
                     <Button
-                      variant="secondary"
+                      variant="outline"
+                      size="sm"
                       disabled={busy}
                       onClick={() => void handlePause(true)}
                     >
@@ -587,7 +600,8 @@ export const ConnectionsSettingsPage = () => {
 
                   {canResume ? (
                     <Button
-                      variant="secondary"
+                      variant="outline"
+                      size="sm"
                       disabled={busy || dirty}
                       onClick={() => void handlePause(false)}
                       title={
@@ -603,7 +617,8 @@ export const ConnectionsSettingsPage = () => {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
-                        variant="outline"
+                        variant="ghost"
+                        size="sm"
                         disabled={busy}
                         aria-label="Διαχείριση σύνδεσης"
                         className="gap-2"
